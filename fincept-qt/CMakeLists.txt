@@ -174,7 +174,10 @@ option(FINCEPT_DEV_BUILD "Developer iteration build: unity OFF + FASTLINK for fa
 # Unity build for infrastructure layers (safe — no local symbol conflicts).
 # Screens are excluded below via SKIP_UNITY_BUILD_INCLUSION (too many local statics/functions).
 # Disabled in dev builds so a one-line edit only recompiles that translation unit.
-if(FINCEPT_DEV_BUILD)
+# CMake's Visual Studio generator gives ClangCL's PCH creation and unity source
+# commands different CMAKE_UNITY_CONFIG_* macro sets. Keep PCH (which supplies
+# the project's common Qt headers) and disable only unity batching on ClangCL.
+if(FINCEPT_DEV_BUILD OR (MSVC AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang"))
     set(CMAKE_UNITY_BUILD OFF)
 else()
     set(CMAKE_UNITY_BUILD ON)
@@ -4128,14 +4131,8 @@ if(APPLE AND DEPLOY_QT)
 endif()
 
 # Precompiled header — Qt + std headers parsed once, reused across all TUs.
-# CMake's Visual Studio generator gives ClangCL's PCH creation and unity source
-# commands different CMAKE_UNITY_CONFIG_* macro sets. Clang rejects that PCH as
-# incompatible, so keep PCH enabled everywhere except this cross-compile path.
-if(MSVC AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-    message(STATUS "Precompiled headers disabled for ClangCL (unity config macro mismatch)")
-else()
-    # QDebug excluded — it adds overhead in Release and is only needed for debugging.
-    target_precompile_headers(FinceptTerminal PRIVATE
+# QDebug excluded — it adds overhead in Release and is only needed for debugging.
+target_precompile_headers(FinceptTerminal PRIVATE
     # ── Core Qt objects ───────────────────────────────────────────────────────
     <QObject>
     <QWidget>
@@ -4277,8 +4274,7 @@ else()
     <tuple>
     <array>
     <span>
-    )
-endif()
+)
 
 # ── OpenSSL — needed for Google Sheets JWT signing ────────────────────────────
 # OPENSSL_ROOT_DIR can be set via:

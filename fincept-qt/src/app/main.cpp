@@ -135,6 +135,7 @@
 #include "ui/theme/ThemeManager.h"
 #include "ui/widgets/UpdateDialog.h"
 
+#include <QApplication>
 #include <QCoreApplication>
 #include <QDeadlineTimer>
 #include <QDir>

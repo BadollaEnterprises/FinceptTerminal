@@ -90,8 +90,8 @@ def main() -> int:
     )
     require(
         cmake_text,
-        'if(MSVC AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")\n    message(STATUS "Precompiled headers disabled for ClangCL',
-        "ClangCL must not consume CMake unity PCH files with mismatched config macros",
+        'if(FINCEPT_DEV_BUILD OR (MSVC AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang"))',
+        "ClangCL must not combine unity config macros with precompiled headers",
         failures,
     )
     require(
