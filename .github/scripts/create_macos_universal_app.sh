@@ -11,6 +11,10 @@ arm_app="$1"
 x64_app="$2"
 output_app="$3"
 
+has_arch() {
+  tr ' ' '\n' <<<"$1" | grep -qx "$2"
+}
+
 for app in "$arm_app" "$x64_app"; do
   if [ ! -d "$app/Contents/MacOS" ]; then
     echo "Universal app: invalid application bundle: $app" >&2
@@ -31,6 +35,7 @@ mkdir -p "$(dirname "$output_app")"
 ditto "$arm_app" "$output_app"
 
 merged_count=0
+preserved_universal_count=0
 while IFS= read -r -d '' arm_file; do
   if ! file -b "$arm_file" | grep -q 'Mach-O'; then
     continue
@@ -46,13 +51,31 @@ while IFS= read -r -d '' arm_file; do
 
   arm_archs="$(lipo -archs "$arm_file")"
   x64_archs="$(lipo -archs "$x64_file")"
-  if ! tr ' ' '\n' <<<"$arm_archs" | grep -qx arm64; then
+  if ! has_arch "$arm_archs" arm64; then
     echo "Universal app: arm64 input lacks arm64 slice: $relative_path ($arm_archs)" >&2
     exit 1
   fi
-  if ! tr ' ' '\n' <<<"$x64_archs" | grep -qx x86_64; then
+  if ! has_arch "$x64_archs" x86_64; then
     echo "Universal app: x64 input lacks x86_64 slice: $relative_path ($x64_archs)" >&2
     exit 1
+  fi
+
+  # Some pinned third-party helpers (notably yt-dlp_macos) are already
+  # universal in both architecture-specific app bundles. Feeding two fat
+  # binaries with overlapping slices to `lipo -create` is an error. Preserve
+  # an input that already contains both required slices; the final audit below
+  # still verifies every Mach-O in the output bundle.
+  if has_arch "$arm_archs" arm64 && has_arch "$arm_archs" x86_64; then
+    echo "Universal app: already universal, preserving arm input: $relative_path"
+    preserved_universal_count=$((preserved_universal_count + 1))
+    continue
+  fi
+  if has_arch "$x64_archs" arm64 && has_arch "$x64_archs" x86_64; then
+    echo "Universal app: already universal, preserving x64 input: $relative_path"
+    cp "$x64_file" "$output_file"
+    chmod "$(stat -f '%Lp' "$x64_file")" "$output_file"
+    preserved_universal_count=$((preserved_universal_count + 1))
+    continue
   fi
 
   temporary_file="${output_file}.universal"
@@ -74,8 +97,8 @@ while IFS= read -r -d '' x64_file; do
   fi
 done < <(find "$x64_app" -type f -print0)
 
-if [ "$merged_count" -eq 0 ]; then
-  echo "Universal app: no Mach-O files were merged" >&2
+if [ $((merged_count + preserved_universal_count)) -eq 0 ]; then
+  echo "Universal app: no Mach-O files were merged or preserved" >&2
   exit 1
 fi
 
@@ -95,11 +118,11 @@ find "$output_app" -type f -print0 | while IFS= read -r -d '' output_file; do
   fi
   architectures="$(lipo -archs "$output_file")"
   for required_architecture in arm64 x86_64; do
-    if ! tr ' ' '\n' <<<"$architectures" | grep -qx "$required_architecture"; then
+    if ! has_arch "$architectures" "$required_architecture"; then
       echo "Universal app: output lacks $required_architecture slice: ${output_file#"$output_app"/}" >&2
       exit 1
     fi
   done
 done
 
-echo "Universal app: merged $merged_count Mach-O files into $output_app"
+echo "Universal app: merged $merged_count Mach-O files and preserved $preserved_universal_count already-universal files into $output_app"

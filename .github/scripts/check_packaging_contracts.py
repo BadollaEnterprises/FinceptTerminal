@@ -204,6 +204,12 @@ def main() -> int:
         )
         require(
             universal_text,
+            'already universal, preserving arm input',
+            "macOS universal merge must preserve helpers that already contain both slices",
+            failures,
+        )
+        require(
+            universal_text,
             'codesign --verify --deep --strict',
             "macOS universal bundle must pass strict signature verification",
             failures,
