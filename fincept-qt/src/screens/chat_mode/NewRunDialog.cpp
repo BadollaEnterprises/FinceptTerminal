@@ -3,6 +3,7 @@
 
 #include "screens/chat_mode/NewRunDialog.h"
 
+#include "core/policy/CommunityPolicy.h"
 #include "screens/chat_mode/ChatModeService.h"
 #include "screens/chat_mode/RunRequestForm.h"
 #include "screens/chat_mode/RunViewLogic.h"
@@ -551,14 +552,17 @@ NewRunDialog::NewRunDialog(QWidget* parent) : QDialog(parent), d_(std::make_uniq
     d_->fill_list();
     d_->restore();
     d_->validate();
-    // The balance for the estimate and the confirmation (one request, no polling).
-    QPointer<NewRunDialog> self(this);
-    ChatModeService::instance().get_credits([self](bool ok, double credits, QString) {
-        if (!self || !ok)
-            return;
-        self->d_->balance = credits;
-        self->d_->form->set_balance(credits);
-    });
+    // Local/BYO engines have no Fincept credit budget, so community mode does
+    // not query or surface an account balance in this form.
+    if (policy::fincept_cloud_agents_enabled()) {
+        QPointer<NewRunDialog> self(this);
+        ChatModeService::instance().get_credits([self](bool ok, double credits, QString) {
+            if (!self || !ok)
+                return;
+            self->d_->balance = credits;
+            self->d_->form->set_balance(credits);
+        });
+    }
 }
 
 NewRunDialog::~NewRunDialog() = default;

@@ -11,6 +11,7 @@
 
 #include "auth/AuthTypes.h"
 #include "core/logging/Logger.h"
+#include "core/policy/CommunityPolicy.h"
 #include "screens/chat_mode/ChatComposer.h"
 #include "screens/chat_mode/ChatModeService.h"
 #include "screens/chat_mode/ChatStartPage.h"
@@ -649,6 +650,8 @@ quint64 ChatMessagePanel::add_error(const QString& text, const QString& action, 
 }
 
 void ChatMessagePanel::add_credits_card() {
+    if (!policy::commercial_promotions_enabled())
+        return;
     // One per streak of 402s: never two cards in a row.
     if (last_item_is_credits_)
         return;
@@ -1846,6 +1849,10 @@ void ChatMessagePanel::decide_proposal(quint64 item_id, bool approved, const QSt
 }
 
 void ChatMessagePanel::on_insufficient_credits(const QString& message) {
+    if (!policy::commercial_promotions_enabled()) {
+        add_error(tr("A legacy hosted run was blocked by the community credit firewall. Start a local BYO run instead."));
+        return;
+    }
     // `message` is the server's own explanation (required vs available credits, an
     // expired pass) plus where to recharge.
     add_error(message.isEmpty() ? tr("Insufficient credits — this request was not run.") : message);

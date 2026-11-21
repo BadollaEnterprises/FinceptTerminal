@@ -3,6 +3,7 @@
 
 #include "screens/chat_mode/RunRequestForm.h"
 
+#include "core/policy/CommunityPolicy.h"
 #include "screens/chat_mode/RunViewLogic.h"
 #include "screens/chat_mode/RunViewWidgets.h"
 #include "screens/portfolio/PortfolioTypes.h"
@@ -229,8 +230,11 @@ void RunRequestForm::Impl::build() {
     auto* engine_lbl = rrf_label(q, "rrfSection");
     engine_lbl->setObjectName(QStringLiteral("rrfEngineLabel"));
     engine = new QComboBox(q);
-    for (int i = kRrfCloudTurn; i <= kRrfHarness; ++i)
+    for (int i = kRrfCloudTurn; i <= kRrfHarness; ++i) {
+        if (!policy::fincept_cloud_agents_enabled() && (i == kRrfCloudTurn || i == kRrfCloudPlan))
+            continue;
         engine->addItem(QString(), i);
+    }
     mode = new QComboBox(q);
     mode->addItem(QString(), QStringLiteral("lite"));
     mode->addItem(QString(), QStringLiteral("deep"));
@@ -269,6 +273,7 @@ void RunRequestForm::Impl::build() {
         s->setSingleStep(5);
         return s;
     });
+    credits->parentWidget()->setVisible(policy::fincept_cloud_agents_enabled());
     steps = spin_field(QStringLiteral("rrfSteps"), [](QWidget* p) {
         auto* s = new QSpinBox(p);
         s->setRange(0, agt::run_plan_prompts::kPlanHardMaxSteps);
@@ -339,12 +344,16 @@ void RunRequestForm::Impl::retranslate() {
     minutes->setSpecialValueText(RunRequestForm::tr("no limit"));
     minutes->setToolTip(RunRequestForm::tr("Working time: pauses and questions to you do not count"));
     const QStringList names = {RunRequestForm::tr("Cloud · one reply"), RunRequestForm::tr("Cloud · multi-step task"),
-                               RunRequestForm::tr("Local agent · your own model")};
-    for (int i = 0; i < 3; ++i) {
+                               RunRequestForm::tr("Local agent · your own model"),
+                               RunRequestForm::tr("Harness · your own API key")};
+    for (int row = 0; row < engine->count(); ++row) {
+        const int choice = engine->itemData(row).toInt();
         QString why;
-        const bool ok = rv::executor_available(rrf_executor(i), &why);
-        engine->setItemText(i, ok ? names.at(i) : RunRequestForm::tr("%1 — not available").arg(names.at(i)));
-        engine->setItemData(i, ok ? QVariant() : QVariant(why), Qt::ToolTipRole);
+        const bool ok = choice == kRrfHarness ? harness.enabled : rv::executor_available(rrf_executor(choice), &why);
+        engine->setItemText(row, ok ? names.at(choice)
+                                   : RunRequestForm::tr("%1 — not available").arg(names.at(choice)));
+        engine->setItemData(row, ok ? QVariant() : QVariant(choice == kRrfHarness ? harness.reason : why),
+                            Qt::ToolTipRole);
     }
     refresh_harness();
     mode->setItemText(0, RunRequestForm::tr("Lite"));
@@ -996,8 +1005,12 @@ QString RunRequestForm::edited_prompt() const {
 int RunRequestForm::engine_value(const QString& engine, bool plan_first) {
     if (engine == QLatin1String(agt::kEngineLocal))
         return kRrfLocal;
-    if (engine == QLatin1String(rv::kHarnessEngineId))
+    if (engine == QLatin1String(rv::kHarnessEngineId) && policy::chat_mode_harnesses_enabled())
         return kRrfHarness;
+    if (engine == QLatin1String(rv::kHarnessEngineId))
+        return kRrfLocal;
+    if (!policy::fincept_cloud_agents_enabled())
+        return kRrfLocal;
     return plan_first ? kRrfCloudPlan : kRrfCloudTurn;
 }
 

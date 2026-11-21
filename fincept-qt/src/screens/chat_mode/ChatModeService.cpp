@@ -1,11 +1,17 @@
 #include "screens/chat_mode/ChatModeService.h"
 
+#include "screens/chat_mode/PromptOptimizationPolicy.h"
+
 #include "auth/AuthManager.h"
 #include "core/config/AppConfig.h"
 #include "core/logging/Logger.h"
+#include "core/policy/CommunityPolicy.h"
 #include "core/privacy/LogRedact.h"
 #include "core/telemetry/ClientInfo.h"
 #include "network/http/HttpClient.h"
+#include "services/llm/LlmService.h"
+#include "services/llm/ModelRouter.h"
+#include "storage/repositories/ChatRepository.h"
 
 #include <QDateTime>
 #include <QHash>
@@ -17,6 +23,7 @@
 #include <QTimer>
 #include <QUrl>
 #include <QUrlQuery>
+#include <QtConcurrent>
 
 #include <algorithm>
 #include <cmath>
@@ -118,21 +125,9 @@ QString chat_svc_reply_error_text(int status, const QJsonObject& body, QNetworkR
             return server.isEmpty() ? ChatModeService::tr("Not signed in to Fincept (HTTP 401). Sign in, then retry.")
                                     : server;
         case 402: {
-            // {"message": {"error": "insufficient_credits" | "plan_expired", "message": "…",
-            //              "recharge": {"docs": "Visit https://fincept.in/pricing …"}}}
-            const QString what =
-                server.isEmpty() ? ChatModeService::tr("You do not have enough Fincept credits for this request.") : server;
-            if (what.contains(QLatin1String("http")))
-                return what; // the server already says where to go
-            const QString docs = body.value(QLatin1String("message"))
-                                     .toObject()
-                                     .value(QLatin1String("recharge"))
-                                     .toObject()
-                                     .value(QLatin1String("docs"))
-                                     .toString()
-                                     .trimmed();
-            return what + QLatin1Char(' ') +
-                   (docs.isEmpty() ? ChatModeService::tr("Top up your credits or upgrade your plan, then retry.") : docs);
+            return ChatModeService::tr(
+                "The Fincept-hosted route is unavailable under the community credit firewall. "
+                "Select your configured DeepSeek or another BYO provider in Settings → LLM Configuration.");
         }
         case 403:
             if (ip_blocked)
@@ -161,6 +156,30 @@ QString chat_svc_reply_error_text(int status, const QJsonObject& body, QNetworkR
                        ? ChatModeService::tr("The Fincept server could not complete the request (HTTP %1).").arg(status)
                        : server;
     }
+}
+
+ChatSession chat_svc_local_session(const ::fincept::ChatSession& row) {
+    ChatSession out;
+    out.uuid = row.id;
+    out.title = row.title;
+    out.message_count = row.message_count;
+    out.created_at = row.created_at;
+    out.updated_at = row.updated_at;
+    out.last_message_at = row.updated_at;
+    return out;
+}
+
+ChatMessage chat_svc_local_message(const ::fincept::ChatMessage& row) {
+    ChatMessage out;
+    out.uuid = row.id;
+    out.session_uuid = row.session_id;
+    out.role = row.role;
+    out.content = row.content;
+    out.created_at = row.timestamp;
+    out.tokens_used = row.tokens_used;
+    out.provider = row.provider;
+    out.model = row.model;
+    return out;
 }
 
 } // namespace
@@ -380,6 +399,10 @@ void ChatModeService::get(const QString& path, RawCallback cb) {
 }
 
 void ChatModeService::get_status(const QString& path, StatusCallback cb) {
+    if (!policy::fincept_chat_api_enabled()) {
+        cb(false, {}, tr("Fincept-hosted Chat Mode is disabled; use local runs with your BYO model."), {});
+        return;
+    }
     Resend send = [this, path]() { return nam_->get(build_request(path)); };
     QNetworkReply* reply = send();
     handle_reply(reply, std::move(cb), std::move(send));
@@ -394,6 +417,10 @@ void ChatModeService::post_slow(const QString& path, const QJsonObject& body, in
 }
 
 void ChatModeService::post_status(const QString& path, const QJsonObject& body, int timeout_ms, StatusCallback cb) {
+    if (!policy::fincept_chat_api_enabled()) {
+        cb(false, {}, tr("Fincept-hosted Chat Mode is disabled; use local runs with your BYO model."), {});
+        return;
+    }
     const QByteArray payload = QJsonDocument(body).toJson(QJsonDocument::Compact);
     Resend send = [this, path, payload]() { return nam_->post(build_request(path), payload); };
     QNetworkReply* reply = send();
@@ -401,6 +428,10 @@ void ChatModeService::post_status(const QString& path, const QJsonObject& body, 
 }
 
 void ChatModeService::put(const QString& path, const QJsonObject& body, RawCallback cb) {
+    if (!policy::fincept_chat_api_enabled()) {
+        cb(false, {}, tr("Fincept-hosted Chat Mode is disabled; use local runs with your BYO model."));
+        return;
+    }
     const QByteArray payload = QJsonDocument(body).toJson(QJsonDocument::Compact);
     Resend send = [this, path, payload]() { return nam_->put(build_request(path), payload); };
     QNetworkReply* reply = send();
@@ -408,6 +439,10 @@ void ChatModeService::put(const QString& path, const QJsonObject& body, RawCallb
 }
 
 void ChatModeService::del(const QString& path, RawCallback cb) {
+    if (!policy::fincept_chat_api_enabled()) {
+        cb(false, {}, tr("Fincept-hosted Chat Mode is disabled; use local runs with your BYO model."));
+        return;
+    }
     Resend send = [this, path]() { return nam_->deleteResource(build_request(path)); };
     QNetworkReply* reply = send();
     handle_reply(reply, adapt(std::move(cb)), std::move(send));
@@ -417,6 +452,16 @@ void ChatModeService::del(const QString& path, RawCallback cb) {
 
 void ChatModeService::create_session(const QString& title, SessionCallback cb) {
     LOG_DEBUG("ChatModeService", QString("Creating chat session title_chars=%1").arg(title.size()));
+    if (!policy::fincept_chat_api_enabled()) {
+        auto result = ::fincept::ChatRepository::instance().create_session(
+            title, policy::default_llm_provider(), policy::default_llm_model());
+        if (result.is_err()) {
+            cb(false, {}, QString::fromStdString(result.error()));
+            return;
+        }
+        cb(true, chat_svc_local_session(result.value()), {});
+        return;
+    }
     QJsonObject body;
     body["title"] = title;
     post("/chat/sessions", body, [cb = std::move(cb)](bool ok, QJsonDocument doc, QString err) {
@@ -435,6 +480,20 @@ void ChatModeService::create_session(const QString& title, SessionCallback cb) {
 
 void ChatModeService::list_sessions(int limit, SessionsCallback cb) {
     LOG_DEBUG("ChatModeService", QString("Listing sessions (limit %1)").arg(limit));
+    if (!policy::fincept_chat_api_enabled()) {
+        auto result = ::fincept::ChatRepository::instance().list_sessions();
+        if (result.is_err()) {
+            cb(false, {}, QString::fromStdString(result.error()));
+            return;
+        }
+        QVector<ChatSession> sessions;
+        const int count = std::min(std::max(1, limit), static_cast<int>(result.value().size()));
+        sessions.reserve(count);
+        for (int i = 0; i < count; ++i)
+            sessions.append(chat_svc_local_session(result.value().at(i)));
+        cb(true, sessions, {});
+        return;
+    }
     get(QString("/chat/sessions?limit=%1").arg(std::max(1, limit)),
         [cb = std::move(cb)](bool ok, QJsonDocument doc, QString err) {
         if (!ok) {
@@ -453,6 +512,23 @@ void ChatModeService::list_sessions(int limit, SessionsCallback cb) {
 }
 
 void ChatModeService::list_sessions_page(int limit, int offset, SessionsPageCallback cb) {
+    if (!policy::fincept_chat_api_enabled()) {
+        auto result = ::fincept::ChatRepository::instance().list_sessions();
+        if (result.is_err()) {
+            cb(false, {}, QString::fromStdString(result.error()));
+            return;
+        }
+        ChatSessionsPage page;
+        page.has_more_known = true;
+        const int begin = std::clamp(offset, 0, static_cast<int>(result.value().size()));
+        const int end = std::min(begin + std::max(1, limit), static_cast<int>(result.value().size()));
+        page.sessions.reserve(end - begin);
+        for (int i = begin; i < end; ++i)
+            page.sessions.append(chat_svc_local_session(result.value().at(i)));
+        page.has_more = end < result.value().size();
+        cb(true, page, {});
+        return;
+    }
     QString path = QString("/chat/sessions?limit=%1").arg(std::max(1, limit));
     if (offset > 0)
         path += QString("&offset=%1").arg(offset);
@@ -478,6 +554,24 @@ void ChatModeService::list_sessions_page(int limit, int offset, SessionsPageCall
 
 void ChatModeService::load_session(const QString& uuid, SessionDetailCallback cb) {
     LOG_DEBUG("ChatModeService", QString("Loading session: %1").arg(uuid));
+    if (!policy::fincept_chat_api_enabled()) {
+        auto session = ::fincept::ChatRepository::instance().get_session(uuid);
+        if (session.is_err()) {
+            cb(false, {}, {}, QString::fromStdString(session.error()), 404);
+            return;
+        }
+        auto stored = ::fincept::ChatRepository::instance().get_messages(uuid);
+        if (stored.is_err()) {
+            cb(false, {}, {}, QString::fromStdString(stored.error()), 0);
+            return;
+        }
+        QVector<ChatMessage> messages;
+        messages.reserve(stored.value().size());
+        for (const auto& row : stored.value())
+            messages.append(chat_svc_local_message(row));
+        cb(true, chat_svc_local_session(session.value()), messages, {}, 200);
+        return;
+    }
     get_status("/chat/sessions/" + QString::fromUtf8(QUrl::toPercentEncoding(uuid)),
                [cb = std::move(cb), uuid](bool ok, QJsonDocument doc, QString err, ReplyInfo info) {
         if (!ok) {
@@ -497,10 +591,20 @@ void ChatModeService::load_session(const QString& uuid, SessionDetailCallback cb
 }
 
 void ChatModeService::delete_session(const QString& uuid, VoidCallback cb) {
+    if (!policy::fincept_chat_api_enabled()) {
+        auto result = ::fincept::ChatRepository::instance().delete_session(uuid);
+        cb(result.is_ok(), result.is_ok() ? QString() : QString::fromStdString(result.error()));
+        return;
+    }
     del("/chat/sessions/" + uuid, [cb = std::move(cb)](bool ok, QJsonDocument, QString err) { cb(ok, err); });
 }
 
 void ChatModeService::rename_session(const QString& uuid, const QString& title, VoidCallback cb) {
+    if (!policy::fincept_chat_api_enabled()) {
+        auto result = ::fincept::ChatRepository::instance().update_session_title(uuid, title);
+        cb(result.is_ok(), result.is_ok() ? QString() : QString::fromStdString(result.error()));
+        return;
+    }
     QJsonObject body;
     body["title"] = title;
     put("/chat/sessions/" + uuid + "/title", body,
@@ -508,6 +612,11 @@ void ChatModeService::rename_session(const QString& uuid, const QString& title, 
 }
 
 void ChatModeService::activate_session(const QString& uuid, VoidCallback cb) {
+    if (!policy::fincept_chat_api_enabled()) {
+        Q_UNUSED(uuid)
+        cb(true, {});
+        return;
+    }
     put("/chat/sessions/" + uuid + "/activate", {},
         [cb = std::move(cb)](bool ok, QJsonDocument, QString err) { cb(ok, err); });
 }
@@ -515,6 +624,20 @@ void ChatModeService::activate_session(const QString& uuid, VoidCallback cb) {
 // ── Session utilities ─────────────────────────────────────────────────────────
 
 void ChatModeService::get_stats(StatsCallback cb) {
+    if (!policy::fincept_chat_api_enabled()) {
+        auto result = ::fincept::ChatRepository::instance().list_sessions();
+        if (result.is_err()) {
+            cb(false, {}, QString::fromStdString(result.error()));
+            return;
+        }
+        ChatStats stats;
+        stats.total_sessions = static_cast<int>(result.value().size());
+        stats.active_sessions = stats.total_sessions > 0 ? 1 : 0;
+        for (const auto& session : result.value())
+            stats.total_messages += session.message_count;
+        cb(true, stats, {});
+        return;
+    }
     get("/chat/stats", [cb = std::move(cb)](bool ok, QJsonDocument doc, QString err) {
         if (!ok) {
             cb(false, {}, err);
@@ -526,6 +649,32 @@ void ChatModeService::get_stats(StatsCallback cb) {
 }
 
 void ChatModeService::search_messages(const QString& query, SearchCallback cb) {
+    if (!policy::fincept_chat_api_enabled()) {
+        auto sessions = ::fincept::ChatRepository::instance().list_sessions();
+        if (sessions.is_err()) {
+            cb(false, {}, QString::fromStdString(sessions.error()));
+            return;
+        }
+        QVector<ChatMessage> matches;
+        for (const auto& session : sessions.value()) {
+            auto messages = ::fincept::ChatRepository::instance().get_messages(session.id);
+            if (messages.is_err()) {
+                cb(false, {}, QString::fromStdString(messages.error()));
+                return;
+            }
+            for (const auto& row : messages.value()) {
+                if (row.content.contains(query, Qt::CaseInsensitive)) {
+                    matches.append(chat_svc_local_message(row));
+                    if (matches.size() >= 20) {
+                        cb(true, matches, {});
+                        return;
+                    }
+                }
+            }
+        }
+        cb(true, matches, {});
+        return;
+    }
     const QString path =
         QString("/chat/search?query=%1&limit=20").arg(QString::fromUtf8(QUrl::toPercentEncoding(query)));
     get(path, [cb = std::move(cb)](bool ok, QJsonDocument doc, QString err) {
@@ -556,6 +705,42 @@ void ChatModeService::search_messages(const QString& query, SearchCallback cb) {
 }
 
 void ChatModeService::export_sessions(const QStringList& uuids, std::function<void(bool, QJsonArray, QString)> cb) {
+    if (!policy::fincept_chat_api_enabled()) {
+        auto sessions = ::fincept::ChatRepository::instance().list_sessions();
+        if (sessions.is_err()) {
+            cb(false, {}, QString::fromStdString(sessions.error()));
+            return;
+        }
+        const QSet<QString> selected(uuids.cbegin(), uuids.cend());
+        QJsonArray payload;
+        for (const auto& session : sessions.value()) {
+            if (!selected.isEmpty() && !selected.contains(session.id))
+                continue;
+            auto messages = ::fincept::ChatRepository::instance().get_messages(session.id);
+            if (messages.is_err()) {
+                cb(false, {}, QString::fromStdString(messages.error()));
+                return;
+            }
+            QJsonObject item{{"session_uuid", session.id},
+                             {"title", session.title},
+                             {"created_at", session.created_at},
+                             {"updated_at", session.updated_at}};
+            QJsonArray rows;
+            for (const auto& message : messages.value()) {
+                rows.append(QJsonObject{{"message_uuid", message.id},
+                                        {"role", message.role},
+                                        {"content", message.content},
+                                        {"provider", message.provider},
+                                        {"model", message.model},
+                                        {"tokens_used", message.tokens_used},
+                                        {"created_at", message.timestamp}});
+            }
+            item["messages"] = rows;
+            payload.append(item);
+        }
+        cb(true, payload, {});
+        return;
+    }
     QJsonObject body;
     QJsonArray arr;
     for (const auto& u : uuids)
@@ -576,6 +761,45 @@ void ChatModeService::export_sessions(const QStringList& uuids, std::function<vo
 
 void ChatModeService::optimize_prompt(const QString& prompt, const QString& mode, OptimizeCallback cb) {
     LOG_DEBUG("ChatModeService", QString("Prompt optimisation started mode=%1 prompt_chars=%2").arg(mode).arg(prompt.size()));
+    if (!policy::fincept_chat_api_enabled()) {
+        ai_chat::ChatRoute route;
+        route.feature = QString::fromLatin1(ai_chat::kFeatureAgent);
+        if (!ai_chat::LlmService::instance().is_configured(route)) {
+            cb(false, {}, tr("No BYO model is configured. Add your DeepSeek API key in Settings → LLM Configuration."));
+            return;
+        }
+
+        const QString request = prompt_optimization_request(prompt, mode);
+        QPointer<ChatModeService> self(this);
+        (void)QtConcurrent::run([self, prompt, request, route, cb = std::move(cb)]() mutable {
+            const ai_chat::LlmResponse response =
+                ai_chat::LlmService::instance().chat(request, {}, /*use_tools=*/false, route);
+            QMetaObject::invokeMethod(
+                QCoreApplication::instance(),
+                [self, prompt, response, cb = std::move(cb)]() mutable {
+                    if (!self)
+                        return;
+                    if (!response.success) {
+                        cb(false, {}, response.error.trimmed().isEmpty()
+                                          ? ChatModeService::tr("The configured BYO model did not return a prompt.")
+                                          : response.error.trimmed());
+                        return;
+                    }
+                    const QString optimized = clean_optimized_prompt(response.content);
+                    if (optimized.isEmpty()) {
+                        cb(false, {}, ChatModeService::tr("The configured BYO model returned an empty prompt."));
+                        return;
+                    }
+                    OptimizedPrompt result;
+                    result.original = prompt;
+                    result.optimized = optimized;
+                    cb(true, result, {});
+                },
+                Qt::QueuedConnection);
+        });
+        return;
+    }
+
     QJsonObject body;
     body["prompt"] = prompt;
     if (!mode.isEmpty())

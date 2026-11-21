@@ -13,7 +13,9 @@
 
 namespace fincept::chat_mode {
 
-/// Singleton service for the api.fincept.in/chat/* REST calls.
+/// Chat Mode support service. Hosted builds use api.fincept.in/chat/*; the
+/// community build keeps metered routes disabled and executes supported AI
+/// helpers, such as prompt optimisation, through the configured BYO model.
 /// All callbacks are delivered on the Qt event loop (main thread).
 ///
 /// The agent stream (/chat/agent/stream and …/resume) is not here: every turn is

@@ -52,6 +52,7 @@ struct SessionStats {
     qint64 tokens = 0;          ///< stored total (0 = none reported)
     qint64 prompt_tokens = -1;  ///< answers of this run only; -1 = not reported
     qint64 completion_tokens = -1;
+    qint64 cached_prompt_tokens = -1;
     double cost_usd = -1.0;     ///< sum of reported costs; < 0 = none reported
     qint64 last_ms = -1;        ///< duration of the last answer (this run)
     QStringList models;         ///< distinct "provider / model" that answered

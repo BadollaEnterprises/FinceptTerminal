@@ -6,7 +6,9 @@
 //
 // Part of the partial-class split of AiChatScreen.cpp.
 
+#include "core/events/EventBus.h"
 #include "core/logging/Logger.h"
+#include "core/policy/CommunityPolicy.h"
 #include "core/session/ScreenStateManager.h"
 #include "screens/ai_chat/AiChatComposer.h"
 #include "screens/ai_chat/AiChatScreen.h"
@@ -167,7 +169,7 @@ void AiChatScreen::create_new_session() {
     history_.clear();
     total_tokens_ = 0;
     total_messages_ = 0;
-    run_prompt_tokens_ = run_completion_tokens_ = -1;
+    run_prompt_tokens_ = run_completion_tokens_ = run_cached_prompt_tokens_ = -1;
     run_cost_usd_ = -1.0;
     last_answer_ms_ = -1;
     last_answer_at_ = QDateTime();
@@ -194,7 +196,7 @@ void AiChatScreen::load_messages(const QString& session_id) {
     conv_model_.clear();
     total_tokens_ = 0;
     total_messages_ = 0;
-    run_prompt_tokens_ = run_completion_tokens_ = -1;
+    run_prompt_tokens_ = run_completion_tokens_ = run_cached_prompt_tokens_ = -1;
     run_cost_usd_ = -1.0;
     last_answer_ms_ = -1;
     last_answer_at_ = QDateTime();
@@ -248,7 +250,7 @@ void AiChatScreen::load_messages(const QString& session_id) {
             t.text = content;
             t.tools = steps;
             t.provider = msg.provider;
-            t.model = msg.model;
+            t.model = policy::normalize_llm_model(msg.provider, msg.model);
             t.tokens = msg.tokens_used;
             for (const auto& s : std::as_const(steps)) {
                 const QString arg = s.label.section(QStringLiteral(" · "), 1, 1).trimmed().toUpper();
@@ -259,7 +261,7 @@ void AiChatScreen::load_messages(const QString& session_id) {
                 history_.push_back({msg.role, content});
                 if (!msg.provider.isEmpty()) {
                     conv_provider_ = msg.provider;
-                    conv_model_ = msg.model;
+                    conv_model_ = policy::normalize_llm_model(msg.provider, msg.model);
                 }
             }
         } else {
@@ -552,12 +554,14 @@ void AiChatScreen::update_model_notice() {
         tr("This conversation's last answer came from %1. New messages will go to %2.").arg(was, now));
     // The switch only makes sense while that model can still answer.
     bool configured = false;
-    if (ai_chat::provider_is_harness(conv_provider_)) {
+    if (policy::is_deprecated_llm_provider(conv_provider_)) {
+        configured = false;
+    } else if (ai_chat::provider_is_harness(conv_provider_)) {
         const QString hid = conv_provider_.mid(8);
         for (const auto& h : ai_chat::ModelRouter::instance().harness_states())
             configured = configured || (h.id == hid && h.eligibility.usable);
     } else if (conv_provider_.compare(QLatin1String("fincept"), Qt::CaseInsensitive) == 0) {
-        configured = true;
+        configured = policy::fincept_metered_services_enabled();
     } else if (auto r = LlmConfigRepository::instance().list_providers(); r.is_ok()) {
         for (const auto& c : r.value())
             if (c.provider.compare(conv_provider_, Qt::CaseInsensitive) == 0)
@@ -575,6 +579,15 @@ void AiChatScreen::update_model_notice() {
 void AiChatScreen::on_use_conversation_model() {
     if (streaming_ || conv_provider_.isEmpty())
         return;
+    if (policy::is_deprecated_llm_provider(conv_provider_)) {
+        QMessageBox::information(this, tr("Switch Model"),
+                                 tr("This historical local model is no longer available. Choose DeepSeek or another "
+                                    "BYO provider in LLM Configuration."));
+        EventBus::instance().publish(QStringLiteral("nav.switch_screen"),
+                                     QVariantMap{{QStringLiteral("screen_id"), QStringLiteral("settings")},
+                                                 {QStringLiteral("section"), QStringLiteral("llm_config")}});
+        return;
+    }
     // AI Chat's model is chosen per feature (ModelRouter): store the conversation's model
     // as AI Chat's explicit choice instead of switching the global active provider.
     ai_chat::ModelChoice c;
@@ -592,6 +605,15 @@ void AiChatScreen::on_use_conversation_model() {
             }
         }
     } else if (conv_provider_.compare(QLatin1String("fincept"), Qt::CaseInsensitive) == 0) {
+        if (!policy::fincept_metered_services_enabled()) {
+            QMessageBox::information(this, tr("Switch Model"),
+                                     tr("The Fincept-hosted model is disabled by the community credit firewall. "
+                                        "Choose DeepSeek or another BYO provider in LLM Configuration."));
+            EventBus::instance().publish(QStringLiteral("nav.switch_screen"),
+                                         QVariantMap{{QStringLiteral("screen_id"), QStringLiteral("settings")},
+                                                     {QStringLiteral("section"), QStringLiteral("llm_config")}});
+            return;
+        }
         c.kind = ai_chat::ModelChoice::Kind::Fincept;
         c.provider = QStringLiteral("fincept");
         c.label = QStringLiteral("Fincept LLM");

@@ -17,6 +17,7 @@
 
 #include "screens/chat_mode/ComposerContextBar.h"
 
+#include "core/policy/CommunityPolicy.h"
 #include "screens/chat_mode/ChatModeService.h"
 #include "screens/chat_mode/RunViewLogic.h"
 #include "screens/chat_mode/RunViewWidgets.h"
@@ -62,12 +63,13 @@ namespace rv = fincept::chat_mode::run_view;
 namespace composer_context_bar_detail {
 
 /// What the picker offers: one cloud reply, a planned multi-step cloud task, a
-/// local agentic task, a task run by the user's agent harness.
+/// a direct BYO reply (optionally promoted to a local agentic task), or a task
+/// run by the user's agent harness.
 enum class CcbChoice { CloudTurn, CloudPlan, Local, Harness };
 
 /// The engines that are always a task (no "one reply" form, RUN AS TASK stays on).
 bool ccb_always_task(CcbChoice c) {
-    return c == CcbChoice::Local || c == CcbChoice::Harness;
+    return c == CcbChoice::Harness;
 }
 
 QString ccb_executor_of(CcbChoice c) {
@@ -75,7 +77,7 @@ QString ccb_executor_of(CcbChoice c) {
         case CcbChoice::CloudPlan:
             return QString::fromLatin1(agt::kExecutorCloudPlan);
         case CcbChoice::Local:
-            return QString::fromLatin1(agt::kExecutorLocal);
+            return QString::fromLatin1(agt::kExecutorByoChat);
         case CcbChoice::Harness:
             return QString::fromLatin1(rv::kHarnessEngineId);
         case CcbChoice::CloudTurn:
@@ -89,7 +91,7 @@ QString ccb_choice_text(CcbChoice c) {
         case CcbChoice::CloudPlan:
             return ComposerContextBar::tr("Cloud · multi-step task");
         case CcbChoice::Local:
-            return ComposerContextBar::tr("Local agent");
+            return ComposerContextBar::tr("BYO model");
         case CcbChoice::Harness:
             return ComposerContextBar::tr("Harness");
         case CcbChoice::CloudTurn:
@@ -104,10 +106,10 @@ QString ccb_choice_help(CcbChoice c) {
             return ComposerContextBar::tr("The cloud agent plans the task, works through it one step (one agent turn) "
                                           "at a time and writes a final synthesis. Stops at its budget.");
         case CcbChoice::Local:
-            return ComposerContextBar::tr("The terminal's own agentic engine with your LLM profile: no Fincept "
-                                          "credits, steps without tool details.");
+            return ComposerContextBar::tr("One direct reply from your configured API provider. Turn on RUN AS TASK "
+                                          "for the terminal's multi-step local agent. No Fincept credits.");
         case CcbChoice::Harness:
-            return ComposerContextBar::tr("Your agent harness (Claude Code or Codex) works through the task in its own "
+            return ComposerContextBar::tr("Your local agent harness works through the task in its own "
                                           "loop with the terminal's tools, read-only and paper only. No Fincept "
                                           "credits: it is billed to your own API key. It cannot pause; cancel stops it.");
         case CcbChoice::CloudTurn:
@@ -298,7 +300,9 @@ struct ComposerContextBar::Impl {
     QString attachment_id;          ///< matches the run that sent it (then it is cleared)
     bool attachment_truncated = false;
     qint64 attachment_total = 0;
-    CcbChoice choice = CcbChoice::CloudTurn;
+    CcbChoice choice =
+        policy::fincept_cloud_agents_enabled() ? CcbChoice::CloudTurn : CcbChoice::Local;
+    bool local_task = false;
 
     QToolButton* add_btn = nullptr;
     QMenu* add_menu = nullptr;
@@ -534,8 +538,14 @@ void ComposerContextBar::Impl::wire() {
     QObject::connect(&ai_chat::ModelRouter::instance(), &ai_chat::ModelRouter::routes_changed, q,
                      [this]() { update_engine(); });
     QObject::connect(task_btn, &QToolButton::clicked, q, [this](bool on) {
+        if (choice == CcbChoice::Local) {
+            local_task = on;
+            update_engine();
+            emit q->run_as_task_toggled(local_task);
+            return;
+        }
         if (ccb_always_task(choice)) {
-            task_btn->setChecked(true); // a local or harness run is always a task
+            task_btn->setChecked(true); // a harness run is always a task
             return;
         }
         set_choice(on ? CcbChoice::CloudPlan : CcbChoice::CloudTurn, true);
@@ -623,9 +633,13 @@ void ComposerContextBar::Impl::wire() {
 
 void ComposerContextBar::Impl::retranslate() {
     add_btn->setText(ComposerContextBar::tr("+ CONTEXT"));
-    add_btn->setToolTip(ComposerContextBar::tr("Add a symbol, portfolio, investment profile or a text file to your "
-                                               "messages. Chips go with every message until removed; an attached "
-                                               "text goes with the next message only."));
+    add_btn->setToolTip(
+        policy::fincept_chat_api_enabled()
+            ? ComposerContextBar::tr("Add a symbol, portfolio, investment profile or a text file to your messages. "
+                                     "Chips go with every message until removed; an attached text goes with the next "
+                                     "message only.")
+            : ComposerContextBar::tr("Add a symbol, portfolio or a text file to your messages. Chips go with every "
+                                     "message until removed; an attached text goes with the next message only."));
     add_btn->setAccessibleName(ComposerContextBar::tr("Add context to the message"));
     portfolio_menu->setTitle(ComposerContextBar::tr("Portfolio"));
     profile_menu->setTitle(ComposerContextBar::tr("Investment profile"));
@@ -634,6 +648,7 @@ void ComposerContextBar::Impl::retranslate() {
     task_btn->setAccessibleName(ComposerContextBar::tr("Run the next message as a multi-step task"));
     if (auto* l = budget_editor->findChild<QLabel*>(QStringLiteral("ccbCreditsLabel")))
         l->setText(ComposerContextBar::tr("Max credits"));
+    max_credits->parentWidget()->setVisible(policy::fincept_cloud_agents_enabled());
     if (auto* l = budget_editor->findChild<QLabel*>(QStringLiteral("ccbStepsLabel")))
         l->setText(ComposerContextBar::tr("Max steps"));
     if (auto* l = budget_editor->findChild<QLabel*>(QStringLiteral("ccbMinutesLabel")))
@@ -646,9 +661,12 @@ void ComposerContextBar::Impl::retranslate() {
     max_minutes->setSpecialValueText(ComposerContextBar::tr("no limit"));
     max_minutes->setToolTip(ComposerContextBar::tr("Working time; pauses and questions to you do not count"));
     budget_reset->setText(ComposerContextBar::tr("DEFAULT"));
-    budget_reset->setToolTip(ComposerContextBar::tr("%1 credits, %2 steps, no time limit")
-                                 .arg(rv::format_credits(agt::kDefaultMaxCredits))
-                                 .arg(agt::kDefaultMaxSteps));
+    budget_reset->setToolTip(
+        policy::fincept_cloud_agents_enabled()
+            ? ComposerContextBar::tr("%1 credits, %2 steps, no time limit")
+                  .arg(rv::format_credits(agt::kDefaultMaxCredits))
+                  .arg(agt::kDefaultMaxSteps)
+            : ComposerContextBar::tr("%1 steps, no time limit").arg(agt::kDefaultMaxSteps));
     confirm_yes->setText(ComposerContextBar::tr("START"));
     confirm_change->setText(ComposerContextBar::tr("CHANGE BUDGET"));
     confirm_no->setText(ComposerContextBar::tr("CANCEL"));
@@ -752,6 +770,9 @@ void ComposerContextBar::Impl::update_engine() {
     harness = rv::harness_engine_option_now();
     engine_menu->clear(); // deletes the old actions; they leave engine_group with it
     for (CcbChoice c : {CcbChoice::CloudTurn, CcbChoice::CloudPlan, CcbChoice::Local, CcbChoice::Harness}) {
+        if (!policy::fincept_cloud_agents_enabled() &&
+            (c == CcbChoice::CloudTurn || c == CcbChoice::CloudPlan))
+            continue;
         QString why;
         bool ok = false;
         QString text = ccb_choice_text(c);
@@ -790,10 +811,15 @@ void ComposerContextBar::Impl::update_engine() {
 
     QString plan_why;
     const bool plan_ok = rv::executor_available(ccb_executor_of(CcbChoice::CloudPlan), &plan_why);
-    task_btn->setChecked(choice != CcbChoice::CloudTurn);
+    task_btn->setChecked(choice == CcbChoice::Local ? local_task : choice != CcbChoice::CloudTurn);
     if (choice == CcbChoice::Local) {
-        task_btn->setEnabled(false);
-        task_btn->setToolTip(ComposerContextBar::tr("A local agent run is always a multi-step task."));
+        QString local_why;
+        const bool local_ok = rv::executor_available(QString::fromLatin1(agt::kExecutorLocal), &local_why);
+        task_btn->setEnabled(local_ok);
+        task_btn->setToolTip(local_ok
+                                 ? ComposerContextBar::tr("Use the Python-backed local agent for a planned, multi-step "
+                                                          "task. Leave this off for a direct BYO model reply.")
+                                 : local_why);
     } else if (choice == CcbChoice::Harness) {
         task_btn->setEnabled(false);
         task_btn->setToolTip(ComposerContextBar::tr("A harness run is always a task."));
@@ -807,7 +833,7 @@ void ComposerContextBar::Impl::update_engine() {
                                                     "PLAN and ACTIVITY."));
     }
 
-    const bool task = choice != CcbChoice::CloudTurn;
+    const bool task = choice == CcbChoice::Local ? local_task : choice != CcbChoice::CloudTurn;
     budget->setVisible(task);
     if (!task) {
         budget->setChecked(false);
@@ -830,7 +856,7 @@ void ComposerContextBar::Impl::update_engine() {
                                                         "turn, one turn per step and a synthesis. It stops at whichever "
                                                         "budget limit comes first. Click to change the budget.")
                                      .arg(rv::format_credits(agt::kCloudTurnCredits)));
-        max_credits->setEnabled(!ccb_always_task(choice));
+        max_credits->setEnabled(choice != CcbChoice::Local && !ccb_always_task(choice));
         if (budget->property("warn").toBool() != warn) {
             budget->setProperty("warn", warn);
             budget->style()->unpolish(budget);
@@ -872,7 +898,11 @@ void ComposerContextBar::Impl::fill_add_menu() {
     sym->setToolTip(ComposerContextBar::tr("Type a ticker the agent should focus on"));
     QObject::connect(sym, &QAction::triggered, q, [this]() { symbol_entry->begin(); });
     add_menu->addMenu(portfolio_menu);
-    add_menu->addMenu(profile_menu);
+    // Investment profiles live on Fincept's hosted chat service. Device-local
+    // DeepSeek runs keep symbol, portfolio and file context without surfacing a
+    // dead cloud-only picker.
+    if (policy::fincept_chat_api_enabled())
+        add_menu->addMenu(profile_menu);
     add_menu->addSeparator();
     QAction* file = add_menu->addAction(file_reading ? ComposerContextBar::tr("Reading the file…")
                                                      : ComposerContextBar::tr("Attach a text file…"));
@@ -1006,6 +1036,13 @@ void ComposerContextBar::Impl::load_portfolios() {
 }
 
 void ComposerContextBar::Impl::load_profiles() {
+    if (!policy::fincept_chat_api_enabled()) {
+        profiles_loading = false;
+        profiles_loaded = true;
+        profiles.clear();
+        profiles_error.clear();
+        return;
+    }
     profiles_loading = true;
     profiles_error.clear();
     QPointer<ComposerContextBar> self(q);
@@ -1191,16 +1228,27 @@ void ComposerContextBar::set_engine(const QString& engine) {
     if (engine == QLatin1String(agt::kEngineLocal))
         d_->set_choice(CcbChoice::Local, false);
     else if (engine == QLatin1String(rv::kHarnessEngineId))
-        d_->set_choice(CcbChoice::Harness, false);
+        d_->set_choice(policy::chat_mode_harnesses_enabled() ? CcbChoice::Harness : CcbChoice::Local, false);
     else if (ccb_always_task(d_->choice))
-        d_->set_choice(CcbChoice::CloudTurn, false);
+        d_->set_choice(policy::fincept_cloud_agents_enabled() ? CcbChoice::CloudTurn : CcbChoice::Local, false);
 }
 
 bool ComposerContextBar::run_as_task() const {
-    return d_->choice != CcbChoice::CloudTurn;
+    return d_->choice == CcbChoice::Local ? d_->local_task : d_->choice != CcbChoice::CloudTurn;
 }
 
 void ComposerContextBar::set_run_as_task(bool on) {
+    if (!policy::fincept_cloud_agents_enabled()) {
+        d_->local_task = on;
+        d_->set_choice(CcbChoice::Local, false);
+        d_->update_engine();
+        return;
+    }
+    if (d_->choice == CcbChoice::Local) {
+        d_->local_task = on;
+        d_->update_engine();
+        return;
+    }
     if (ccb_always_task(d_->choice))
         return; // always a task
     d_->set_choice(on ? CcbChoice::CloudPlan : CcbChoice::CloudTurn, false);
@@ -1211,7 +1259,7 @@ agent_tasks::RunBudget ComposerContextBar::budget() const {
     if (!run_as_task())
         return b;
     b = d_->task_budget;
-    if (ccb_always_task(d_->choice))
+    if (d_->choice == CcbChoice::Local || ccb_always_task(d_->choice))
         b.max_credits = 0; // the user's own model / API key: no Fincept credits
     return b;
 }
@@ -1348,7 +1396,8 @@ QString ComposerContextBar::engine_label() const {
 }
 
 QString ComposerContextBar::executor_id() const {
-    return ccb_executor_of(d_->choice);
+    return d_->choice == CcbChoice::Local && d_->local_task ? QString::fromLatin1(agt::kExecutorLocal)
+                                                            : ccb_executor_of(d_->choice);
 }
 
 QString ComposerContextBar::budget_summary() const {

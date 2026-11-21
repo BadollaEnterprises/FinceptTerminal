@@ -11,6 +11,7 @@
 #include "screens/ai_chat/AiChatSessionRail.h"
 
 #include "core/agent/AgentRiskMarkers.h"
+#include "core/policy/CommunityPolicy.h"
 #include "screens/ai_chat/AiChatStyle.h"
 #include "ui/theme/ThemeManager.h"
 #include "ui/widgets/PanelHeader.h"
@@ -57,7 +58,9 @@ QString sr_wait_tip() {
 
 /// "GPT-4O", "SONNET", "FINCEPT" — the short model chip of a row.
 QString sr_model_label(const SessionSummary& s) {
-    QString m = s.model.trimmed();
+    if (policy::is_deprecated_llm_provider(s.provider))
+        return AicSessionRail::tr("LEGACY");
+    QString m = policy::normalize_llm_model(s.provider, s.model);
     if (m.isEmpty()) {
         m = s.provider.trimmed();
         if (m.startsWith(QLatin1String("harness:"), Qt::CaseInsensitive))
@@ -71,11 +74,14 @@ QString sr_model_label(const SessionSummary& s) {
 
 /// "openai / gpt-4o" — the long form for tooltips.
 QString sr_model_long(const SessionSummary& s) {
+    if (policy::is_deprecated_llm_provider(s.provider))
+        return AicSessionRail::tr("Legacy local model (disabled)");
+    const QString model = policy::normalize_llm_model(s.provider, s.model);
     if (s.provider.isEmpty())
-        return s.model;
-    if (s.model.isEmpty())
+        return model;
+    if (model.isEmpty())
         return s.provider;
-    return s.provider + QStringLiteral(" / ") + s.model;
+    return s.provider + QStringLiteral(" / ") + model;
 }
 
 /// Outside text (titles, snippets) in a tooltip: escaped rich text, so markup is never interpreted.

@@ -11,6 +11,7 @@
 #include "core/config/AppPaths.h"
 #include "core/events/EventBus.h"
 #include "core/logging/Logger.h"
+#include "core/policy/CommunityPolicy.h"
 #include "core/session/ScreenStateManager.h"
 #include "screens/ai_chat/AiChatComposer.h"
 #include "screens/ai_chat/AiChatContextRail.h"
@@ -19,6 +20,7 @@
 #include "screens/ai_chat/AiChatStartPage.h"
 #include "screens/ai_chat/AiChatTranscript.h"
 #include "services/llm/LlmErrors.h"
+#include "services/llm/LlmUsage.h"
 #include "services/llm/LlmService.h"
 #include "services/llm/ModelCatalog.h"
 #include "services/llm/ModelRouter.h"
@@ -80,13 +82,16 @@ void AiChatScreen::on_send() {
         return;
     if (!ai_chat::LlmService::instance().is_configured()) {
         show_start_page(false);
-        // Notices render Markdown; links open only when safe (http / https).
-        const QString ent_url = ui::enterprise::url_with_ref(ui::enterprise::site_url(), QStringLiteral("ai"));
-        add_notice(aichat::NoticeKind::Setup,
-                   tr("No LLM provider configured. Go to Settings > LLM Configuration to set up a provider.") +
-                       QStringLiteral("\n\n") + tr("Or use Fincept Terminal Enterprise — AI credits included.") +
-                       QStringLiteral(" [") + tr("See Enterprise ↗") + QStringLiteral("](") + ent_url +
-                       QStringLiteral(")"));
+        QString notice =
+            tr("No LLM provider configured. Go to Settings > LLM Configuration and add your own API key.");
+        if (policy::commercial_promotions_enabled()) {
+            // Notices render Markdown; links open only when safe (http / https).
+            const QString ent_url = ui::enterprise::url_with_ref(ui::enterprise::site_url(), QStringLiteral("ai"));
+            notice += QStringLiteral("\n\n") + tr("Or use Fincept Terminal Enterprise — AI credits included.") +
+                      QStringLiteral(" [") + tr("See Enterprise ↗") + QStringLiteral("](") + ent_url +
+                      QStringLiteral(")");
+        }
+        add_notice(aichat::NoticeKind::Setup, notice);
         return;
     }
     if (active_session_id_.isEmpty())
@@ -508,6 +513,7 @@ void AiChatScreen::finish_turn(const ai_chat::LlmResponse& response) {
     t.tokens = response.total_tokens;
     t.prompt_tokens = response.prompt_tokens > 0 ? response.prompt_tokens : -1;
     t.completion_tokens = response.completion_tokens > 0 ? response.completion_tokens : -1;
+    t.cached_prompt_tokens = response.cached_prompt_tokens > 0 ? response.cached_prompt_tokens : -1;
     t.cost_usd = response.cost_usd;
     if (ai_chat::provider_is_harness(provider))
         t.billing_note = response.billing_note; // a harness answer never touches Fincept credits
@@ -519,6 +525,9 @@ void AiChatScreen::finish_turn(const ai_chat::LlmResponse& response) {
         run_prompt_tokens_ = std::max<qint64>(run_prompt_tokens_, 0) + response.prompt_tokens;
     if (response.completion_tokens > 0)
         run_completion_tokens_ = std::max<qint64>(run_completion_tokens_, 0) + response.completion_tokens;
+    if (response.cached_prompt_tokens > 0)
+        run_cached_prompt_tokens_ =
+            std::max<qint64>(run_cached_prompt_tokens_, 0) + response.cached_prompt_tokens;
     if (response.cost_usd >= 0.0)
         run_cost_usd_ = std::max(run_cost_usd_, 0.0) + response.cost_usd;
     last_answer_ms_ = duration;
@@ -683,17 +692,10 @@ void AiChatScreen::show_fincept_notice(const ai_chat::LlmResponse& response) {
             text += QStringLiteral("\n\n") + reason;
     }
     text += QStringLiteral("\n\n") +
-            (credits ? tr("Top up your credits, or add your own provider API key in **Settings → LLM Configuration** "
-                          "to keep chatting.")
+            (credits ? tr("Select your configured DeepSeek or another BYO provider in "
+                          "**Settings → LLM Configuration** to keep chatting without Fincept credits.")
                      : tr("Sign in again (or check your Fincept API key), or add your own provider API key in "
                           "**Settings → LLM Configuration**."));
-    // What the plan would change, from the server's plan table (billing::PlanAccess; empty
-    // on Pro, without a table, or when Pro prices AI the same).
-    if (credits) {
-        const QString plan_note = ui::plan::out_of_credits_note(QStringLiteral("ai"));
-        if (!plan_note.isEmpty())
-            text += QStringLiteral("\n\n") + plan_note;
-    }
     const quint64 id = add_notice(credits ? aichat::NoticeKind::Credits : aichat::NoticeKind::SignIn, text);
     transcript_->set_live_turn(id); // RETRY
 }
@@ -812,10 +814,18 @@ void AiChatScreen::update_status() {
             text += QStringLiteral("  ") + tr("IN %1 / OUT %2")
                                                .arg(aichat::format_count(std::max<qint64>(run_prompt_tokens_, 0)),
                                                     aichat::format_count(std::max<qint64>(run_completion_tokens_, 0)));
+        if (run_cached_prompt_tokens_ > 0) {
+            const int pct = ai_chat::prompt_cache_hit_percent(static_cast<int>(run_prompt_tokens_),
+                                                              static_cast<int>(run_cached_prompt_tokens_));
+            text += QStringLiteral("  ") + tr("CACHE %1 (%2%)")
+                                               .arg(aichat::format_count(run_cached_prompt_tokens_))
+                                               .arg(pct);
+        }
         status_->set_text(QStringLiteral("tokens"), text);
         status_->set_tooltip(QStringLiteral("tokens"),
                              tr("%1 tokens used in this conversation (prompt + completion, all tool rounds, as reported "
-                                "by the provider). In / out covers answers received since the tab opened.")
+                                "by the provider). In / out and cache hits cover answers received since the tab opened. "
+                                "Cached tokens are included in input tokens but are typically billed at a lower rate.")
                                  .arg(QLocale().toString(total_tokens_)));
         status_->set_item_visible(QStringLiteral("tokens"), true);
     } else {
@@ -861,6 +871,7 @@ void AiChatScreen::update_stats() {
     s.tokens = total_tokens_;
     s.prompt_tokens = run_prompt_tokens_;
     s.completion_tokens = run_completion_tokens_;
+    s.cached_prompt_tokens = run_cached_prompt_tokens_;
     s.cost_usd = run_cost_usd_;
     s.last_ms = last_answer_ms_;
     s.as_of = last_answer_at_;

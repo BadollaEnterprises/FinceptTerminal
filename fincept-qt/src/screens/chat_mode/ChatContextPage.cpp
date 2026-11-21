@@ -11,6 +11,7 @@
 #include "screens/chat_mode/ChatContextPage.h"
 
 #include "core/logging/Logger.h"
+#include "core/policy/CommunityPolicy.h"
 #include "screens/chat_mode/ChatModeService.h"
 #include "screens/chat_mode/ComposerContextBar.h"
 #include "screens/chat_mode/RunViewLogic.h"
@@ -147,7 +148,7 @@ QString ccp_engine_text(const agt::TaskRun& r) {
     if (r.engine == QLatin1String(rv::kHarnessEngineId)) {
         const rv::HarnessEngineOption h = rv::harness_engine_option_now();
         return h.enabled ? ChatContextPage::tr("Harness · %1").arg(h.label)
-                         : ChatContextPage::tr("Harness (Claude Code / Codex)");
+                         : ChatContextPage::tr("Local agent harness");
     }
     const QString base = r.executor_id() == QLatin1String(agt::kExecutorCloudPlan)
                              ? ChatContextPage::tr("Cloud · multi-step task")
@@ -418,6 +419,10 @@ void ChatContextPage::Impl::build() {
         mcp_key = ccp_label(grid_host, "ccpKey");
         mcp_value = ccp_label(grid_host, "ccpValue");
         mcp_value->setWordWrap(true);
+        const bool hosted_chat = policy::fincept_chat_api_enabled();
+        mcp_refresh->setVisible(hosted_chat);
+        mcp_key->setVisible(hosted_chat);
+        mcp_value->setVisible(hosted_chat);
         grid->addWidget(bridge_key, 0, 0, Qt::AlignTop);
         grid->addWidget(bridge_value, 0, 1);
         grid->addWidget(mcp_key, 1, 0, Qt::AlignTop);
@@ -559,7 +564,7 @@ void ChatContextPage::Impl::wire() {
                 retranslate();
                 break;
             case QEvent::Show:
-                if (!mcp_loaded_once && !mcp_loading)
+                if (policy::fincept_chat_api_enabled() && !mcp_loaded_once && !mcp_loading)
                     q->refresh_mcp(); // once, on the first show (never per tick)
                 refresh_all();
                 break;
@@ -581,7 +586,9 @@ void ChatContextPage::Impl::retranslate() {
     add_file->setToolTip(ChatContextPage::tr("Attach a text file to your next message"));
     add_file->setAccessibleName(ChatContextPage::tr("Attach a text file"));
     add_more->setText(ChatContextPage::tr("+ MORE"));
-    add_more->setToolTip(ChatContextPage::tr("Portfolio, investment profile, clipboard text…"));
+    add_more->setToolTip(policy::fincept_chat_api_enabled()
+                             ? ChatContextPage::tr("Portfolio, investment profile, clipboard text…")
+                             : ChatContextPage::tr("Portfolio or clipboard text…"));
     add_more->setAccessibleName(ChatContextPage::tr("More context to attach"));
     sent_title->setText(ChatContextPage::tr("SENT WITH THIS RUN"));
     tools_header->set_title(ChatContextPage::tr("Tools"));
@@ -758,6 +765,14 @@ void ChatContextPage::Impl::refresh_context() {
 }
 
 void ChatContextPage::Impl::refresh_tools() {
+    if (!policy::fincept_chat_api_enabled()) {
+        bridge_key->setText(ChatContextPage::tr("Local terminal tools"));
+        bridge_value->setText(ChatContextPage::tr("available to DeepSeek"));
+        bridge_value->setToolTip(ChatContextPage::tr("Local runs call terminal tools directly; no Fincept bridge or credits are used."));
+        bridge_value->setAccessibleName(ChatContextPage::tr("Local terminal tools are available to DeepSeek"));
+        ccp_set_tone(bridge_value, "ok");
+        return;
+    }
     const CcpTools t = ccp_tools(TerminalToolBridge::instance().status());
     bridge_value->setText(t.text);
     bridge_value->setToolTip(t.tip);
@@ -1028,6 +1043,8 @@ void ChatContextPage::set_context_bar(ComposerContextBar* bar) {
 }
 
 void ChatContextPage::refresh_mcp() {
+    if (!policy::fincept_chat_api_enabled())
+        return;
     if (d_->mcp_loading)
         return;
     d_->mcp_loading = true;

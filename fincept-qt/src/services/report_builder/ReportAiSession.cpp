@@ -102,11 +102,17 @@ bool ReportAiSession::send() {
         return false;
     if (backend_->model_info().needs_setup)
         return false;
-    return start_request();
+    return start_request(AiCachePolicy::PreferCache);
 }
 
 bool ReportAiSession::retry() {
-    return send();
+    if (!backend_ || prompt_.user.isEmpty())
+        return false;
+    if (state_ == State::Idle || state_ == State::Streaming)
+        return false;
+    if (backend_->model_info().needs_setup)
+        return false;
+    return start_request(AiCachePolicy::BypassCache);
 }
 
 void ReportAiSession::cancel() {
@@ -291,7 +297,7 @@ void ReportAiSession::set_state(State s) {
     emit state_changed();
 }
 
-bool ReportAiSession::start_request() {
+bool ReportAiSession::start_request(AiCachePolicy cache_policy) {
     const quint64 id = ++ras_next_id();
     active_id_ = id;
     stream_.clear();
@@ -316,7 +322,7 @@ bool ReportAiSession::start_request() {
         timeout_timer_->start(timeout_ms_);
     QPointer<ReportAiSession> self(this);
     backend_->start(
-        id, prompt_.system, prompt_.user,
+        id, prompt_.system, prompt_.user, cache_policy,
         [self](quint64 rid, const QString& chunk) {
             if (self)
                 self->on_chunk(rid, chunk);

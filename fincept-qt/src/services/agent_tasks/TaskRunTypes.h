@@ -73,7 +73,12 @@ inline constexpr const char* kEngineLocal = "local";
 /// IRunExecutor::engine_id() values; executor_for() maps (engine, plan_first) here.
 inline constexpr const char* kExecutorCloudTurn = "cloud_turn"; ///< one cloud reply = one run (chat)
 inline constexpr const char* kExecutorCloudPlan = "cloud_plan"; ///< plan turn + one turn per step + synthesis
+inline constexpr const char* kExecutorByoChat = "byo_chat";     ///< one direct user-owned API reply (no Python)
 inline constexpr const char* kExecutorLocal = "local";          ///< AgentService's local agentic engine
+
+/// The engine that may execute in this build. Empty and saved cloud requests
+/// become the user's local/BYO agent when Fincept cloud agents are disabled.
+QString runtime_engine(const QString& requested_engine);
 
 /// RunRequest::origin values.
 inline constexpr const char* kOriginChat = "chat";         ///< a message typed in a Chat Mode conversation

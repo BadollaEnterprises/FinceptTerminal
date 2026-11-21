@@ -14,6 +14,8 @@
 #include "services/agent_tasks/RunPlanPrompts.h"
 #include "services/agent_tasks/TaskRunTypes.h"
 
+#include "core/metrics/LocalUsageMetrics.h"
+
 #include <QDateTime>
 #include <QHash>
 #include <QJsonArray>
@@ -383,6 +385,7 @@ class TestAgentTaskExecutors : public QObject {
     void local_payload_helpers();
     void local_happy_path();
     void local_question_and_answer();
+    void local_waiting_cancel_records_usage();
     void local_pause_before_task_id_then_resume();
     void local_cancel_and_cancel_again();
     void local_budget_stop();
@@ -984,6 +987,7 @@ void TestAgentTaskExecutors::local_payload_helpers() {
 }
 
 void TestAgentTaskExecutors::local_happy_path() {
+    fincept::metrics::LocalUsageMetrics::reset_for_test();
     auto* engine = new FakeEngine;
     LocalAgenticExecutor ex{std::unique_ptr<ILocalAgentEngine>(engine)};
     Recorder rec(&ex);
@@ -1029,6 +1033,11 @@ void TestAgentTaskExecutors::local_happy_path() {
     QCOMPARE(rec.finishes[0].status, RunStatus::Completed);
     QCOMPARE(rec.finishes[0].final_text, QStringLiteral("Final answer: hold AAPL"));
     QVERIFY(!rec.negative_usage);
+    const auto usage = fincept::metrics::LocalUsageMetrics::snapshot();
+    QCOMPARE(usage.llm_requests, 1);
+    QCOMPARE(usage.successful_llm_requests, 1);
+    QCOMPARE(usage.provider_tokens.value(QStringLiteral("openai")), 2000);
+    QCOMPARE(usage.fincept_credits_used, 0);
     pump();
     engine->emit_event(QStringLiteral("t1"), kDone); // late duplicates are ignored
     QCOMPARE(rec.finishes.size(), 1);
@@ -1072,7 +1081,31 @@ void TestAgentTaskExecutors::local_question_and_answer() {
     QCOMPARE(rec.finishes[0].status, RunStatus::Completed);
 }
 
+void TestAgentTaskExecutors::local_waiting_cancel_records_usage() {
+    fincept::metrics::LocalUsageMetrics::reset_for_test();
+    auto* engine = new FakeEngine;
+    LocalAgenticExecutor ex{std::unique_ptr<ILocalAgentEngine>(engine)};
+    Recorder rec(&ex);
+    const TaskRun run = local_run(QStringLiteral("loc-wait-cancel"));
+    ex.start(run, {});
+    engine->emit_event(QStringLiteral("tw"), R"({"kind":"task_started","query":"Review AAPL"})",
+                       QStringLiteral("req-1"));
+    engine->emit_event(QStringLiteral("tw"), kPlanReady);
+    engine->emit_event(QStringLiteral("tw"), kStepStart0);
+    engine->emit_event(QStringLiteral("tw"), kStepEnd0);
+    engine->emit_event(QStringLiteral("tw"),
+                       R"({"kind":"question","step_index":0,"question":"Which portfolio?"})");
+    QCOMPARE(rec.waits.size(), 1);
+    ex.cancel(run.id);
+
+    const auto usage = fincept::metrics::LocalUsageMetrics::snapshot();
+    QCOMPARE(usage.llm_requests, 1);
+    QCOMPARE(usage.provider_tokens.value(QStringLiteral("openai")), 1200);
+    QCOMPARE(engine->calls.last(), QStringLiteral("cancel:tw"));
+}
+
 void TestAgentTaskExecutors::local_pause_before_task_id_then_resume() {
+    fincept::metrics::LocalUsageMetrics::reset_for_test();
     auto* engine = new FakeEngine;
     LocalAgenticExecutor ex{std::unique_ptr<ILocalAgentEngine>(engine)};
     Recorder rec(&ex);
@@ -1089,6 +1122,10 @@ void TestAgentTaskExecutors::local_pause_before_task_id_then_resume() {
     QCOMPARE(rec.waits.size(), 1);
     QCOMPARE(rec.waits[0].first, RunStatus::Paused);
     QVERIFY(rec.finishes.isEmpty());
+    const auto paused_usage = fincept::metrics::LocalUsageMetrics::snapshot();
+    QCOMPARE(paused_usage.llm_requests, 1);
+    QCOMPARE(paused_usage.successful_llm_requests, 1);
+    QCOMPARE(paused_usage.provider_tokens.value(QStringLiteral("openai")), 1200);
     pump();
 
     // resume_run(): Python continues the same task from its checkpoint.

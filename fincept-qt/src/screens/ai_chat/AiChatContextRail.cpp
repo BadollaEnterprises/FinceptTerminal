@@ -9,6 +9,7 @@
 // click is being handled).
 
 #include "screens/ai_chat/AiChatContextRail.h"
+#include "services/llm/LlmUsage.h"
 
 #include "screens/ai_chat/AiChatStyle.h"
 #include "storage/repositories/PortfolioRepository.h"
@@ -754,11 +755,17 @@ void AicContextRail::update_stats() {
             tr("%1 tokens in this session, as the services reported them").arg(loc.toString(s.tokens)));
     const bool run = s.prompt_tokens >= 0 || s.completion_tokens >= 0;
     p.st_run->setVisible(run);
-    if (run)
-        cr_set_text(p.st_run, tr("in %1 / out %2 this run")
-                                  .arg(s.prompt_tokens >= 0 ? format_count(s.prompt_tokens) : QStringLiteral("—"),
-                                       s.completion_tokens >= 0 ? format_count(s.completion_tokens)
-                                                                : QStringLiteral("—")));
+    if (run) {
+        QString usage = tr("in %1 / out %2 this run")
+                            .arg(s.prompt_tokens >= 0 ? format_count(s.prompt_tokens) : QStringLiteral("—"),
+                                 s.completion_tokens >= 0 ? format_count(s.completion_tokens) : QStringLiteral("—"));
+        if (s.cached_prompt_tokens > 0) {
+            const int pct = ai_chat::prompt_cache_hit_percent(static_cast<int>(s.prompt_tokens),
+                                                              static_cast<int>(s.cached_prompt_tokens));
+            usage += tr(" · cached %1 (%2%)").arg(format_count(s.cached_prompt_tokens)).arg(pct);
+        }
+        cr_set_text(p.st_run, usage);
+    }
     set_row(kCrStCost, s.cost_usd >= 0.0,
             QStringLiteral("$") + loc.toString(s.cost_usd, 'f', s.cost_usd < 1.0 ? 4 : 2),
             tr("The sum of the costs the services reported"));

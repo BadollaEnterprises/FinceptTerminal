@@ -3,6 +3,8 @@
 
 #include "services/agent_tasks/TaskRunTypes.h"
 
+#include "core/policy/CommunityPolicy.h"
+
 #include <QCoreApplication>
 #include <QJsonDocument>
 
@@ -181,10 +183,22 @@ QString executor_for(const QString& engine, bool plan_first) {
     if (engine == QLatin1String(kEngineCloud))
         return QString::fromLatin1(plan_first ? kExecutorCloudPlan : kExecutorCloudTurn);
     if (engine == QLatin1String(kEngineLocal))
-        return QString::fromLatin1(kExecutorLocal);
+        return QString::fromLatin1(plan_first ? kExecutorLocal : kExecutorByoChat);
     if (engine == QLatin1String("harness")) // HarnessRunExecutor (kEngineHarness / kExecutorHarness)
         return QStringLiteral("harness");
     return {};
+}
+
+QString runtime_engine(const QString& requested_engine) {
+    const QString requested = requested_engine.trimmed();
+    const QString id = requested.toLower();
+    if (id.isEmpty() || id == QLatin1String(kEngineCloud))
+        return QString::fromLatin1(policy::fincept_cloud_agents_enabled() ? kEngineCloud : kEngineLocal);
+    if (id == QLatin1String(kEngineLocal))
+        return QString::fromLatin1(kEngineLocal);
+    if (id == QLatin1String("harness"))
+        return QString::fromLatin1(policy::chat_mode_harnesses_enabled() ? "harness" : kEngineLocal);
+    return requested;
 }
 
 bool is_unattended_origin(const QString& origin) {
@@ -296,7 +310,8 @@ double estimate_cloud_plan_credits(int steps) {
 RunCostEstimate estimate_run_cost(const QString& executor_id, const RunBudget& budget, int hard_max_steps) {
     RunCostEstimate e;
     const int hard = qMax(1, hard_max_steps);
-    if (executor_id == QLatin1String(kExecutorLocal) || executor_id == QLatin1String("harness")) {
+    if (executor_id == QLatin1String(kExecutorLocal) || executor_id == QLatin1String(kExecutorByoChat) ||
+        executor_id == QLatin1String("harness")) {
         // The user's own model (or harness, on its own API key): no Fincept credits; steps only.
         e.uses_credits = false;
         e.steps = budget.max_steps > 0 ? budget.max_steps : hard;

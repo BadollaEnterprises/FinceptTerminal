@@ -46,7 +46,8 @@ class AicComposer : public QFrame {
     QPushButton* send_button() const { return send_btn_; }
     QPushButton* attach_button() const { return attach_btn_; }
     /// Reasoning effort for the next message: "low" | "medium" | "high" | "xhigh" | "max"
-    /// (default medium; remembered). High and above cost extra credits on the Fincept model.
+    /// (default medium; remembered). High and above may use more provider tokens;
+    /// only an explicitly enabled metered Fincept route uses Fincept credits.
     QString effort() const { return effort_; }
 
     QString text() const;

@@ -668,10 +668,10 @@ void AiChatBubble::on_send() {
         return;
 
     // Fail fast if LLM is not configured — inline notice beats a delayed network failure.
-    if (!ai_chat::LlmService::instance().is_configured()) {
+    const ai_chat::ChatRoute quick_route{QString::fromLatin1(ai_chat::kFeatureQuickChat), QString(), QString()};
+    if (!ai_chat::LlmService::instance().is_configured(quick_route)) {
         add_turn(aic::TurnRole::Notice,
-                 tr("AI chat is not configured. Open **Settings → LLM Config** and add an API key or pick the "
-                    "Fincept provider."),
+                 tr("AI chat is not configured. Open **Settings → LLM Config** and add your own API key."),
                  aic::NoticeKind::Setup);
         return;
     }
@@ -685,14 +685,14 @@ void AiChatBubble::on_send() {
     chat_history_.push_back({"user", text});
 
     // The answer's block exists from the start (it names the model and says STREAMING).
-    const ai_chat::ModelChoice route =
+    const ai_chat::ModelChoice route_choice =
         ai_chat::ModelRouter::instance().resolve(QString::fromLatin1(ai_chat::kFeatureQuickChat));
     aic::Turn a;
     a.role = aic::TurnRole::Assistant;
     a.state = aic::TurnState::Streaming;
-    a.provider = route.provider_id();
-    a.model = route.model;
-    a.route_label = route.label;
+    a.provider = route_choice.provider_id();
+    a.model = route_choice.model;
+    a.route_label = route_choice.label;
     a.when = QDateTime::currentDateTime();
     streaming_turn_ = transcript_->append_turn(a);
     request_started_ms_ = QDateTime::currentMSecsSinceEpoch();
@@ -718,7 +718,7 @@ void AiChatBubble::on_send() {
                 Qt::QueuedConnection);
         },
         ai_chat::LlmService::ToolPolicy::NoNavigation, QString(),
-        ai_chat::ChatRoute{QString::fromLatin1(ai_chat::kFeatureQuickChat), QString(), QString()});
+        quick_route);
 }
 
 // Mirror of an AI Chat tab turn that operates the terminal.
@@ -985,16 +985,11 @@ void AiChatBubble::on_streaming_done(ai_chat::LlmResponse response) {
 // ── Fincept credits / sign-in notice ──────────────────────────────────────────
 void AiChatBubble::add_fincept_notice(const QString& error) {
     const bool credits = ai_chat::classify_llm_error(error) == ai_chat::LlmErrorKind::FinceptOutOfCredits;
-    QString text = credits ? tr("**You're out of Fincept credits.** Top up, or add your own provider API key in "
+    QString text = credits ? tr("**The Fincept-hosted model is unavailable under the community credit firewall.** "
+                                "Select your configured DeepSeek or another BYO provider in "
                                 "**Settings → LLM Configuration**.")
                            : tr("**Fincept did not accept your sign-in.** Sign in again, or add your own provider "
                                 "API key in **Settings → LLM Configuration**.");
-    if (credits) {
-        // What the plan would change, from the server's plan table (empty without one).
-        const QString plan_note = ui::plan::out_of_credits_note(QStringLiteral("ai"));
-        if (!plan_note.isEmpty())
-            text += QStringLiteral("\n\n") + plan_note;
-    }
     add_turn(aic::TurnRole::Notice, text, credits ? aic::NoticeKind::Credits : aic::NoticeKind::SignIn);
 }
 

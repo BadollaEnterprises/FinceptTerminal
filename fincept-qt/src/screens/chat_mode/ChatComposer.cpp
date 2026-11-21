@@ -9,6 +9,7 @@
 
 #include "screens/chat_mode/ChatComposer.h"
 
+#include "core/policy/CommunityPolicy.h"
 #include "screens/chat_mode/ChatModeService.h"
 #include "screens/chat_mode/ComposerContextBar.h"
 #include "screens/chat_mode/RunViewLogic.h"
@@ -586,6 +587,9 @@ void ChatComposer::Impl::build() {
     optimize = new QPushButton(q);
     optimize->setObjectName(QStringLiteral("ccmpGhost"));
     optimize->setCursor(Qt::PointingHandCursor);
+    // Community mode routes this through the configured BYO provider; hosted
+    // mode keeps the server implementation. The capability exists in both.
+    optimize->setVisible(true);
     row->addWidget(optimize);
 
     send = new QPushButton(q);
@@ -782,7 +786,7 @@ void ChatComposer::Impl::retranslate() {
     if (profile->count() > 0)
         profile->setItemText(0, ChatComposer::tr("No profile"));
     optimize->setText(optimizing ? ChatComposer::tr("OPTIMIZING…") : ChatComposer::tr("OPTIMIZE"));
-    optimize->setToolTip(ChatComposer::tr("Rewrite the prompt with AI (one request to the Fincept server)"));
+    optimize->setToolTip(ChatComposer::tr("Rewrite the prompt with your configured BYO model"));
     optimize->setAccessibleName(ChatComposer::tr("Optimize the prompt"));
     meter->setAccessibleName(ChatComposer::tr("Message length and budget"));
     q->set_awaiting_answer(awaiting, question); // placeholder + banner question
@@ -840,12 +844,19 @@ void ChatComposer::Impl::update_perm() {
     QString text;
     QString tip;
     if (engine == QLatin1String(agt::kEngineLocal)) {
-        text = ChatComposer::tr("MAY: your model · terminal tools · no credits");
-        tip = ChatComposer::tr("The terminal's own agentic engine runs the task with your LLM profile and the "
-                               "terminal's tools. It spends no Fincept credits and never places an order.");
+        if (bar->run_as_task()) {
+            text = ChatComposer::tr("MAY: your BYO model · terminal tools · paper only");
+            tip = ChatComposer::tr("The terminal's own agentic engine runs the task with your selected BYO LLM "
+                                   "profile and terminal tools. Provider usage is billed directly to your API key; "
+                                   "it never places an order.");
+        } else {
+            text = ChatComposer::tr("DIRECT: your BYO model · no terminal tools");
+            tip = ChatComposer::tr("This message goes directly to your configured API provider without the Python "
+                                   "agent runtime or terminal tools. It uses 0 Fincept credits.");
+        }
     } else if (engine == QLatin1String(rv::kHarnessEngineId)) {
         text = ChatComposer::tr("MAY: read-only · paper only · your API key");
-        tip = ChatComposer::tr("Your agent harness (Claude Code or Codex) works read-only with the terminal's tools "
+        tip = ChatComposer::tr("Your local agent harness works read-only with the terminal's tools "
                                "and paper only: it never touches a real order. It is billed to your own API key. "
                                "Chat Mode has no full-access mode.");
     } else {

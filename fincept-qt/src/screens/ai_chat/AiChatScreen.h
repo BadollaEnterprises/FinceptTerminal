@@ -161,6 +161,7 @@ class AiChatScreen : public QWidget,
     // This run's answers only (the database keeps totals, not in / out / cost).
     qint64 run_prompt_tokens_ = -1;
     qint64 run_completion_tokens_ = -1;
+    qint64 run_cached_prompt_tokens_ = -1;
     double run_cost_usd_ = -1.0;
     qint64 last_answer_ms_ = -1;
     QDateTime last_answer_at_;

@@ -63,6 +63,7 @@ class TestAgentTaskRuns : public QObject {
     void restart_semantics();
     void budget_checks();
     void executor_mapping_and_origins();
+    void community_runtime_engine_uses_local_byo();
     void request_json_round_trip();
     void plan_json_round_trip();
 };
@@ -73,6 +74,16 @@ void TestAgentTaskRuns::sse_basic_blocks() {
     QCOMPARE(msgs[0].event, QStringLiteral("text-delta"));
     QCOMPARE(msgs[0].data, QByteArray("{\"text\":\"Hi\"}"));
     QCOMPARE(msgs[1].event, QStringLiteral("finish"));
+}
+
+void TestAgentTaskRuns::community_runtime_engine_uses_local_byo() {
+    const QString cloud = QString::fromLatin1(kEngineCloud);
+    const QString local = QString::fromLatin1(kEngineLocal);
+    QCOMPARE(runtime_engine(QString()), local);
+    QCOMPARE(runtime_engine(cloud), local);
+    QCOMPARE(runtime_engine(local), local);
+    QCOMPARE(runtime_engine(QStringLiteral("harness")), QStringLiteral("local"));
+    QCOMPARE(runtime_engine(QStringLiteral("unknown")), QStringLiteral("unknown"));
 }
 
 void TestAgentTaskRuns::sse_multiline_crlf_comments() {
@@ -396,6 +407,7 @@ void TestAgentTaskRuns::executor_mapping_and_origins() {
     QCOMPARE(executor_for(QStringLiteral("cloud"), false), QStringLiteral("cloud_turn"));
     QCOMPARE(executor_for(QStringLiteral("cloud"), true), QStringLiteral("cloud_plan"));
     QCOMPARE(executor_for(QStringLiteral("local"), true), QStringLiteral("local"));
+    QCOMPARE(runtime_engine(QStringLiteral("harness")), QStringLiteral("local"));
     QVERIFY(executor_for(QStringLiteral("mystery"), false).isEmpty());
     QVERIFY(is_unattended_origin(QStringLiteral("schedule")));
     QVERIFY(!is_unattended_origin(QStringLiteral("chat")));

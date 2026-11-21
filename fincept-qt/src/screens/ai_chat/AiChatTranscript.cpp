@@ -13,6 +13,7 @@
 // text from Entry::tail_begin), at most every style::kStreamFlushMs.
 
 #include "screens/ai_chat/AiChatTranscript.h"
+#include "services/llm/LlmUsage.h"
 
 #include "core/agent/AgentRiskMarkers.h"
 #include "core/report/ReportBlocks.h"
@@ -203,7 +204,7 @@ QVector<TrNoticeAction> tr_notice_actions(const Turn& t) {
     const TrNoticeAction model{TurnAction::ModelSettings, V::tr("MODEL SETTINGS"), false, false};
     switch (t.notice) {
         case NoticeKind::Credits:
-            return {TrNoticeAction{TurnAction::ViewPlans, V::tr("VIEW PLANS"), false, false}, llm, retry};
+            return {llm, retry};
         case NoticeKind::SignIn:
             return {llm, retry};
         case NoticeKind::Route:
@@ -1601,6 +1602,10 @@ void AicTurnWidget::refresh_header() {
             tok_tip = V::tr("%1 in · %2 out")
                           .arg(t.prompt_tokens >= 0 ? QLocale().toString(t.prompt_tokens) : QStringLiteral("?"),
                                t.completion_tokens >= 0 ? QLocale().toString(t.completion_tokens) : QStringLiteral("?"));
+        if (t.cached_prompt_tokens > 0) {
+            const int pct = ai_chat::prompt_cache_hit_percent(t.prompt_tokens, t.cached_prompt_tokens);
+            tok_tip += V::tr(" · %1 cached (%2%)").arg(QLocale().toString(t.cached_prompt_tokens)).arg(pct);
+        }
     }
     if (t.role == TurnRole::Assistant && t.duration_ms >= 0)
         parts << format_ms(t.duration_ms);

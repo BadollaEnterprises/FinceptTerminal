@@ -9,6 +9,8 @@
 
 #include "services/agent_tasks/LocalAgenticExecutor.h"
 
+#include "core/metrics/LocalUsageMetrics.h"
+
 #include <QHash>
 #include <QJsonArray>
 #include <QJsonObject>
@@ -44,6 +46,11 @@ RunEvent lae_verbose(RunEventKind kind, const QString& title, const QString& bod
 QString lae_clip(const QString& text, int max_chars) {
     const QString t = text.trimmed();
     return t.size() > max_chars ? t.left(max_chars - 1) + QChar(0x2026) : t;
+}
+
+QString lae_provider_id(const QString& label) {
+    const qsizetype separator = label.indexOf(QStringLiteral(" · "));
+    return (separator < 0 ? label : label.left(separator)).trimmed().toLower();
 }
 
 /// The engine config of a run: its budget for the Python BudgetGuard, and never
@@ -85,6 +92,9 @@ struct LocalAgenticExecutor::Impl final : ILocalAgentListener {
         int resume_from = 0;     ///< task_resumed.from_step of the current process
         int last_ended_step = -1;
         qint64 tokens_seen = 0;  ///< budget.tokens_used already reported for the current process
+        qint64 tokens_total = 0; ///< aggregate across start/resume processes for persistent BYO accounting
+        QString llm_provider;
+        bool usage_recorded = false;
         bool ended = false;      ///< finished() / waiting(Paused) reported, or handed back to the service
     };
 
@@ -184,10 +194,19 @@ struct LocalAgenticExecutor::Impl final : ILocalAgentListener {
             by_request.insert(request_id, id);
     }
 
+    void record_usage(Run* r, bool success) {
+        if (!r->usage_recorded && r->tokens_total > 0 && !r->llm_provider.isEmpty()) {
+            metrics::LocalUsageMetrics::record_llm(r->llm_provider, r->tokens_total, 0,
+                                                   success);
+            r->usage_recorded = true;
+        }
+    }
+
     void end(Run* r, RunStatus status, const QString& final_text, const QString& error) {
         if (r->ended)
             return;
         r->ended = true;
+        record_usage(r, status == RunStatus::Completed);
         const QString id = r->id;
         log(id, QStringLiteral("ended: %1").arg(run_status_id(status)));
         emit q->finished(id, status, final_text, error);
@@ -214,6 +233,7 @@ struct LocalAgenticExecutor::Impl final : ILocalAgentListener {
         if (delta <= 0)
             return;
         r->tokens_seen = used;
+        r->tokens_total += delta;
         emit q->usage(r->id, 0, static_cast<int>(delta)); // the user's own LLM: tokens, never credits
     }
 
@@ -474,6 +494,7 @@ struct LocalAgenticExecutor::Impl final : ILocalAgentListener {
                 return;
             }
             const int at = ev.value(QStringLiteral("at_step")).toInt();
+            record_usage(r, true);
             r->ended = true; // parked: resume_run() starts the run again (resume_task)
             emit q->event(id, lae_event(RunEventKind::Status, at <= 0 ? tr("Paused before the first step")
                                                                       : tr("Paused after step %1").arg(at)));
@@ -576,6 +597,7 @@ void LocalAgenticExecutor::start(const TaskRun& run, const QVector<RunStep>& ste
         QTimer::singleShot(0, this, [this, id, ready]() { d_->fail_not_ready(id, ready); });
         return;
     }
+    r->llm_provider = lae_provider_id(ready.llm_label);
     QJsonObject d;
     if (!ready.llm_label.isEmpty())
         d["llm"] = ready.llm_label;
@@ -684,6 +706,7 @@ void LocalAgenticExecutor::cancel(const QString& run_id) {
         // outright; the service ends the run itself.
         if (!r->task_id.isEmpty())
             d_->engine->cancel_task(r->task_id);
+        d_->record_usage(r, true);
         r->ended = true;
         d_->drop_later(run_id);
         return;

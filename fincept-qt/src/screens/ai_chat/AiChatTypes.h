@@ -155,7 +155,7 @@ enum class NoticeKind {
     None,
     Info,       ///< plain system line ("Could not load this conversation …")
     Error,      ///< a failure with a plain reason (attachment unreadable, no session …)
-    Credits,    ///< out of Fincept credits (VIEW PLANS · LLM SETTINGS · RETRY) + plan line
+    Credits,    ///< hosted route unavailable (LLM SETTINGS · RETRY)
     SignIn,     ///< Fincept refused the sign-in (LLM SETTINGS · RETRY)
     Route,      ///< a harness was unavailable — answered by the next model (MODEL SETTINGS)
     RouteOffer, ///< "ask": ANSWER WITH <offer_label> · MODEL SETTINGS
@@ -194,6 +194,7 @@ struct Turn {
     int tokens = 0;                  ///< total tokens as reported (0 = not reported)
     int prompt_tokens = -1;          ///< this run only (-1 = not known)
     int completion_tokens = -1;
+    int cached_prompt_tokens = -1;   ///< subset of prompt_tokens served from provider cache
     qint64 duration_ms = -1;         ///< request → final answer (this run only)
     double cost_usd = -1.0;          ///< reported by a harness; < 0 = not reported
     QString billing_note;            ///< "0 credits · billed to your Anthropic API key"

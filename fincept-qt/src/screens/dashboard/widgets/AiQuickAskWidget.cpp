@@ -1,9 +1,11 @@
 #include "screens/dashboard/widgets/AiQuickAskWidget.h"
+#include "screens/dashboard/widgets/QuickAskAnswerCache.h"
 
 #include "core/events/EventBus.h"
 #include "core/logging/Logger.h"
 #include "services/llm/LlmErrors.h"
 #include "services/llm/ModelRouter.h"
+#include "storage/cache/CacheManager.h"
 #include "ui/theme/Theme.h"
 #include "ui/widgets/ModelBadge.h"
 #include "ui/widgets/PlanHint.h"
@@ -164,7 +166,8 @@ void AiQuickAskWidget::showEvent(QShowEvent* e) {
 }
 
 void AiQuickAskWidget::refresh_config_state() {
-    const bool configured = ai_chat::LlmService::instance().is_configured();
+    const ai_chat::ChatRoute quick_route{QString::fromLatin1(ai_chat::kFeatureQuickAsk), QString(), QString()};
+    const bool configured = ai_chat::LlmService::instance().is_configured(quick_route);
     if (!configured) {
         // A reply already in flight still lands; only an idle tile shows the notice.
         if (pending_session_.isEmpty())
@@ -185,21 +188,39 @@ void AiQuickAskWidget::on_ask() {
     if (question.isEmpty())
         return;
     auto& llm = ai_chat::LlmService::instance();
-    if (!llm.is_configured()) {
+    const ai_chat::ChatRoute quick_route{QString::fromLatin1(ai_chat::kFeatureQuickAsk), QString(), QString()};
+    if (!llm.is_configured(quick_route)) {
         set_state(AskState::NotConfigured);
         return;
     }
 
     cancel_in_flight(); // a new question supersedes the one in flight
-    const quint64 gen = request_gen_;
-    pending_session_ = kQuickAskSessionPrefix + QUuid::createUuid().toString(QUuid::WithoutBraces);
-    req_provider_ = ai_chat::ModelRouter::instance().resolve(QString::fromLatin1(ai_chat::kFeatureQuickAsk)).label;
+    const ai_chat::ModelChoice choice =
+        ai_chat::ModelRouter::instance().resolve(QString::fromLatin1(ai_chat::kFeatureQuickAsk));
+    req_provider_ = choice.label;
     req_model_.clear();
     last_tokens_ = 0;
+    answer_reused_ = false;
     last_error_.clear();
     stream_buffer_.clear();
     rendered_len_ = 0;
     answer_->clear();
+
+    pending_cache_key_ = QStringLiteral("ai:quick_ask:") +
+                         quick_ask_answer_cache_key(question, choice.provider_id(), choice.model);
+    if (const auto cached = CacheManager::instance().try_get(pending_cache_key_)) {
+        pending_cache_key_.clear();
+        stream_buffer_ = cached->trimmed();
+        answer_->document()->setMarkdown(
+            stream_buffer_,
+            QTextDocument::MarkdownFeatures(QTextDocument::MarkdownDialectGitHub | QTextDocument::MarkdownNoHTML));
+        answer_reused_ = true;
+        set_state(AskState::Answered);
+        return;
+    }
+
+    const quint64 gen = request_gen_;
+    pending_session_ = kQuickAskSessionPrefix + QUuid::createUuid().toString(QUuid::WithoutBraces);
     set_state(AskState::Thinking);
     LOG_DEBUG("AiQuickAsk", QString("Question sent (%1 chars)").arg(question.size())); // never the text (P14)
 
@@ -219,16 +240,19 @@ void AiQuickAskWidget::on_ask() {
                 Qt::QueuedConnection);
         },
         ai_chat::LlmService::ToolPolicy::None, pending_session_,
-        ai_chat::ChatRoute{QString::fromLatin1(ai_chat::kFeatureQuickAsk), QString(), QString()});
+        quick_route);
 }
 
 void AiQuickAskWidget::cancel_in_flight() {
     ++request_gen_; // chunks of the old request are dropped from here on
-    if (pending_session_.isEmpty())
+    if (pending_session_.isEmpty()) {
+        pending_cache_key_.clear();
         return;
+    }
     // Only ever our own session id — never cancels the AI Chat tab's request.
     ai_chat::LlmService::instance().cancel_active_request(pending_session_);
     pending_session_.clear();
+    pending_cache_key_.clear();
 }
 
 void AiQuickAskWidget::on_chunk(quint64 gen, const QString& chunk) {
@@ -270,16 +294,19 @@ void AiQuickAskWidget::on_finished(const ai_chat::LlmResponse& response) {
                             : response.route_label + QStringLiteral("  ·  ") + response.billing_note;
 
     if (response.cancelled) {
+        pending_cache_key_.clear();
         set_state(AskState::Cancelled);
         return;
     }
     if (!response.success) {
         if (response.error == kQuickAskNoProviderError) {
+            pending_cache_key_.clear();
             set_state(AskState::NotConfigured);
             return;
         }
         // "Ask" / "fail" after an unavailable harness: what happened, not a raw error.
         last_error_ = response.unavailable_notice.isEmpty() ? response.error : response.unavailable_notice;
+        pending_cache_key_.clear();
         render_failure();
         set_state(AskState::Failed);
         return;
@@ -288,6 +315,12 @@ void AiQuickAskWidget::on_finished(const ai_chat::LlmResponse& response) {
     QString text = stream_buffer_.trimmed().isEmpty() ? response.content : stream_buffer_;
     if (text.trimmed().isEmpty())
         text = tr("*The model returned an empty answer.*");
+    if (!pending_cache_key_.isEmpty() &&
+        quick_ask_response_is_cacheable(response.success, response.cancelled, text, response.fallback_notice)) {
+        CacheManager::instance().put(pending_cache_key_, text.trimmed(), kQuickAskAnswerCacheTtlSeconds,
+                                     QString::fromLatin1(kQuickAskAnswerCacheCategory));
+    }
+    pending_cache_key_.clear();
     // Final render as Markdown; raw HTML in model output is not interpreted.
     answer_->document()->setMarkdown(
         text, QTextDocument::MarkdownFeatures(QTextDocument::MarkdownDialectGitHub | QTextDocument::MarkdownNoHTML));
@@ -361,8 +394,8 @@ void AiQuickAskWidget::update_answer_view() {
         spec.glyph = QStringLiteral("⚙"); // ⚙
         spec.glyph_tone = ui::EmptyState::Tone::Warning;
         spec.title = tr("No AI model configured");
-        spec.message = tr("Add a provider and its API key — or choose the Fincept provider — in Settings > LLM "
-                          "Configuration, then ask your question here.");
+        spec.message = tr("Add your own provider API key, such as DeepSeek, in Settings > LLM Configuration, "
+                          "then ask your question here.");
         spec.primary = tr("OPEN SETTINGS > LLM CONFIGURATION");
     } else {
         spec.glyph = QStringLiteral("✦"); // ✦
@@ -408,8 +441,8 @@ void AiQuickAskWidget::update_status_text() {
             text = tr("Thinking…");
             break;
         case AskState::Answered:
-            text = model_meta(req_provider_, req_model_);
-            if (last_tokens_ > 0)
+            text = answer_reused_ ? tr("Saved answer reused · no API call") : model_meta(req_provider_, req_model_);
+            if (!answer_reused_ && last_tokens_ > 0)
                 text += (text.isEmpty() ? QString() : QStringLiteral("  ·  ")) + tr("%1 tok").arg(last_tokens_);
             break;
         case AskState::Failed:
@@ -431,25 +464,21 @@ void AiQuickAskWidget::update_status_text() {
 
 void AiQuickAskWidget::render_not_configured() {
     answer_->setPlainText(tr("No AI model is configured yet.\n\n"
-                             "Open Settings › LLM Configuration to add a provider and its API key "
-                             "(or choose the Fincept provider), then ask again."));
+                             "Open Settings › LLM Configuration to add your own provider API key, "
+                             "such as DeepSeek, then ask again."));
 }
 
 void AiQuickAskWidget::render_failure() {
     QString msg;
     switch (ai_chat::classify_llm_error(last_error_)) {
         case ai_chat::LlmErrorKind::FinceptOutOfCredits: {
-            msg = tr("You're out of Fincept credits. Top up, or add your own provider API key in "
+            msg = tr("The metered hosted route is disabled. Select your configured DeepSeek or another BYO provider in "
                      "Settings › LLM Configuration.");
-            // "AI is included with Pro …" when the server's plan table says so (as in AI Chat).
-            const QString plan_note = ui::plan::out_of_credits_note(QStringLiteral("ai"));
-            if (!plan_note.isEmpty())
-                msg += QLatin1Char(' ') + plan_note;
             break;
         }
         case ai_chat::LlmErrorKind::FinceptAuth:
-            msg = tr("Fincept did not accept your sign-in. Sign in again, or add your own provider API key in "
-                     "Settings › LLM Configuration.");
+            msg = tr("The hosted route did not accept the sign-in. Add your own provider API key in "
+                     "Settings › LLM Configuration instead.");
             break;
         case ai_chat::LlmErrorKind::Other:
             msg = tr("The AI request failed: %1").arg(last_error_);

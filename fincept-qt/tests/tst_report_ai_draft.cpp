@@ -22,6 +22,7 @@
 using fincept::report::ReportComponent;
 using fincept::report::ReportDocument;
 using fincept::services::AiBackendResult;
+using fincept::services::AiCachePolicy;
 using fincept::services::AiModelInfo;
 using fincept::services::AiRequest;
 using fincept::services::ApplyResult;
@@ -130,6 +131,7 @@ class FakeBackend : public ReportAiBackend {
         quint64 id = 0;
         QString system;
         QString user;
+        AiCachePolicy cache_policy = AiCachePolicy::PreferCache;
         std::function<void(quint64, const QString&)> on_chunk;
         std::function<void(quint64, const AiBackendResult&)> on_done;
     };
@@ -137,10 +139,10 @@ class FakeBackend : public ReportAiBackend {
     QVector<quint64> cancelled;
     AiModelInfo info{QStringLiteral("Test model"), QStringLiteral("0 credits · billed to your Test API key"), false, {}};
 
-    void start(quint64 id, const QString& system, const QString& user,
+    void start(quint64 id, const QString& system, const QString& user, AiCachePolicy cache_policy,
                std::function<void(quint64, const QString&)> on_chunk,
                std::function<void(quint64, const AiBackendResult&)> on_done) override {
-        calls.append({id, system, user, std::move(on_chunk), std::move(on_done)});
+        calls.append({id, system, user, cache_policy, std::move(on_chunk), std::move(on_done)});
     }
     void cancel(quint64 id) override { cancelled.append(id); }
     AiModelInfo model_info() const override { return info; }
@@ -541,6 +543,7 @@ void TestReportAiDraft::send_streams_and_drops_sentinels() {
     QCOMPARE(s.state(), ReportAiSession::State::Streaming);
     QCOMPARE(fb.calls.size(), 1);
     QCOMPARE(fb.calls[0].id, s.request_id());
+    QCOMPARE(fb.calls[0].cache_policy, AiCachePolicy::PreferCache);
     QVERIFY(fb.calls[0].system.contains(QStringLiteral("ONLY numbers")));
     QVERIFY(fb.calls[0].user.contains(kTargetText));
     QVERIFY(!s.send()); // already streaming
@@ -618,6 +621,7 @@ void TestReportAiDraft::retry_uses_new_id() {
     QCOMPARE(fb.calls.size(), 2);
     QVERIFY(fb.calls[1].id != fb.calls[0].id);
     QCOMPARE(fb.calls[1].user, fb.calls[0].user); // the same prompt
+    QCOMPARE(fb.calls[1].cache_policy, AiCachePolicy::BypassCache);
     QCOMPARE(s.request_id(), fb.calls[1].id);
     QVERIFY(s.error().isEmpty());
 

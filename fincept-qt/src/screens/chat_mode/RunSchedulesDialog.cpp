@@ -4,6 +4,7 @@
 
 #include "screens/chat_mode/RunSchedulesDialog.h"
 
+#include "core/policy/CommunityPolicy.h"
 #include "screens/chat_mode/RunRequestForm.h"
 #include "screens/chat_mode/RunViewLogic.h"
 #include "screens/chat_mode/RunViewWidgets.h"
@@ -282,6 +283,10 @@ void RunSchedulesDialog::Impl::build() {
     cap->setDecimals(0);
     cap->setSingleStep(10);
     cap_today = rsd_label(left, "rsdHint");
+    const bool cloud_agents = policy::fincept_cloud_agents_enabled();
+    cap_lbl->setVisible(cloud_agents);
+    cap->setVisible(cloud_agents);
+    cap_today->setVisible(cloud_agents);
     cap_row->addWidget(cap_lbl);
     cap_row->addWidget(cap);
     cap_row->addWidget(cap_today, 1);
@@ -913,8 +918,13 @@ void RunSchedulesDialog::Impl::update_preview() {
     QString text = next.isEmpty() ? RunSchedulesDialog::tr("No future run.")
                                   : RunSchedulesDialog::tr("Next runs: %1").arg(next.join(QStringLiteral(" · ")));
     const rv::BudgetConfirmation c = form->confirmation(-1);
-    text += QLatin1Char('\n') + RunSchedulesDialog::tr("Each run: %1. The daily cap of scheduled runs still applies.")
-                                    .arg(c.summary);
+    if (policy::fincept_cloud_agents_enabled())
+        text += QLatin1Char('\n') + RunSchedulesDialog::tr("Each run: %1. The daily cap of scheduled runs still applies.")
+                                        .arg(c.summary);
+    else
+        text += QLatin1Char('\n') +
+                RunSchedulesDialog::tr("Each run: %1. Uses your configured BYO model; 0 Fincept credits.")
+                    .arg(c.summary);
     next_preview->setText(text);
 }
 

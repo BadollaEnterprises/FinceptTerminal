@@ -2,6 +2,7 @@
 
 #include "auth/AuthManager.h"
 #include "core/logging/Logger.h"
+#include "core/policy/CommunityPolicy.h"
 #include "mcp/McpProvider.h"
 #include "mcp/TerminalMcpBridge.h"
 #include "mcp/server/CallApproval.h"
@@ -140,7 +141,7 @@ QStringList TerminalToolBridge::calling_runs() const {
 }
 
 bool TerminalToolBridge::wanted() const {
-    return view_visible_ > 0 || runs_active_;
+    return fincept::policy::fincept_chat_api_enabled() && (view_visible_ > 0 || runs_active_);
 }
 
 void TerminalToolBridge::update_activation() {
@@ -164,6 +165,10 @@ void TerminalToolBridge::on_runs_changed() {
 }
 
 void TerminalToolBridge::start() {
+    // This bridge exists only for Fincept's hosted chat agent. Local/BYO runs
+    // call terminal tools directly and must never register or poll this route.
+    if (!fincept::policy::fincept_chat_api_enabled())
+        return;
     if (active_)
         return;
     active_ = true;

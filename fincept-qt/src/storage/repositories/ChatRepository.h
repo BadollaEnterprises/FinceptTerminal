@@ -38,6 +38,12 @@ class ChatRepository : public BaseRepository<ChatSession> {
     // Messages
     Result<void> add_message(const QString& session_id, const QString& role, const QString& content,
                              const QString& provider = {}, const QString& model = {}, int tokens = 0);
+    /// Insert a message with a caller-owned stable id. Returns true when a row
+    /// was added and false when that id was already persisted. The session count
+    /// is updated in the same transaction only for a new row.
+    Result<bool> add_message_once(const QString& message_id, const QString& session_id, const QString& role,
+                                  const QString& content, const QString& provider = {}, const QString& model = {},
+                                  int tokens = 0);
     Result<QVector<ChatMessage>> get_messages(const QString& session_id);
     Result<void> delete_messages(const QString& session_id);
 

@@ -12,9 +12,8 @@
 //            (queued on qApp) before the session sees them; the result comes from the
 //            process-wide finished_streaming(), filtered by origin_session_id.
 //   cancel() LlmService::cancel_active_request("report_draft:<id>") — only this request.
-//   model_info()  ModelRouter's first choice for the feature, its billing note (Fincept
-//            LLM: "uses your Fincept credits"), and needs-setup when Fincept LLM would answer
-//            but the user is not signed in.
+//   model_info()  ModelRouter's first choice for the feature, its billing note, and
+//            needs-setup when that exact route has no usable BYO credentials.
 // Kept out of ReportAiSession.cpp so the session's tests do not link LlmService.
 // GUI thread only.
 
@@ -37,7 +36,7 @@ class ReportAiLlmBackend : public QObject, public ReportAiBackend {
     explicit ReportAiLlmBackend(QObject* parent = nullptr);
     ~ReportAiLlmBackend() override;
 
-    void start(quint64 id, const QString& system, const QString& user,
+    void start(quint64 id, const QString& system, const QString& user, AiCachePolicy cache_policy,
                std::function<void(quint64, const QString& chunk)> on_chunk,
                std::function<void(quint64, const AiBackendResult&)> on_done) override;
     void cancel(quint64 id) override;
@@ -49,6 +48,8 @@ class ReportAiLlmBackend : public QObject, public ReportAiBackend {
   private:
     struct Pending {
         quint64 id = 0;
+        QString cache_key;
+        bool remote_started = false;
         std::function<void(quint64, const QString&)> on_chunk;
         std::function<void(quint64, const AiBackendResult&)> on_done;
     };

@@ -2,6 +2,7 @@
 
 #include "screens/chat_mode/TranscriptBlocks.h"
 
+#include "core/policy/CommunityPolicy.h"
 #include "screens/chat_mode/ArtefactTableModel.h"
 #include "screens/chat_mode/RunViewLogic.h"
 #include "ui/formatting/FormatWidgets.h"
@@ -1338,6 +1339,14 @@ class CtbCredits : public CtbCard {
     CtbCredits(const ItemPtr& item, const BlockHost* host, QWidget* parent) : CtbCard(item, host, parent) {
         ctb_set_tone(card_, "accent");
         ctb_set_tone(title_, "accent");
+        if (!policy::commercial_promotions_enabled()) {
+            title_->setText(ctb_tr("HOSTED CREDITS DISABLED"));
+            auto* body = ctb_label(card_, "ctbCardText");
+            body->setText(ctb_tr("This is a historical cloud-run notice. New runs use your configured DeepSeek or "
+                                 "another BYO provider and consume 0 Fincept credits."));
+            body_->addWidget(body);
+            return;
+        }
         title_->setText(ctb_tr("OUT OF CREDITS"));
         auto* body = ctb_label(card_, "ctbCardText");
         body->setText(ctb_tr("Pro adds a monthly credit allowance, higher limits and priority support."));

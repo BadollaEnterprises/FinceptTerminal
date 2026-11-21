@@ -9,6 +9,7 @@
 
 #include "screens/chat_mode/ChatStartPage.h"
 
+#include "core/policy/CommunityPolicy.h"
 #include "screens/chat_mode/RunViewLogic.h"
 #include "screens/chat_mode/RunViewWidgets.h"
 #include "services/agent_tasks/TaskRunService.h"
@@ -628,13 +629,18 @@ void ChatStartPage::Impl::refresh_runs() {
 
 void ChatStartPage::Impl::refresh_setup() {
     QVector<CspSetup> missing;
-    const ui::RequirementStatus signin = ui::check_requirements({ui::Requirement::signed_in()});
-    if (signin.pending)
-        missing.append(CspSetup{QStringLiteral("signin"), signin.title.isEmpty() ? tr("Checking sign-in…") : signin.title,
-                        tr("Cloud runs start once your sign-in is confirmed."), QString(), {}});
-    else if (!signin.ok)
-        missing.append(CspSetup{QStringLiteral("signin"), signin.title.isEmpty() ? tr("Sign in for the cloud agent") : signin.title,
-                        signin.message, signin.action_text.isEmpty() ? tr("SIGN IN") : signin.action_text, signin.link});
+    if (policy::fincept_chat_api_enabled()) {
+        const ui::RequirementStatus signin = ui::check_requirements({ui::Requirement::signed_in()});
+        if (signin.pending)
+            missing.append(CspSetup{QStringLiteral("signin"),
+                                    signin.title.isEmpty() ? tr("Checking sign-in…") : signin.title,
+                                    tr("Cloud runs start once your sign-in is confirmed."), QString(), {}});
+        else if (!signin.ok)
+            missing.append(CspSetup{QStringLiteral("signin"),
+                                    signin.title.isEmpty() ? tr("Sign in for the cloud agent") : signin.title,
+                                    signin.message, signin.action_text.isEmpty() ? tr("SIGN IN") : signin.action_text,
+                                    signin.link});
+    }
 
     const ui::RequirementStatus llm = ui::check_requirements({ui::Requirement::llm()});
     if (!llm.ok && !llm.pending) {
@@ -646,13 +652,6 @@ void ChatStartPage::Impl::refresh_setup() {
                                               : llm.message,
                         llm.action_text.isEmpty() ? tr("OPEN SETTINGS > LLM CONFIGURATION") : llm.action_text, link});
     }
-
-    const rv::HarnessEngineOption harness = rv::harness_engine_option_now();
-    if (harness.listed && !harness.enabled)
-        missing.append(CspSetup{QStringLiteral("harness"), tr("Connect a coding agent (optional)"),
-                        harness.reason.isEmpty() ? harness.state : harness.reason,
-                        tr("OPEN SETTINGS > LLM CONFIGURATION"),
-                        ui::SetupLink{QStringLiteral("settings"), QStringLiteral("llm_config"), QString()}});
 
     QString sig;
     for (const CspSetup& s : std::as_const(missing))

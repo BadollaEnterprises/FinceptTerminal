@@ -7,6 +7,7 @@
 
 #include "screens/ai_chat/AiChatStartPage.h"
 
+#include "core/policy/CommunityPolicy.h"
 #include "screens/ai_chat/AiChatStyle.h"
 #include "ui/theme/ThemeManager.h"
 #include "ui/widgets/EmptyState.h"
@@ -225,9 +226,11 @@ void AicStartPage::build() {
     rule->setObjectName(style::kHairline);
     rule->setFrameShape(QFrame::NoFrame);
     rule->setFixedHeight(1);
+    rule->setVisible(policy::commercial_promotions_enabled());
     bl->addWidget(rule);
     ent_ = ui::enterprise::make_mention_label(body_);
     ent_->setWordWrap(true);
+    ent_->setVisible(policy::commercial_promotions_enabled());
     bl->addWidget(ent_);
     bl->addStretch(1);
 

@@ -71,13 +71,17 @@ struct AiBackendResult {
     bool settings_hint = false; ///< the error is fixed in Settings (no model, credits, sign-in)
 };
 
+/// Ordinary user-initiated drafts may reuse an identical device-local result.
+/// An explicit Retry always asks the selected provider for a fresh answer.
+enum class AiCachePolicy { PreferCache, BypassCache };
+
 /// The model behind a session. The production one is ReportAiLlmBackend (LlmService +
 /// ModelRouter); tests use a fake. Callbacks are delivered on the GUI thread, possibly after
 /// cancel() (the session ignores them).
 class ReportAiBackend {
   public:
     virtual ~ReportAiBackend() = default;
-    virtual void start(quint64 id, const QString& system, const QString& user,
+    virtual void start(quint64 id, const QString& system, const QString& user, AiCachePolicy cache_policy,
                        std::function<void(quint64, const QString& chunk)> on_chunk,
                        std::function<void(quint64, const AiBackendResult&)> on_done) = 0;
     virtual void cancel(quint64 id) = 0;
@@ -173,7 +177,7 @@ class ReportAiSession : public QObject {
 
   private:
     void set_state(State s);
-    bool start_request();
+    bool start_request(AiCachePolicy cache_policy);
     void on_chunk(quint64 id, const QString& chunk);
     void on_done(quint64 id, const AiBackendResult& result);
     void on_timeout();

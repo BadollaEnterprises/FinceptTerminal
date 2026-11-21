@@ -7,6 +7,7 @@
 #include "core/config/AppPaths.h"
 #include "core/events/EventBus.h"
 #include "core/logging/Logger.h"
+#include "core/policy/CommunityPolicy.h"
 #include "core/session/ScreenStateManager.h"
 #include "screens/chat_mode/ChatAgentPanel.h"
 #include "screens/chat_mode/ChatComposer.h"
@@ -15,6 +16,7 @@
 #include "screens/chat_mode/ChatModeService.h"
 #include "screens/chat_mode/ChatSessionPanel.h"
 #include "screens/chat_mode/ComposerContextBar.h"
+#include "screens/chat_mode/LocalChatHistory.h"
 #include "screens/chat_mode/NewRunDialog.h"
 #include "screens/chat_mode/RunListPanel.h"
 #include "screens/chat_mode/RunSchedulesDialog.h"
@@ -26,6 +28,7 @@
 #include "services/agent_tasks/RunPlanPrompts.h"
 #include "services/agent_tasks/TaskRunService.h"
 #include "services/llm/ModelRouter.h"
+#include "storage/repositories/ChatRepository.h"
 #include "ui/navigation/KeyRouting.h"
 #include "ui/theme/Theme.h"
 #include "ui/theme/ThemeManager.h"
@@ -715,8 +718,16 @@ void ChatModeScreen::showEvent(QShowEvent* e) {
     apply_rails();
     LOG_DEBUG("ChatModeScreen", "Entered chat mode");
     set_view_counted(true);
-    session_panel_->refresh_sessions();
     refresh_engine_chip();
+
+    session_panel_->refresh_sessions();
+
+    if (!policy::fincept_chat_api_enabled()) {
+        refresh_stats();
+        if (active_session_uuid_.isEmpty())
+            load_recent_session(/*retry=*/false);
+        return;
+    }
 
     QPointer<ChatModeScreen> self = this;
     ChatModeService::instance().get_credits([self](bool ok, double credits, QString) {
@@ -853,6 +864,10 @@ void ChatModeScreen::attach_session_run(const QVector<ChatMessage>& messages) {
 }
 
 void ChatModeScreen::on_new_session() {
+    if (!policy::fincept_chat_api_enabled()) {
+        start_new_conversation();
+        return;
+    }
     QPointer<ChatModeScreen> self = this;
     // Untranslated on purpose — see kChatDefaultSessionTitle.
     ChatModeService::instance().create_session(QString::fromLatin1(kChatDefaultSessionTitle),
@@ -935,7 +950,9 @@ agt::RunRequest ChatModeScreen::chat_request(const QString& text, StreamMode mod
     agt::RunRequest req;
     ComposerContextBar* bar = message_panel_->context_bar();
     req.prompt = compose && bar ? bar->compose_prompt(text) : text;
-    req.engine = bar ? bar->engine() : QString::fromLatin1(agt::kEngineCloud);
+    req.engine = bar ? bar->engine()
+                     : QString::fromLatin1(policy::fincept_chat_api_enabled() ? agt::kEngineCloud
+                                                                            : agt::kEngineLocal);
     req.plan_first = bar && bar->run_as_task();
     req.context = bar ? bar->context() : QJsonObject{};
     req.mode = mode == StreamMode::Deep ? QStringLiteral("deep") : QStringLiteral("lite");
@@ -956,6 +973,18 @@ agt::RunRequest ChatModeScreen::chat_request(const QString& text, StreamMode mod
 
 void ChatModeScreen::start_chat_run(agt::RunRequest request, const QString& session_uuid) {
     request.session_uuid = session_uuid;
+    const QString visible_prompt = request.prompt;
+    if (!policy::fincept_chat_api_enabled()) {
+        const auto history = ::fincept::ChatRepository::instance().get_messages(session_uuid);
+        if (history.is_ok()) {
+            request.prompt = compose_local_chat_prompt(history.value(), visible_prompt);
+        } else {
+            LOG_WARN("ChatModeScreen", QStringLiteral("Could not load local conversation context: %1")
+                                           .arg(QString::fromStdString(history.error())));
+        }
+        if (request.title.trimmed().isEmpty())
+            request.title = visible_prompt.simplified().left(80);
+    }
     QString err;
     const QString run_id = agt::TaskRunService::instance().start_run(request, &err);
     // Bind only if the composer still waits for this send in this conversation (the
@@ -965,6 +994,24 @@ void ChatModeScreen::start_chat_run(agt::RunRequest request, const QString& sess
         if (ours)
             message_panel_->fail_pending_send(err);
         return;
+    }
+    if (!policy::fincept_chat_api_enabled()) {
+        auto& repo = ::fincept::ChatRepository::instance();
+        const auto saved = repo.add_message_once(run_id + QStringLiteral(":user"), session_uuid,
+                                                 QStringLiteral("user"), visible_prompt);
+        if (saved.is_err())
+            LOG_WARN("ChatModeScreen", QStringLiteral("Could not persist local user turn: %1")
+                                           .arg(QString::fromStdString(saved.error())));
+        const auto session = repo.get_session(session_uuid);
+        const agt::TaskRun* run = agt::TaskRunService::instance().find_run(run_id);
+        if (session.is_ok() && run && session.value().title == QLatin1String(kChatDefaultSessionTitle) &&
+            !run->title.trimmed().isEmpty()) {
+            repo.update_session_title(session_uuid, run->title.simplified().left(80));
+            if (session_uuid == active_session_uuid_)
+                message_panel_->set_session_title(run->title.simplified().left(80));
+        }
+        session_panel_->refresh_sessions();
+        refresh_stats();
     }
     if (ours) {
         message_panel_->bind_pending_run(run_id);
@@ -1137,8 +1184,17 @@ void ChatModeScreen::on_run_finished(const QString& run_id) {
     // A run of the open conversation the transcript never followed (resumed from the
     // RUNS / PLAN panel): show what it stored.
     const bool followed = message_panel_->attached_run() == run_id;
-    message_panel_->on_run_finished(run_id);
     const agt::TaskRun* r = agt::TaskRunService::instance().find_run(run_id);
+    if (!policy::fincept_chat_api_enabled() && r && !r->session_uuid.isEmpty() &&
+        r->status == agt::RunStatus::Completed && !r->final_text.trimmed().isEmpty()) {
+        const auto saved = ::fincept::ChatRepository::instance().add_message_once(
+            run_id + QStringLiteral(":assistant"), r->session_uuid, QStringLiteral("assistant"), r->final_text,
+            policy::default_llm_provider(), policy::default_llm_model(), static_cast<int>(r->tokens_used));
+        if (saved.is_err())
+            LOG_WARN("ChatModeScreen", QStringLiteral("Could not persist local assistant turn: %1")
+                                           .arg(QString::fromStdString(saved.error())));
+    }
+    message_panel_->on_run_finished(run_id);
     if (r && !r->session_uuid.isEmpty() && r->session_uuid == active_session_uuid_ && isVisible()) {
         if (!followed && !message_panel_->has_pending_send()) {
             const agt::TaskRun* attached = agt::TaskRunService::instance().find_run(message_panel_->attached_run());

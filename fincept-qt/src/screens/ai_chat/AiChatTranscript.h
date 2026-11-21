@@ -130,7 +130,7 @@ class AicTranscriptView : public QAbstractScrollArea {
 
   signals:
     /// REGENERATE, RETRY, EDIT & RESEND, QUOTE, ANSWER WITH, MODEL SETTINGS, LLM SETTINGS,
-    /// VIEW PLANS, OPEN SETTINGS — the host acts. COPY and ADD TO REPORT are done here and
+    /// OPEN SETTINGS and RETRY — the host acts. COPY and ADD TO REPORT are done here and
     /// reported too.
     void action_requested(quint64 turn_id, fincept::screens::aichat::TurnAction action);
     /// OPEN IN CODE TAB on a Python block.

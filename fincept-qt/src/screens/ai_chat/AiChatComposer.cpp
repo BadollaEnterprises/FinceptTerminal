@@ -13,7 +13,10 @@
 #include "core/agent/AgentRiskMarkers.h"
 #include "core/config/AppConfig.h"
 #include "core/instrument/Instrument.h"
+#include "core/policy/CommunityPolicy.h"
+#include "screens/ai_chat/AiChatEffortPolicy.h"
 #include "screens/ai_chat/AiChatStyle.h"
+#include "services/llm/ModelRouter.h"
 #include "storage/repositories/PortfolioRepository.h"
 #include "storage/repositories/WatchlistRepository.h"
 #include "ui/theme/ThemeManager.h"
@@ -58,6 +61,12 @@ namespace fincept::screens::aichat {
 namespace {
 
 constexpr int kCpMaxLines = 8;
+
+EffortUsage cp_effort_usage(const QString& effort) {
+    const ai_chat::ModelChoice choice =
+        ai_chat::ModelRouter::instance().resolve(QString::fromLatin1(ai_chat::kFeatureAiChat));
+    return effort_usage(effort, choice.provider_id(), policy::fincept_metered_services_enabled());
+}
 
 /// The hint line: one line that elides (never wraps, never clips); full text in the tooltip.
 class AicComposerElide : public QLabel {
@@ -426,6 +435,8 @@ AicComposer::AicComposer(QWidget* parent) : QFrame(parent) {
     setTabOrder(attach_btn_, send_btn_);
 
     retranslate();
+    connect(&ai_chat::ModelRouter::instance(), &ai_chat::ModelRouter::routes_changed, this,
+            [this]() { update_effort_button(); });
     connect(&ui::ThemeManager::instance(), &ui::ThemeManager::appearance_settled, this, [this]() { fit_metrics(); });
 }
 
@@ -535,16 +546,22 @@ void AicComposer::retranslate() {
 void AicComposer::update_effort_button() {
     if (!effort_btn_)
         return;
-    const bool costly = effort_ == QLatin1String("high") || effort_ == QLatin1String("xhigh") ||
-                        effort_ == QLatin1String("max");
+    const EffortUsage usage = cp_effort_usage(effort_);
+    const bool costly = usage != EffortUsage::Normal;
     effort_btn_->setText(tr("EFFORT: %1").arg(effort_.toUpper()) + (costly ? QStringLiteral(" +") : QString()));
-    effort_btn_->setToolTip(
-        costly ? tr("Reasoning effort: %1. The model thinks longer before it answers. On the Fincept model each "
-                    "step of an answer costs extra credits at this level.")
-                     .arg(effort_.toUpper())
-               : tr("Reasoning effort: %1. Raise it for hard, multi-step questions (HIGH and above cost extra "
-                    "credits on the Fincept model).")
-                     .arg(effort_.toUpper()));
+    if (usage == EffortUsage::FinceptCredits) {
+        effort_btn_->setToolTip(tr("Reasoning effort: %1. The Fincept model thinks longer and uses extra Fincept "
+                                   "credits at this level.")
+                                        .arg(effort_.toUpper()));
+    } else if (usage == EffortUsage::ProviderUsage) {
+        effort_btn_->setToolTip(tr("Reasoning effort: %1. The model thinks longer and may use more provider tokens. "
+                                   "Your API provider may bill that usage; 0 Fincept credits are used.")
+                                        .arg(effort_.toUpper()));
+    } else {
+        effort_btn_->setToolTip(tr("Reasoning effort: %1. Raise it for hard, multi-step questions. HIGH and above "
+                                   "may use more provider tokens; 0 Fincept credits are used on BYO routes.")
+                                        .arg(effort_.toUpper()));
+    }
     effort_btn_->setAccessibleName(tr("Reasoning effort"));
 }
 
@@ -553,12 +570,15 @@ void AicComposer::open_effort_menu() {
         const char* id;
         QString label;
     };
+    const QString elevated_cost = cp_effort_usage(QStringLiteral("high")) == EffortUsage::FinceptCredits
+                                      ? tr("extra Fincept credits")
+                                      : tr("more provider usage");
     const Level levels[] = {
         {"low", tr("LOW  \u00B7  fastest, short answers")},
         {"medium", tr("MEDIUM  \u00B7  default")},
-        {"high", tr("HIGH  \u00B7  deeper analysis  \u00B7  extra credits")},
-        {"xhigh", tr("XHIGH  \u00B7  long multi-step work  \u00B7  extra credits")},
-        {"max", tr("MAX  \u00B7  hardest problems, slowest  \u00B7  extra credits")},
+        {"high", tr("HIGH  \u00B7  deeper analysis  \u00B7  %1").arg(elevated_cost)},
+        {"xhigh", tr("XHIGH  \u00B7  long multi-step work  \u00B7  %1").arg(elevated_cost)},
+        {"max", tr("MAX  \u00B7  hardest problems, slowest  \u00B7  %1").arg(elevated_cost)},
     };
     QMenu menu(this);
     for (const Level& level : levels) {

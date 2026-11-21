@@ -157,8 +157,9 @@ void TaskRunScheduler::Impl::evaluate(const QString& id) {
     // A cloud run needs a signed-in session: wait (the occurrence stays due; once
     // its catch-up window has passed it is recorded as missed). Local and harness
     // runs need no Fincept sign-in.
+    const QString engine = runtime_engine(s->engine);
     const QString blocker =
-        sl::start_blocker(s->engine, !auth::AuthManager::instance().session().api_key.isEmpty());
+        sl::start_blocker(engine, !auth::AuthManager::instance().session().api_key.isEmpty());
     if (!blocker.isEmpty()) {
         if (s->last_status != QLatin1String("waiting_login")) {
             s->last_status = QStringLiteral("waiting_login");
@@ -222,15 +223,16 @@ void TaskRunScheduler::Impl::fire(const QString& id, bool manual, bool caught_up
         reply(false, {}, overlap);
         return;
     }
+    const QString engine = runtime_engine(s->engine);
     const QString blocker =
-        sl::start_blocker(s->engine, !auth::AuthManager::instance().session().api_key.isEmpty());
+        sl::start_blocker(engine, !auth::AuthManager::instance().session().api_key.isEmpty());
     if (!blocker.isEmpty()) {
         record(id, QStringLiteral("waiting_login"), blocker, false);
         reply(false, {}, blocker);
         return;
     }
     const RunRequest& base = s->request;
-    const QString executor = executor_for(s->engine, base.plan_first);
+    const QString executor = executor_for(engine, base.plan_first);
     if (executor.isEmpty() || !runs.has_executor(executor)) {
         const QString err = tsr_tr("The engine of this schedule is not available in this build.");
         record(id, QStringLiteral("failed_to_start"), err, !manual);
@@ -238,7 +240,7 @@ void TaskRunScheduler::Impl::fire(const QString& id, bool manual, bool caught_up
         return;
     }
     RunRequest req = base;
-    req.engine = s->engine;
+    req.engine = engine;
     req.mode = s->mode.isEmpty() ? base.mode : s->mode;
     req.origin = QString::fromLatin1(kOriginSchedule);
     req.schedule_id = s->id;
@@ -249,7 +251,7 @@ void TaskRunScheduler::Impl::fire(const QString& id, bool manual, bool caught_up
         req.budget.max_credits = s->max_credits;
     // The day's credit cap across scheduled cloud runs (local and harness runs spend no credits).
     QString cap_note;
-    if (sl::engine_spends_credits(s->engine)) {
+    if (sl::engine_spends_credits(engine)) {
         const double minimum = executor == QLatin1String(kExecutorCloudTurn) ? kCloudTurnCredits : estimate_cloud_plan_credits(1);
         const sl::CapDecision cap_decision = sl::apply_daily_cap(cap, q->committed_today(), req.budget.max_credits, minimum);
         if (!cap_decision.allowed) {

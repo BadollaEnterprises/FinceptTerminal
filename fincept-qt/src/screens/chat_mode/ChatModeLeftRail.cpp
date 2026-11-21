@@ -11,6 +11,7 @@
 
 #include "screens/chat_mode/ChatModeLeftRail.h"
 
+#include "core/policy/CommunityPolicy.h"
 #include "screens/chat_mode/ChatAgentPanel.h"
 #include "screens/chat_mode/ChatSessionPanel.h"
 #include "screens/chat_mode/RunListPanel.h"
@@ -135,6 +136,10 @@ void ChatModeLeftRail::Impl::build() {
             return true;
         });
     }
+    const bool hosted_chat = fincept::policy::fincept_chat_api_enabled();
+    segments[kLrChats]->setVisible(hosted_chat);
+    segments[kLrMemory]->setVisible(hosted_chat);
+    segments[kLrMcp]->setVisible(hosted_chat);
     hl->addStretch(1);
     vl->addWidget(header);
 
@@ -176,7 +181,7 @@ void ChatModeLeftRail::Impl::fit() {
 void ChatModeLeftRail::Impl::retranslate() {
     const std::array<QString, kLrCount> tips = {
         ChatModeLeftRail::tr("Every run: messages, tasks, scheduled runs (Alt+1)"),
-        ChatModeLeftRail::tr("Your cloud conversations"),
+        ChatModeLeftRail::tr("Your saved conversations"),
         ChatModeLeftRail::tr("What the cloud agent remembers about you"),
         ChatModeLeftRail::tr("Remote MCP tool servers of the cloud agent")};
     const std::array<QString, kLrCount> names = {ChatModeLeftRail::tr("Runs"), ChatModeLeftRail::tr("Conversations"),
@@ -209,6 +214,8 @@ void ChatModeLeftRail::Impl::update_runs_segment() {
 }
 
 void ChatModeLeftRail::Impl::select(int index, bool user) {
+    if (!fincept::policy::fincept_chat_api_enabled() && index != kLrRuns)
+        index = kLrRuns;
     if (index < 0 || index >= kLrCount)
         return;
     {

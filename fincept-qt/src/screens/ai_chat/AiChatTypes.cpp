@@ -4,6 +4,7 @@
 
 #include "screens/ai_chat/AiChatTypes.h"
 
+#include "core/policy/CommunityPolicy.h"
 #include "services/harness/HarnessRegistry.h"
 #include "storage/repositories/SettingsRepository.h"
 
@@ -859,6 +860,8 @@ QString turn_speaker(const Turn& t) {
         return ty_tr("You");
     if (t.role == TurnRole::Notice)
         return ty_tr("Notice");
+    if (policy::is_deprecated_llm_provider(t.provider))
+        return ty_tr("Legacy local model (disabled)");
     if (t.provider.compare(QLatin1String("fincept"), Qt::CaseInsensitive) == 0)
         return ty_tr("Fincept LLM");
     if (!t.route_label.isEmpty())
@@ -868,9 +871,10 @@ QString turn_speaker(const Turn& t) {
         const QString name = harness::HarnessRegistry::instance().display_name(t.provider.mid(8));
         return t.model.isEmpty() ? name : name + QStringLiteral(" · ") + t.model;
     }
+    const QString model = policy::normalize_llm_model(t.provider, t.model);
     if (t.provider.isEmpty())
-        return t.model.isEmpty() ? ty_tr("AI") : t.model;
-    return t.model.isEmpty() ? t.provider : t.provider + QStringLiteral(" / ") + t.model;
+        return model.isEmpty() ? ty_tr("AI") : model;
+    return model.isEmpty() ? t.provider : t.provider + QStringLiteral(" / ") + model;
 }
 
 QString turn_markdown(const Turn& t) {

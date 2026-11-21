@@ -15,6 +15,7 @@
 #include "services/agent_tasks/TaskRunService.h"
 #include "services/agents/AgentService.h"
 #include "services/llm/LlmService.h"
+#include "services/llm/ModelRouter.h"
 
 #include <QCoreApplication>
 #include <QJsonObject>
@@ -42,7 +43,7 @@ class LagAgentServiceEngine final : public QObject, public ILocalAgentEngine {
             r.ready = false;
             r.code = QStringLiteral("agentic_mode_disabled");
             r.message = lag_tr("Agentic Mode is switched off, so the local agent cannot take tasks. Turn it on in "
-                               "Settings › Developer, or run this task on the cloud engine.");
+                               "Settings › Developer.");
             return r;
         }
         // A system Python alone makes PythonRunner "available", but the agent runs in
@@ -52,20 +53,22 @@ class LagAgentServiceEngine final : public QObject, public ILocalAgentEngine {
             r.ready = false;
             r.code = QStringLiteral("python_not_ready");
             r.message = lag_tr("The local agent needs the terminal's Python environment, which is not set up yet. "
-                               "Finish the setup in Settings › Python Env (SET UP PYTHON), or run this task on the "
-                               "cloud engine.");
+                               "Finish the setup in Settings › Python Env (SET UP PYTHON).");
             return r;
         }
         auto& llm = ai_chat::LlmService::instance();
-        if (!llm.is_configured()) {
+        ai_chat::ChatRoute agent_route;
+        agent_route.feature = QString::fromLatin1(ai_chat::kFeatureAgent);
+        const QJsonObject config = llm.resolved_config_json(agent_route);
+        if (config.isEmpty()) {
             r.ready = false;
             r.code = QStringLiteral("llm_not_configured");
-            r.message = lag_tr("No LLM is configured for the local agent. Add a provider and its API key in "
-                               "Settings › LLM Config, or run this task on the cloud engine.");
+            r.message = lag_tr("No BYO LLM is configured for the local agent. Add your DeepSeek API key in "
+                               "Settings › LLM Config.");
             return r;
         }
-        const QString provider = llm.active_provider();
-        const QString model = llm.active_model();
+        const QString provider = config.value(QStringLiteral("provider")).toString();
+        const QString model = config.value(QStringLiteral("model_id")).toString();
         r.llm_label = model.isEmpty() ? provider : QStringLiteral("%1 · %2").arg(provider, model);
         return r;
     }

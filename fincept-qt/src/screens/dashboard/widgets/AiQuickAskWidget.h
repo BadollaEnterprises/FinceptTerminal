@@ -64,12 +64,14 @@ class AiQuickAskWidget : public BaseWidget {
 
     AskState state_ = AskState::Idle;
     QString pending_session_;    ///< chat_session_id of the request in flight (empty = idle)
+    QString pending_cache_key_;  ///< route-bound local answer key for the request in flight
     quint64 request_gen_ = 0;    ///< bumps per question; stale chunks are dropped
     QString stream_buffer_;      ///< answer text streamed so far
     qsizetype rendered_len_ = 0; ///< how much of stream_buffer_ is already in answer_
     QString req_provider_;       ///< provider / model the current answer came from
     QString req_model_;
     int last_tokens_ = 0;
+    bool answer_reused_ = false; ///< true when no provider request was made
     QString last_error_; ///< raw LlmResponse::error of the last failure (shown, never logged)
 };
 

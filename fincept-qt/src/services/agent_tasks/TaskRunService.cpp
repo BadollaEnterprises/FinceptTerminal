@@ -4,7 +4,9 @@
 #include "services/agent_tasks/TaskRunService.h"
 
 #include "core/logging/Logger.h"
+#include "core/policy/CommunityPolicy.h"
 #include "services/agent_tasks/ArtefactService.h"
+#include "services/agent_tasks/ByoChatExecutor.h"
 #include "services/agent_tasks/CloudPlanExecutor.h"
 #include "services/agent_tasks/CloudTurnExecutor.h"
 #include "services/agent_tasks/HarnessRunExecutor.h"
@@ -119,10 +121,14 @@ void TaskRunService::initialize_deferred() {
         return;
     initialized_ = true;
 
-    register_executor(new CloudTurnExecutor);
-    register_executor(new CloudPlanExecutor);
+    if (policy::fincept_cloud_agents_enabled()) {
+        register_executor(new CloudTurnExecutor);
+        register_executor(new CloudPlanExecutor);
+    }
+    register_executor(new ByoChatExecutor);
     register_executor(new LocalAgenticExecutor);
-    register_executor(new HarnessRunExecutor); // engine "harness": Claude Code / Codex (API key only)
+    if (policy::chat_mode_harnesses_enabled())
+        register_executor(new HarnessRunExecutor);
     ArtefactService::instance().initialize_deferred();
 
     const qint64 session_start = session_start_ms_;
@@ -367,7 +373,7 @@ QString TaskRunService::start_run(const RunRequest& request, QString* error) {
     if (prompt.size() > kRunPromptMaxChars)
         return fail(trs_tr("The message is too long (%1 characters; at most %2).").arg(prompt.size()).arg(kRunPromptMaxChars));
 
-    const QString engine = request.engine.isEmpty() ? QString::fromLatin1(kEngineCloud) : request.engine;
+    const QString engine = runtime_engine(request.engine);
     const QString executor_id = executor_for(engine, request.plan_first);
     if (executor_id.isEmpty() || !executors_.contains(executor_id))
         return fail(trs_tr("The '%1' engine is not available in this build.").arg(engine));
@@ -651,6 +657,7 @@ QString TaskRunService::retry_from_step(const QString& id, int step, QString* er
 
     const qint64 now = trs_now_ms();
     TaskRun run = *src;
+    run.engine = runtime_engine(src->engine);
     run.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
     run.title = trs_tr("Retry: %1").arg(src->title).left(200);
     run.status = RunStatus::Queued;

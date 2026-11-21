@@ -3,6 +3,7 @@
 #include "services/agent_tasks/CloudAgentClient.h"
 
 #include "core/logging/Logger.h"
+#include "core/policy/CommunityPolicy.h"
 #include "network/http/HttpClient.h"
 #include "screens/chat_mode/ChatModeService.h"
 
@@ -88,6 +89,12 @@ void CloudAgentClient::send(const QString& path, const QByteArray& body, bool al
     closed_ = false;
     status_ = 0;
     parser_.reset();
+
+    if (!policy::fincept_cloud_agents_enabled()) {
+        close_with(false, 0, QStringLiteral("community_credit_firewall"),
+                   tr("Fincept cloud agents are disabled. Use the local agent with your configured BYO model."));
+        return;
+    }
 
     auto& svc = ChatModeService::instance();
     QNetworkRequest req = svc.build_request(path);

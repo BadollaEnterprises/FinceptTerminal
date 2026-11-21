@@ -295,7 +295,7 @@ inline RunActions run_actions(const agent_tasks::TaskRun& r, bool executor_can_p
             a.pause.reason = r.executor_id() == QLatin1String(agent_tasks::kExecutorCloudTurn)
                                  ? rv_tr("A single reply cannot pause half-way. Cancel stops following it.")
                              : r.engine == QLatin1String(kHarnessEngineId)
-                                 ? rv_tr("A harness run (Claude Code, Codex) cannot pause. Cancel stops it.")
+                                 ? rv_tr("A local harness run cannot pause. Cancel stops it.")
                                  : rv_tr("This engine cannot pause the run right now.");
     } else if (r.status == S::Paused) {
         a.pause.reason = rv_tr("The run is already paused.");
@@ -520,7 +520,7 @@ inline HarnessEngineOption harness_engine_option(bool has_executor, const ai_cha
     }
     if (parts.isEmpty()) {
         o.state = rv_tr("not set up");
-        o.reason = rv_tr("No agent harness (Claude Code, Codex) may run Chat Mode tasks yet. Connect one with an API "
+        o.reason = rv_tr("No supported local agent harness may run Chat Mode tasks yet. Connect one with an API "
                          "key in the Agent Workbench, then allow it for Chat Mode tasks in Settings › LLM "
                          "Configuration › Terminal AI.");
     } else {

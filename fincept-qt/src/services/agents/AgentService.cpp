@@ -15,6 +15,7 @@
 #include "core/process/ProcessTree.h"
 #include "core/events/EventBus.h"
 #include "core/logging/Logger.h"
+#include "core/policy/CommunityPolicy.h"
 #include "datahub/DataHub.h"
 #include "datahub/TopicPolicy.h"
 #include "mcp/McpProvider.h"
@@ -24,6 +25,7 @@
 #include "python/PythonRunner.h"
 #include "python/PythonSetupManager.h"
 #include "services/llm/LlmService.h"
+#include "services/llm/ModelRouter.h"
 #include "storage/cache/CacheManager.h"
 #include "storage/repositories/AgentConfigRepository.h"
 #include "storage/repositories/LlmConfigRepository.h"
@@ -522,6 +524,9 @@ QJsonObject AgentService::build_api_keys() const {
             if (p.api_key.isEmpty())
                 continue;
             const QString lower = p.provider.toLower();
+            if (policy::is_deprecated_llm_provider(lower) ||
+                (lower == QLatin1String("fincept") && !policy::fincept_metered_services_enabled()))
+                continue;
             keys[lower] = p.api_key; // lowercase form
             const QString env_name = kEnvVarNames.value(lower);
             if (!env_name.isEmpty())
@@ -544,9 +549,11 @@ QJsonObject AgentService::build_api_keys() const {
         }
     }
 
-    // Always include Fincept session API key (from login) so agents can use
-    // the fincept provider even if user hasn't manually configured it in Settings.
-    if (!keys.contains("fincept")) {
+    // The login credential is not an LLM credential. Never expose it to a
+    // bundled Python process in the community product; the legacy route exists
+    // only for an explicitly enabled commercial/deprecated-backend build.
+    if (policy::fincept_metered_services_enabled() && policy::deprecated_ai_backends_enabled() &&
+        !keys.contains("fincept")) {
         const auto& session = auth::AuthManager::instance().session();
         if (!session.api_key.isEmpty()) {
             keys["fincept"] = session.api_key;
@@ -574,26 +581,23 @@ QJsonObject AgentService::build_payload(const QString& action, const QJsonObject
     // This means: if the caller already embedded a resolved profile in config["model"]
     // (as build_config_from_editor() now does), Python gets the right per-agent creds.
     {
-        if (config.contains("model") && !config["model"].toObject()["provider"].toString().isEmpty()) {
+        const QJsonObject configured_model = config.value(QStringLiteral("model")).toObject();
+        const QString configured_provider =
+            configured_model.value(QStringLiteral("provider")).toString().trimmed().toLower();
+        const bool configured_model_allowed =
+            !configured_provider.isEmpty() && !policy::is_deprecated_llm_provider(configured_provider) &&
+            !ai_chat::provider_is_harness(configured_provider) &&
+            (configured_provider != QLatin1String("fincept") || policy::fincept_metered_services_enabled());
+        if (configured_model_allowed) {
             // Use the per-agent resolved profile already embedded in the config
-            payload["active_llm"] = config["model"].toObject();
+            payload["active_llm"] = configured_model;
         } else {
             auto& llm = ai_chat::LlmService::instance();
-            if (llm.is_configured()) {
-                QJsonObject active_llm;
-                active_llm["provider"] = llm.active_provider();
-                active_llm["model_id"] = llm.active_model();
-                active_llm["api_key"] = llm.active_api_key();
-                active_llm["base_url"] = llm.active_base_url();
-                active_llm["temperature"] = llm.active_temperature();
-                // 0 = "no user override" (global setting since the v021 migration);
-                // sent as-is it reached the provider as max_tokens: 0. Omit it so
-                // Python applies its own default.
-                const int max_tokens = llm.active_max_tokens();
-                if (max_tokens > 0)
-                    active_llm["max_tokens"] = max_tokens;
+            ai_chat::ChatRoute agent_route;
+            agent_route.feature = QString::fromLatin1(ai_chat::kFeatureAgent);
+            const QJsonObject active_llm = llm.resolved_config_json(agent_route);
+            if (!active_llm.isEmpty())
                 payload["active_llm"] = active_llm;
-            }
         }
     }
 

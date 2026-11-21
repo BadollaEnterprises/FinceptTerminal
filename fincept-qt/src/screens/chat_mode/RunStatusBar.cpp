@@ -17,6 +17,7 @@
 #include "screens/chat_mode/RunStatusBar.h"
 
 #include "auth/AuthManager.h"
+#include "core/policy/CommunityPolicy.h"
 #include "screens/chat_mode/ChatModeService.h"
 #include "screens/chat_mode/RunViewLogic.h"
 #include "screens/chat_mode/RunViewWidgets.h"
@@ -195,7 +196,11 @@ void RunStatusBar::Impl::build() {
     bar->add_item(rsb_id(kRsbBalance), SB::Segment::Right, {}, SB::Tone::Normal, 50);
     bar->add_item(rsb_id(kRsbPaper), SB::Segment::Right, {}, SB::Tone::Info, 95);
     bar->set_chip(rsb_id(kRsbPaper), true);
-    bar->set_item_visible(rsb_id(kRsbMcp), false); // until the servers were read
+    const bool hosted = policy::fincept_cloud_agents_enabled();
+    bar->set_item_visible(rsb_id(kRsbCredits), hosted);
+    bar->set_item_visible(rsb_id(kRsbBalance), hosted);
+    bar->set_item_visible(rsb_id(kRsbTools), hosted);
+    bar->set_item_visible(rsb_id(kRsbMcp), hosted);
 
     tick = new QTimer(q);
     tick->setInterval(kRsbTickMs);
@@ -280,6 +285,11 @@ void RunStatusBar::Impl::retranslate() {
 }
 
 void RunStatusBar::Impl::refresh_balance(double b) {
+    if (!policy::fincept_cloud_agents_enabled()) {
+        last_balance = -1;
+        bar->set_item_visible(rsb_id(kRsbBalance), false);
+        return;
+    }
     last_balance = b;
     bar->set_text(rsb_id(kRsbBalance), RunStatusBar::tr("BAL %1").arg(b >= 0 ? rv::format_credits(b) : QStringLiteral("—")));
     bar->set_tooltip(rsb_id(kRsbBalance), b >= 0 ? RunStatusBar::tr("Your account balance: %1 credits").arg(rv::format_credits(b))
@@ -287,6 +297,10 @@ void RunStatusBar::Impl::refresh_balance(double b) {
 }
 
 void RunStatusBar::Impl::refresh_tools() {
+    if (!policy::fincept_cloud_agents_enabled()) {
+        bar->set_item_visible(rsb_id(kRsbTools), false);
+        return;
+    }
     const RsbTools t = rsb_tools(TerminalToolBridge::instance().status());
     bar->set_item(rsb_id(kRsbTools), RunStatusBar::tr("TOOLS %1").arg(t.text),
                   t.tone == rv::Tone::Neutral ? SB::Tone::Normal : rsb_tone(t.tone));
@@ -294,7 +308,7 @@ void RunStatusBar::Impl::refresh_tools() {
 }
 
 void RunStatusBar::Impl::refresh_mcp() {
-    if (mcp_total < 0) {
+    if (!policy::fincept_cloud_agents_enabled() || mcp_total < 0) {
         bar->set_item_visible(rsb_id(kRsbMcp), false);
         return;
     }
@@ -323,8 +337,12 @@ void RunStatusBar::Impl::refresh() {
     auto& svc = rsb_svc();
     const agt::TaskRun* r = run_id.isEmpty() ? nullptr : svc.find_run(run_id);
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    if (!policy::fincept_cloud_agents_enabled())
+        bar->set_item_visible(rsb_id(kRsbCredits), false);
     if (!r) {
-        bar->set_text(rsb_id(kRsbEngine), next_engine.isEmpty() ? RunStatusBar::tr("CLOUD") : next_engine.toUpper());
+        const QString fallback_engine = policy::fincept_cloud_agents_enabled() ? RunStatusBar::tr("CLOUD")
+                                                                                : RunStatusBar::tr("LOCAL");
+        bar->set_text(rsb_id(kRsbEngine), next_engine.isEmpty() ? fallback_engine : next_engine.toUpper());
         bar->set_tooltip(rsb_id(kRsbEngine), RunStatusBar::tr("What your next message runs on"));
         bar->set_item(rsb_id(kRsbState), RunStatusBar::tr("NO RUN"), SB::Tone::Dim);
         bar->set_tooltip(rsb_id(kRsbState), QString());
@@ -335,8 +353,10 @@ void RunStatusBar::Impl::refresh() {
                                       : RunStatusBar::tr("This run was deleted.");
         bar->set_tooltip(rsb_id(kRsbTitle), QString());
         bar->set_item_visible(rsb_id(kRsbTokens), false);
-        bar->set_text(rsb_id(kRsbCredits), RunStatusBar::tr("CREDITS —"));
-        bar->set_tooltip(rsb_id(kRsbCredits), QString());
+        if (policy::fincept_cloud_agents_enabled()) {
+            bar->set_text(rsb_id(kRsbCredits), RunStatusBar::tr("CREDITS —"));
+            bar->set_tooltip(rsb_id(kRsbCredits), QString());
+        }
         bar->set_text(rsb_id(kRsbElapsed), RunStatusBar::tr("TIME —"));
         bar->set_tooltip(rsb_id(kRsbElapsed), QString());
     } else {
@@ -383,36 +403,42 @@ void RunStatusBar::Impl::refresh() {
             bar->set_item_visible(rsb_id(kRsbTokens), false);
         }
 
-        QString credits;
-        QString credits_tip;
-        if (r->engine == QLatin1String(agt::kEngineLocal)) {
-            credits = RunStatusBar::tr("local");
-            credits_tip = RunStatusBar::tr("Local runs use your own model: no Fincept credits.");
-        } else if (r->engine == QLatin1String(rv::kHarnessEngineId)) {
-            credits = RunStatusBar::tr("0 cr");
-            credits_tip = RunStatusBar::tr("Harness runs (Claude Code, Codex) are billed to your own API key: no Fincept "
-                                           "credits. Its tokens are in ACTIVITY.");
-        } else if (r->budget.max_credits > 0) {
-            credits = QStringLiteral("%1 / %2").arg(rv::format_credits(r->credits_spent),
-                                                    rv::format_credits(r->budget.max_credits));
-            credits_tip = r->status == agt::RunStatus::BudgetStopped ? RunStatusBar::tr("The run stopped at its credit budget.")
-                                                                     : RunStatusBar::tr("Credits spent / the run's budget");
-        } else {
-            credits = rv::format_credits(r->credits_spent);
-            credits_tip = RunStatusBar::tr("Credits this run spent (no budget limit)");
+        if (policy::fincept_cloud_agents_enabled()) {
+            QString credits;
+            QString credits_tip;
+            if (r->engine == QLatin1String(agt::kEngineLocal)) {
+                credits = RunStatusBar::tr("local");
+                credits_tip = RunStatusBar::tr("Local runs use your own model: no Fincept credits.");
+            } else if (r->engine == QLatin1String(rv::kHarnessEngineId)) {
+                credits = RunStatusBar::tr("0 cr");
+                credits_tip = RunStatusBar::tr("Harness runs are billed to your own API key: no Fincept "
+                                               "credits. Its tokens are in ACTIVITY.");
+            } else if (r->budget.max_credits > 0) {
+                credits = QStringLiteral("%1 / %2").arg(rv::format_credits(r->credits_spent),
+                                                        rv::format_credits(r->budget.max_credits));
+                credits_tip =
+                    r->status == agt::RunStatus::BudgetStopped
+                        ? RunStatusBar::tr("The run stopped at its credit budget.")
+                        : RunStatusBar::tr("Credits spent / the run's budget");
+            } else {
+                credits = rv::format_credits(r->credits_spent);
+                credits_tip = RunStatusBar::tr("Credits this run spent (no budget limit)");
+            }
+            if (rv::run_uses_credits(*r) && r->credits_unreported > 0) {
+                // A turn recovered from the stored conversation: charged, but its bill never arrived.
+                credits += QStringLiteral(" +?");
+                credits_tip +=
+                    QLatin1Char('\n') +
+                    RunStatusBar::tr("%n turn(s) recovered from the conversation: the server charged them but did "
+                                     "not report the credits.",
+                                     nullptr, r->credits_unreported);
+            }
+            const bool stopped = r->status == agt::RunStatus::BudgetStopped;
+            const bool near = r->budget.max_credits > 0 && r->credits_spent >= 0.8 * r->budget.max_credits;
+            bar->set_item(rsb_id(kRsbCredits), RunStatusBar::tr("CREDITS %1").arg(credits),
+                          stopped ? SB::Tone::Danger : near ? SB::Tone::Warn : SB::Tone::Normal);
+            bar->set_tooltip(rsb_id(kRsbCredits), credits_tip);
         }
-        if (rv::run_uses_credits(*r) && r->credits_unreported > 0) {
-            // A turn recovered from the stored conversation: charged, but its bill never arrived.
-            credits += QStringLiteral(" +?");
-            credits_tip += QLatin1Char('\n') + RunStatusBar::tr("%n turn(s) recovered from the conversation: the server "
-                                                                "charged them but did not report the credits.",
-                                                                nullptr, r->credits_unreported);
-        }
-        const bool stopped = r->status == agt::RunStatus::BudgetStopped;
-        const bool near = r->budget.max_credits > 0 && r->credits_spent >= 0.8 * r->budget.max_credits;
-        bar->set_item(rsb_id(kRsbCredits), RunStatusBar::tr("CREDITS %1").arg(credits),
-                      stopped ? SB::Tone::Danger : near ? SB::Tone::Warn : SB::Tone::Normal);
-        bar->set_tooltip(rsb_id(kRsbCredits), credits_tip);
 
         bar->set_text(rsb_id(kRsbElapsed),
                       RunStatusBar::tr("TIME %1")
