@@ -267,7 +267,9 @@ QWidget* DocsScreen::page_keyboard_shortcuts() {
     sections.emplace_back(
         tr("COMMAND BAR"),
         tr("Ctrl+\\  —  Toggle the command bar. Type a function code or a verb to do almost anything in the "
-           "terminal; type \"?\" to list the actions available."));
+           "terminal; type \"?\" to list the actions available. Examples: AAPL DES opens the company overview, "
+           "HP AAPL opens price history, AAPL GF opens financial statements, TAS MSFT opens trading, and HMS "
+           "AAPL MSFT compares two securities."));
     sections.emplace_back(
         tr("MENUS"),
         tr("FILE — New Window, Move to Monitor, Close Window / Close All Windows, New / Open / Save / Save As "

@@ -150,8 +150,9 @@ void OnboardingTour::retranslateUi() {
         step_labels_[0].body->setText(tr("Press Ctrl+K and type anything — a symbol, a screen, an action: "
                                          "e.g. \"AAPL\", \"backtest\" or \"theme light\". Enter opens it; "
                                          "Ctrl+Enter opens it beside the current panel."));
-        step_labels_[0].tip->setText(tr("Tip: the command bar (Ctrl+\\) still takes function codes and "
-                                        "verbs such as \"link panel red\"."));
+        step_labels_[0].tip->setText(
+            tr("Tip: the command bar (Ctrl+\\) accepts function codes such as \"AAPL DES\", "
+               "\"HP AAPL\" and \"HMS AAPL MSFT\", plus verbs such as \"link panel red\"."));
     }
     if (step_labels_.size() > 1 && step_labels_[1].title) {
         step_labels_[1].title->setText(tr("Link panels with a colour"));

@@ -4,6 +4,7 @@
 //
 //   aapl chart · msft news · tsla research · spy options                 -> SymbolView
 //   aapl financials · CF nvda · meta analyst ratings                    -> SymbolView
+//   HP aapl · aapl GF · TAS msft · HMS aapl msft                        -> SymbolView / Compare
 //   buy 10 msft · sell 5 tsla limit 250 · buy msft @ 410.5 · buy msft   -> Ticket (a PREFILL; nothing is sent)
 //   compare aapl msft · aapl vs msft                                     -> Compare
 //   eur usd · eurusd · eur/usd                                           -> FxPair
