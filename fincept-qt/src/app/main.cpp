@@ -24,6 +24,8 @@
 #include "core/debug/UiStallMonitor.h"
 #include "core/currency/CurrencyManager.h"
 #include "core/market/MarketSessions.h"
+#include "core/metrics/LocalUsageMetrics.h"
+#include "core/policy/CommunityPolicy.h"
 #include "ui/formatting/FormatSettingsStore.h"
 #include "core/i18n/LanguageManager.h"
 #include "core/keys/KeyConfigManager.h"
@@ -79,6 +81,7 @@
 #include "services/geopolitics/GeopoliticsService.h"
 #include "services/gov_data/GovDataService.h"
 #include "services/instruments/InstrumentSync.h"
+#include "services/instruments/InstrumentIndex.h"
 #include "services/llm/LlmService.h"
 #include "services/ma_analytics/MAAnalyticsService.h"
 #include "services/maritime/MaritimeService.h"
@@ -1111,13 +1114,17 @@ int main(int argc, char* argv[]) {
                          []() { fincept::storage::HistoricalDataStore::instance().refresh_watchlist(); });
         historify_timer->start();
 
-        fincept::services::InstrumentSync::instance().start(); // symbol index (seed, broker masters) + master sync
+        if (fincept::policy::fincept_hosted_symbol_services_enabled())
+            fincept::services::InstrumentSync::instance().start();
+        else
+            fincept::services::InstrumentIndex::instance().start(); // bundled seed + broker masters, device-local
 
         LOG_DEBUG("App", "Deferred service init complete");
     };
 
     // Create all application directories under %LOCALAPPDATA%/com.fincept.terminal
     fincept::AppPaths::ensure_all();
+    fincept::metrics::LocalUsageMetrics::set_storage_path(fincept::AppPaths::data() + "/local_usage.json");
     // Record every time the GUI thread stops processing events (a freeze the
     // user feels) in <logs>/ui_stalls.log — see UiStallMonitor.h.
     fincept::debug::UiStallMonitor::start(fincept::AppPaths::logs() + "/ui_stalls.log");

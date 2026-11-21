@@ -16,6 +16,7 @@
 #include "core/keys/WindowCycler.h"
 #include "core/layout/LayoutCatalog.h"
 #include "core/logging/Logger.h"
+#include "core/policy/CommunityPolicy.h"
 #include "core/session/SessionManager.h"
 #include "screens/about/AboutScreen.h"
 #include "screens/agent_config/AgentConfigScreen.h"

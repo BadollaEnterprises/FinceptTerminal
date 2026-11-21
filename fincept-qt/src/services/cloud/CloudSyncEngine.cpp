@@ -3,6 +3,7 @@
 #include "auth/AuthManager.h"
 #include "core/config/AppConfig.h"
 #include "core/logging/Logger.h"
+#include "core/policy/CommunityPolicy.h"
 #include "network/cloud/CloudClient.h"
 #include "storage/repositories/SettingsRepository.h"
 #include "storage/sqlite/Database.h"
@@ -240,10 +241,12 @@ CloudDomainAdapter* CloudSyncEngine::adapter_for(const QString& entity) const {
 }
 
 bool CloudSyncEngine::master_enabled() const {
-    return CloudSyncSettings::master_enabled();
+    return policy::fincept_cloud_sync_enabled() && CloudSyncSettings::master_enabled();
 }
 
 bool CloudSyncEngine::can_enable() const {
+    if (!policy::fincept_cloud_sync_enabled())
+        return false;
     const auto& s = fincept::auth::AuthManager::instance().session();
     return s.authenticated && !s.api_key.isEmpty();
 }
@@ -257,6 +260,12 @@ void CloudSyncEngine::update_credentials() {
 }
 
 void CloudSyncEngine::set_master_enabled(bool on) {
+    if (on && !policy::fincept_cloud_sync_enabled()) {
+        set_status(QString(), Status::Disabled, "community_local_only");
+        emit enable_finished(false, tr("Cloud sync is disabled in community local-only mode. "
+                                       "Your data remains on this device."));
+        return;
+    }
     if (on && !can_enable()) {
         set_status(QString(), Status::Disabled, "sign_in_required");
         emit enable_finished(false, tr("Sign in to enable cloud sync."));

@@ -2,6 +2,7 @@
 
 #include "core/config/AppConfig.h"
 #include "core/logging/Logger.h"
+#include "core/policy/CommunityPolicy.h"
 #include "datahub/DataHub.h"
 #include "datahub/TopicPolicy.h"
 #include "network/http/HttpClient.h"
@@ -80,6 +81,23 @@ void ConnectivityService::refresh(const QStringList& topics) {
 void ConnectivityService::probe() {
     if (probe_in_flight_)
         return; // a manual request() raced the scheduler — one probe is enough
+
+    if (!policy::fincept_hosted_health_enabled()) {
+        // Community mode has no dependency on Fincept's hosted backend. Publish
+        // the truthful local mode immediately instead of turning a third-party
+        // outage into a red status for the whole terminal.
+        QJsonObject payload{{"ok", true},
+                            {"latency_ms", 0},
+                            {"http_status", 0},
+                            {"error", QString()},
+                            {"checked_at_ms", QDateTime::currentMSecsSinceEpoch()},
+                            {"endpoint", QStringLiteral("device-local")},
+                            {"community_local", true}};
+        auto& hub = fincept::datahub::DataHub::instance();
+        hub.publish(health_topic(), QVariant::fromValue(payload));
+        return;
+    }
+
     if (!nam_)
         nam_ = new QNetworkAccessManager(this);
 

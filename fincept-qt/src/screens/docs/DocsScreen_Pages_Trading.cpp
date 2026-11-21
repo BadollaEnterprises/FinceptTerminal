@@ -393,9 +393,10 @@ QWidget* DocsScreen::page_quantlib() {
     return make_page(
         tr("QUANTLIB SUITE"), tr("18 quantitative analysis modules with 590+ endpoints"),
         {
-            {tr("OVERVIEW"), tr("The QuantLib Suite provides access to 590+ quantitative analysis endpoints organized "
-                                "into 18 modules. Powered by a REST API backend, it covers everything from basic "
-                                "statistics to complex derivative pricing and risk modeling.")},
+            {tr("OVERVIEW"), tr("The QuantLib Suite exposes 590 local routes across 18 modules. Every route runs "
+                                "through the bundled deterministic engine with 0 Fincept credits and no paid "
+                                "fallback. It covers everything from basic statistics to derivative pricing, "
+                                "portfolio construction, risk, ML, and regulatory calculations.")},
             {tr("MODULES (18)"), tr("■  Core — Fundamental quantitative operations\n"
                                     "■  Analysis — Statistical analysis and hypothesis testing\n"
                                     "■  Curves — Yield curves, forward curves, discount factors\n"
@@ -417,7 +418,8 @@ QWidget* DocsScreen::page_quantlib() {
             {tr("REAL-WORLD USAGE"), tr("■  Quantitative analyst: Price complex derivatives, calibrate models\n"
                                         "■  Risk manager: Run VaR, stress tests, regulatory calculations\n"
                                         "■  Portfolio manager: Optimize allocation, efficient frontier analysis\n"
-                                        "■  Fixed income: Yield curve construction, swap valuation")},
+                                        "■  Fixed income: Yield curve construction, swap valuation\n"
+                                        "■  Offline research: Repeat calculations locally without a cloud entitlement")},
             {tr("SKILL LEVELS"),
              tr("BEGINNER: Use the Statistics module for basic data analysis\n"
                 "INTERMEDIATE: Price bonds and options, build yield curves\n"
@@ -464,7 +466,7 @@ QWidget* DocsScreen::page_agent_config() {
                                  "■  Runs — Start a run and follow runs in progress and past runs\n"
                                  "■  Chat — Interact with agents in conversation\n"
                                  "■  Schedules — Runs that start on a schedule\n"
-                                 "■  Harnesses — Claude Code / Codex agents running on this machine\n"
+                                 "■  Harnesses — eligible external AI agents running on this machine\n"
                                  "■  Connect — Connect an outside agent to the terminal's tools\n"
                                  "■  System — System-level agent configuration")},
             {tr("AGENT TYPES"), tr("■  Geopolitics Agent — Monitors global events, conflict analysis\n"

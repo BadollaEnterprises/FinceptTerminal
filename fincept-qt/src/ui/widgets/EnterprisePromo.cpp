@@ -8,6 +8,7 @@
 #include "core/config/AppConfig.h"
 #include "core/keys/WindowCycler.h"
 #include "core/logging/Logger.h"
+#include "core/policy/CommunityPolicy.h"
 #include "ui/theme/Theme.h"
 #include "ui/theme/ThemeManager.h"
 
@@ -430,6 +431,8 @@ void dismiss_placement(const QString& placement) {
 namespace billing {
 
 void open_plans(QWidget* origin) {
+    if (!policy::commercial_promotions_enabled())
+        return;
     CommandContext ctx;
     ctx.shell = &TerminalShell::instance();
     if (origin)
@@ -645,7 +648,7 @@ void UpgradeDialog::retranslateUi() {
 }
 
 void UpgradeDialog::show_now(QWidget* parent, const QString& placement) {
-    if (ent_headless_platform())
+    if (!policy::commercial_promotions_enabled() || ent_headless_platform())
         return;
     if (UpgradeDialog* open = ent_active_dialog().data()) {
         open->raise();

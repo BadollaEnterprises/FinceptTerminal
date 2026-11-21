@@ -71,7 +71,7 @@ QWidget* DocsScreen::page_welcome() {
                               "■  18-module QuantLib quantitative analysis suite (590+ endpoints)\n"
                               "■  AI Quant Lab with ML models, factor discovery, HFT, RL trading\n"
                               "■  Multiple AI agent frameworks (Geopolitics, Economic, Hedge Fund)\n"
-                              "■  Agent Config — agents, teams and runs (Claude Code / Codex agents on the "
+                              "■  Agent Config — agents, teams and runs (external AI agents using the "
                               "terminal's tools)\n"
                               "■  Visual node editor for workflow automation\n"
                               "■  DBnomics access to 100+ data providers, 500K+ datasets\n"
@@ -133,8 +133,8 @@ QWidget* DocsScreen::page_getting_started() {
                                         "■  Log in with existing credentials (plus your two-factor code, if enabled)\n\n"
                                         "After login you set a 6-digit PIN that unlocks the terminal — it also locks "
                                         "after a period of inactivity, or on demand with Ctrl+L. You land on the "
-                                        "Dashboard — your home base. Free accounts see Plans & Pricing once per "
-                                        "release; CONTINUE WITH FREE goes straight in."),
+                                        "Dashboard — your home base. The community workspace opens directly without "
+                                        "a subscription or pricing interruption."),
                                      ui::colors::POSITIVE));
 
     vl->addWidget(make_section_panel("2", tr("THE INTERFACE"),
@@ -160,17 +160,16 @@ QWidget* DocsScreen::page_getting_started() {
                                         "changed in Settings → Keybindings."),
                                      ui::colors::AMBER));
 
-    vl->addWidget(make_section_panel("4", tr("SUBSCRIPTION PLANS"),
-                                     tr("Your Fincept account has two plans. Credits pay for cloud analytics, AI "
-                                        "and premium data calls:\n\n"
-                                        "■  FREE — signup credits and community support; start right away\n"
-                                        "■  PRO — $10/month: a monthly credit allowance, higher limits, every cloud "
-                                        "analytics module and priority support\n\n"
-                                        "Open Plans & Pricing from the plan badge in the toolbar, Profile → Billing "
-                                        "or the command palette (Ctrl+Shift+P → \"plans\"). Your balance and "
-                                        "payment history are under Profile → Billing.\n\n"
-                                        "Firms and teams: Fincept Terminal Enterprise is the private edition — a "
-                                        "separate product with its own accounts (fincept.in/enterprise)."),
+    vl->addWidget(make_section_panel("4", tr("COMMUNITY & BYO COSTS"),
+                                     tr("The community workspace keeps ordinary research and analytics off metered "
+                                        "Fincept routes:\n\n"
+                                        "■  Local analytics and public-data adapters run without Fincept credits\n"
+                                        "■  The community credit firewall blocks legacy metered fallbacks\n"
+                                        "■  AI uses your configured provider; add your DeepSeek API key in Settings "
+                                        "→ LLM Configuration\n"
+                                        "■  Provider usage is billed only by that provider under your own account\n\n"
+                                        "Screens that need a broker, exchange, or specialist data source show the "
+                                        "exact connection required before anything is sent."),
                                      ui::colors::AMBER));
 
     vl->addWidget(

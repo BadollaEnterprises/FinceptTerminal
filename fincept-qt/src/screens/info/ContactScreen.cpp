@@ -1,6 +1,7 @@
 #include "screens/info/ContactScreen.h"
 
 #include "core/events/EventBus.h"
+#include "core/policy/CommunityPolicy.h"
 #include "ui/theme/Theme.h"
 #include "ui/widgets/EnterprisePromo.h"
 
@@ -196,12 +197,15 @@ QWidget* ContactScreen::build_page() {
         grid->addWidget(make_contact_card(tr("IN-APP TICKETS"), tr("Support tab"),
                                           tr("Open a tracked ticket from inside the terminal")),
                         1, 1);
-        grid->addWidget(make_contact_card(tr("ENTERPRISE — CUSTOM REQUIREMENTS"), tr("Discuss custom requirements ↗"),
-                                          tr("Fincept Terminal Enterprise — the private edition for funds, family "
-                                             "offices and research desks. Separate product, separate account. "
-                                             "For partnerships write to support@fincept.in."),
-                                          enterprise::meeting_url()),
-                        2, 0, 1, 2);
+        if (policy::commercial_promotions_enabled()) {
+            grid->addWidget(
+                make_contact_card(tr("ENTERPRISE — CUSTOM REQUIREMENTS"), tr("Discuss custom requirements ↗"),
+                                  tr("Fincept Terminal Enterprise — the private edition for funds, family "
+                                     "offices and research desks. Separate product, separate account. "
+                                     "For partnerships write to support@fincept.in."),
+                                  enterprise::meeting_url()),
+                2, 0, 1, 2);
+        }
 
         pvl->addWidget(body);
         vl->addWidget(panel);

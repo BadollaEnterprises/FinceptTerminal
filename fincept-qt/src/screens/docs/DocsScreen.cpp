@@ -977,7 +977,7 @@ const DocsLinkRow kDocsLinkRows[] = {
      "agent studio, agents, teams, workflows"},
     {"alpha_arena", QT_TRANSLATE_NOOP("fincept::screens::DocsScreen", "Guide: Alpha Arena"), "competition, models"},
     {"agent_workbench", QT_TRANSLATE_NOOP("fincept::screens::DocsScreen", "Guide: Agent Config › Runs"),
-     "agent workbench, claude code, codex, runs"},
+     "agent workbench, external ai agents, harnesses, runs"},
     {"dbnomics", QT_TRANSLATE_NOOP("fincept::screens::DocsScreen", "Guide: DBnomics"), "economic series"},
     {"economics", QT_TRANSLATE_NOOP("fincept::screens::DocsScreen", "Guide: Economics"), "macro, fred, world bank"},
     {"akshare", QT_TRANSLATE_NOOP("fincept::screens::DocsScreen", "Guide: AkShare Data"), "china data"},

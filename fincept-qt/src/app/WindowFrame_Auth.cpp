@@ -14,6 +14,7 @@
 #include "app/SecureStoreBlockedView.h"
 #include "core/layout/WorkspaceShell.h"
 #include "core/logging/Logger.h"
+#include "core/policy/CommunityPolicy.h"
 #include "core/session/SessionManager.h"
 #include "screens/auth/LockScreen.h"
 #include "storage/repositories/SettingsRepository.h"
@@ -332,7 +333,7 @@ void WindowFrame::show_forgot_password() {
     enter_auth_stack(2);
 }
 void WindowFrame::show_pricing() {
-    if (locked_)
+    if (locked_ || !policy::commercial_promotions_enabled())
         return;
     enter_auth_stack(3);
 }
@@ -421,16 +422,18 @@ void WindowFrame::enter_terminal_after_auth() {
     // (new release, or 72 h since last shown) and refuses to cover another
     // modal or an inactive / minimised window; the guard here keeps it off the
     // lock, login and pricing screens and out of chat mode.
-    QTimer::singleShot(8000, this, [this]() {
-        if (locked_ || chat_mode_ || !stack_ || stack_->currentIndex() != 1)
-            return;
-        ui::UpgradeDialog::maybe_show(this);
-    });
+    if (policy::automatic_commercial_prompts_enabled()) {
+        QTimer::singleShot(8000, this, [this]() {
+            if (locked_ || chat_mode_ || !stack_ || stack_->currentIndex() != 1)
+                return;
+            ui::UpgradeDialog::maybe_show(this);
+        });
+    }
 
     // Free accounts see Plans & Pricing once per account per release — over a
     // terminal that is already fully initialised, so CONTINUE WITH FREE lands
     // straight on it. Unlocks that resume a session never redirect here.
-    if (!session_start)
+    if (!policy::automatic_commercial_prompts_enabled() || !session_start)
         return;
     auto& auth = auth::AuthManager::instance();
     if (!auth.is_authenticated() || auth.session().has_paid_plan())

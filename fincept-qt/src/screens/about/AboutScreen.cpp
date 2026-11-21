@@ -1,6 +1,7 @@
 #include "screens/about/AboutScreen.h"
 
 #include "core/config/AppPaths.h"
+#include "core/policy/CommunityPolicy.h"
 #include "services/updater/UpdateService.h"
 #include "ui/theme/Theme.h"
 #include "ui/widgets/EnterprisePromo.h"
@@ -266,7 +267,7 @@ AboutScreen::AboutScreen(QWidget* parent) : QWidget(parent) {
         // Enterprise — the separate closed-source product, not a licence for this build.
         // Fincept no longer sells a commercial licence for the open-source edition;
         // commercial, institutional and academic use is served by Enterprise instead.
-        {
+        if (policy::commercial_promotions_enabled()) {
             auto* panel = makePanel();
             auto* pvl = new QVBoxLayout(panel);
             pvl->setContentsMargins(0, 0, 0, 0);

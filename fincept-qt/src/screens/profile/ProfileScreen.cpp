@@ -4,6 +4,7 @@
 #include "auth/UserApi.h"
 #include "core/currency/Currency.h"
 #include "core/logging/Logger.h"
+#include "core/policy/CommunityPolicy.h"
 #include "screens/common/CommandRows.h"
 #include "services/billing/PlanAccess.h"
 #include "ui/charts/BarChart.h"
@@ -98,6 +99,13 @@ static QString profile_plan_text(const QJsonObject& o) {
 }
 
 namespace {
+
+bool commercial_profile_section_enabled(const QString& section) {
+    if (policy::commercial_promotions_enabled())
+        return true;
+    const QString id = section.trimmed().toLower();
+    return id != QLatin1String("usage") && id != QLatin1String("billing");
+}
 
 // The Usage / Security / Billing tables sit in a stack: the table itself (page 0)
 // or — created on first use — a skeleton while the first rows load and a compact
@@ -517,7 +525,10 @@ void ProfileScreen::retranslateUi() {
 void ProfileScreen::rebuild_sections() {
     if (!sections_)
         return;
-    const int current = sections_->currentIndex();
+    int current = sections_->currentIndex();
+    if (!commercial_profile_section_enabled(current == 1 ? QStringLiteral("usage")
+                                                         : current == 3 ? QStringLiteral("billing") : QString()))
+        current = 0;
 
     // Build factories in the same order they were originally added so the
     // index remains stable for restore_state() and on_section_changed().
@@ -556,9 +567,11 @@ void ProfileScreen::build_header(QVBoxLayout* root) {
     hl->addStretch();
     credits_badge_ = new QLabel;
     credits_badge_->setObjectName(QStringLiteral("profCreditsBadge"));
+    credits_badge_->setVisible(policy::commercial_promotions_enabled());
     hl->addWidget(credits_badge_);
     plan_badge_ = new QLabel;
     plan_badge_->setObjectName(QStringLiteral("profPlanBadge"));
+    plan_badge_->setVisible(policy::commercial_promotions_enabled());
     hl->addWidget(plan_badge_);
     header_refresh_btn_ = new QPushButton(tr("REFRESH"));
     header_refresh_btn_->setObjectName(QStringLiteral("profBtn"));
@@ -595,6 +608,7 @@ void ProfileScreen::build_tab_nav(QVBoxLayout* root) {
         btn->setFixedHeight(32);
         btn->setCursor(Qt::PointingHandCursor);
         connect(btn, &QPushButton::clicked, this, [this, i]() { on_section_changed(i); });
+        btn->setVisible(commercial_profile_section_enabled(nav_source_keys_[i]));
         hl->addWidget(btn);
         nav_buttons_.append(btn);
     }
@@ -603,6 +617,9 @@ void ProfileScreen::build_tab_nav(QVBoxLayout* root) {
 }
 
 void ProfileScreen::on_section_changed(int index, bool force) {
+    const QString section = index >= 0 && index < nav_source_keys_.size() ? nav_source_keys_[index] : QString();
+    if (!commercial_profile_section_enabled(section))
+        index = 0;
     sections_->setCurrentIndex(index);
     for (int i = 0; i < nav_buttons_.size(); ++i)
         profile_set_prop(nav_buttons_[i], "active", i == index ? QStringLiteral("true") : QStringLiteral("false"));
@@ -654,6 +671,7 @@ QWidget* ProfileScreen::build_overview() {
     grid->addWidget(acct, 0, 0);
 
     auto* cred = make_panel(tr("CREDITS & BALANCE"));
+    cred->setVisible(policy::commercial_promotions_enabled());
     auto* cvl2 = qobject_cast<QVBoxLayout*>(cred->layout());
     ov_credits_big_ = new QLabel(QStringLiteral("0"));
     ov_credits_big_->setObjectName(QStringLiteral("profCreditsBig"));
@@ -1799,6 +1817,8 @@ bool ProfileScreen::open_section(const QString& section, const QString& focus) {
     const QString key = section.trimmed().toLower();
     if (key.isEmpty())
         return true;
+    if (!commercial_profile_section_enabled(key))
+        return false;
     for (int i = 0; i < int(std::size(kProfSectionIds)); ++i) {
         if (key != QLatin1String(kProfSectionIds[i]))
             continue;
@@ -1820,26 +1840,28 @@ QList<command::CommandItem> prof_command_rows() {
     namespace rows = command_rows;
     const QString where = ProfileScreen::tr("Profile");
     const QString screen = QStringLiteral("profile");
-    return {
-        rows::section(screen, QStringLiteral("overview"), ProfileScreen::tr("Account overview"),
+    QList<command::CommandItem> out;
+    out << rows::section(screen, QStringLiteral("overview"), ProfileScreen::tr("Account overview"),
                       {QStringLiteral("account"), QStringLiteral("profile"), QStringLiteral("my account"),
                        QStringLiteral("username"), QStringLiteral("email")},
-                      where),
-        rows::section(screen, QStringLiteral("usage"), ProfileScreen::tr("Usage & credits"),
-                      {QStringLiteral("usage"), QStringLiteral("credits used"), QStringLiteral("api calls"),
-                       QStringLiteral("requests"), QStringLiteral("rate limit")},
-                      where),
-        rows::section(screen, QStringLiteral("security"), ProfileScreen::tr("Account security"),
+                      where);
+    if (policy::commercial_promotions_enabled())
+        out << rows::section(screen, QStringLiteral("usage"), ProfileScreen::tr("Usage & credits"),
+                             {QStringLiteral("usage"), QStringLiteral("credits used"), QStringLiteral("api calls"),
+                              QStringLiteral("requests"), QStringLiteral("rate limit")},
+                             where);
+    out << rows::section(screen, QStringLiteral("security"), ProfileScreen::tr("Account security"),
                       {QStringLiteral("security"), QStringLiteral("password"), QStringLiteral("2fa"),
                        QStringLiteral("two factor"), QStringLiteral("api key"), QStringLiteral("login history")},
-                      where),
-        rows::section(screen, QStringLiteral("billing"), ProfileScreen::tr("Billing"),
-                      {QStringLiteral("billing"), QStringLiteral("invoices"), QStringLiteral("plan"),
-                       QStringLiteral("subscription"), QStringLiteral("payments")},
-                      where),
-        rows::section(screen, QStringLiteral("support"), ProfileScreen::tr("Account support"),
-                      {QStringLiteral("help"), QStringLiteral("contact"), QStringLiteral("support")}, where),
-    };
+                      where);
+    if (policy::commercial_promotions_enabled())
+        out << rows::section(screen, QStringLiteral("billing"), ProfileScreen::tr("Billing"),
+                             {QStringLiteral("billing"), QStringLiteral("invoices"), QStringLiteral("plan"),
+                              QStringLiteral("subscription"), QStringLiteral("payments")},
+                             where);
+    out << rows::section(screen, QStringLiteral("support"), ProfileScreen::tr("Account support"),
+                         {QStringLiteral("help"), QStringLiteral("contact"), QStringLiteral("support")}, where);
+    return out;
 }
 
 void prof_install_commands() {

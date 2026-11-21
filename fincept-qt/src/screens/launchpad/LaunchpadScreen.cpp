@@ -9,6 +9,7 @@
 #include "core/layout/WorkspaceShell.h"
 #include "core/logging/Logger.h"
 #include "core/profile/ProfilePaths.h"
+#include "core/policy/CommunityPolicy.h"
 #include "core/window/WindowRegistry.h"
 #include "screens/launchpad/OnboardingTour.h"
 #include "storage/repositories/SettingsRepository.h"
@@ -250,6 +251,7 @@ LaunchpadScreen::LaunchpadScreen(QWidget* parent) : QMainWindow(parent) {
         QString(), ui::enterprise::url_with_ref(ui::enterprise::site_url(), QStringLiteral("launchpad")),
         ui::enterprise::CtaStyle::Quiet, central);
     ent_link->setObjectName("launchpadEnterpriseLink");
+    ent_link->setVisible(policy::commercial_promotions_enabled());
     vl->addWidget(ent_link, 0, Qt::AlignLeft);
 
     setCentralWidget(central);

@@ -10,6 +10,7 @@
 #include "core/config/ProfileManager.h"
 #include "core/instrument/SymbolInput.h"
 #include "core/market/MarketProfile.h"
+#include "core/policy/CommunityPolicy.h"
 #include "network/http/HttpClient.h"
 #include "python/PythonRunner.h"
 #include "services/instruments/BackendSymbolSearch.h"
@@ -86,9 +87,11 @@ BackendSymbolSearch& isrs_backend() {
 ResolverSources isrs_production_sources() {
     ResolverSources s = index_resolver_sources();
 
-    s.backend_search = [](const QString& query, int limit, QObject* context, ResolverSources::RemoteDone done) {
-        isrs_backend().search(query, limit, context, std::move(done));
-    };
+    if (policy::fincept_hosted_symbol_services_enabled()) {
+        s.backend_search = [](const QString& query, int limit, QObject* context, ResolverSources::RemoteDone done) {
+            isrs_backend().search(query, limit, context, std::move(done));
+        };
+    }
 
     s.yahoo_search = [](const QString& query, int limit, QObject* context, ResolverSources::RemoteDone done) {
         QPointer<QObject> ctx(context);

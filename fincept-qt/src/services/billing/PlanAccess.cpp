@@ -2,6 +2,7 @@
 
 #include "auth/AuthManager.h"
 #include "core/logging/Logger.h"
+#include "core/policy/CommunityPolicy.h"
 #include "network/http/HttpClient.h"
 #include "storage/repositories/SettingsRepository.h"
 
@@ -68,6 +69,8 @@ bool PlanAccess::included(const QString& category) const {
 }
 
 QString PlanAccess::upgrade_note(const QString& category) const {
+    if (!policy::commercial_promotions_enabled())
+        return {};
     const PlanPrice* p = price(category);
     if (!p || is_paid() || !p->cheaper_on_pro())
         return {};
@@ -106,6 +109,16 @@ QString PlanAccess::plan_signature() const {
 }
 
 void PlanAccess::on_auth_changed() {
+    // Commercial plan metadata has no product purpose in community mode.
+    // Discard any cache loaded by an older build and do not schedule the
+    // entitlement request merely because the user signed in.
+    if (!policy::commercial_promotions_enabled()) {
+        if (!loaded_for_.isEmpty() || has_table_) {
+            clear();
+            emit changed();
+        }
+        return;
+    }
     const QString account = account_key();
     if (account.isEmpty()) {
         if (!loaded_for_.isEmpty() || has_table_) {
@@ -196,6 +209,8 @@ void PlanAccess::apply(const QJsonObject& data) {
 }
 
 void PlanAccess::refresh(bool force) {
+    if (!policy::commercial_promotions_enabled())
+        return;
     const QString account = account_key();
     if (account.isEmpty())
         return;

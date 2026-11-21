@@ -1,6 +1,7 @@
 #include "ui/navigation/StatusBar.h"
 
 #include "core/symbol/SymbolContext.h"
+#include "core/policy/CommunityPolicy.h"
 #include "core/symbol/SymbolGroup.h"
 #include "core/symbol/SymbolGroupRegistry.h"
 #include "core/symbol/SymbolRef.h"
@@ -43,6 +44,7 @@ StatusBar::StatusBar(QWidget* parent) : QWidget(parent) {
     enterprise_btn_->setFlat(true);
     enterprise_btn_->setCursor(Qt::PointingHandCursor);
     enterprise_btn_->setFocusPolicy(Qt::NoFocus);
+    enterprise_btn_->setVisible(policy::commercial_promotions_enabled());
     connect(enterprise_btn_, &QPushButton::clicked, this, []() {
         enterprise::open_url(enterprise::url_with_ref(enterprise::site_url(), QStringLiteral("statusbar")));
     });
@@ -63,11 +65,12 @@ StatusBar::StatusBar(QWidget* parent) : QWidget(parent) {
     // Python environment install/sync progress — hidden unless a setup or
     // background sync is running or the last one failed (click retries).
     chips_layout_->addWidget(new PythonSetupChip(this));
-    // What the plan means for market data, always in view: on Free the price
-    // per call and "Included with Pro" (opens Plans & Pricing); on Pro the
-    // confirmation that data uses no credits. Hidden until the server has sent
-    // its plan table (PlanAccess).
-    chips_layout_->addWidget(new PlanHintLabel(QStringLiteral("market_data"), this));
+    // PlanHint can make itself visible when plan data arrives, so do not create
+    // the market-data promotion at all in the local-first community workspace.
+    if (policy::commercial_promotions_enabled()) {
+        auto* plan_hint = new PlanHintLabel(QStringLiteral("market_data"), this);
+        chips_layout_->addWidget(plan_hint);
+    }
 
     hl->addStretch();
 

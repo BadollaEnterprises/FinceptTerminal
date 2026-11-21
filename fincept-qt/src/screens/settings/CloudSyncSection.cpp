@@ -1,10 +1,10 @@
 #include "screens/settings/CloudSyncSection.h"
 
+#include "core/policy/CommunityPolicy.h"
 #include "screens/settings/SettingsRowHelpers.h"
 #include "screens/settings/SettingsStyles.h"
 #include "services/cloud/CloudSyncEngine.h"
 #include "storage/sync/CloudSyncSettings.h"
-#include "ui/widgets/EnterprisePromo.h"
 
 #include <QCoreApplication>
 #include <QMessageBox>
@@ -59,13 +59,12 @@ void capture_row_labels(QWidget* row, QLabel** label_out, QLabel** desc_out = nu
         *desc_out = labels.at(1);
 }
 
-/// Out-of-credits banner: the warning plus an in-app link to Plans & Pricing
-/// (handled by linkActivated — the href never leaves the terminal).
 QString cloud_credits_banner_html() {
-    return QStringLiteral("%1 <a href=\"fincept:plans\" style=\"color:%2;\">%3</a>")
-        .arg(QCoreApplication::translate("CloudSyncSection", "Out of credits — cloud sync is paused.").toHtmlEscaped(),
-             QString(ui::colors::AMBER()),
-             QCoreApplication::translate("CloudSyncSection", "Get more credits with Pro").toHtmlEscaped());
+    if (!policy::fincept_cloud_sync_enabled())
+        return QCoreApplication::translate(
+            "CloudSyncSection", "LOCAL-ONLY MODE — Fincept Cloud Sync is disabled; local data is unaffected.");
+    return QCoreApplication::translate("CloudSyncSection",
+                                       "Cloud sync is paused because its hosted quota is unavailable.");
 }
 
 QString cloud_status_text(CloudSyncEngine::Status s, int pending, const QString& error) {
@@ -128,7 +127,6 @@ void CloudSyncSection::build_ui() {
     credits_banner_->setStyleSheet(
         QString("color:%1;background:transparent;font-weight:700;").arg(ui::colors::NEGATIVE()));
     credits_banner_->setVisible(false);
-    connect(credits_banner_, &QLabel::linkActivated, this, [this](const QString&) { ui::billing::open_plans(this); });
     vl->addWidget(credits_banner_);
 
     master_toggle_ = new QCheckBox(tr("Enable cloud sync"));
@@ -260,6 +258,11 @@ void CloudSyncSection::update_enabled_state() {
         master_toggle_->setEnabled(can && !engine.enable_in_progress());
     if (sign_in_hint_)
         sign_in_hint_->setVisible(!can);
+    const bool cloud_enabled = policy::fincept_cloud_sync_enabled();
+    for (auto it = domain_toggles_.cbegin(); it != domain_toggles_.cend(); ++it)
+        it.value()->setEnabled(cloud_enabled);
+    if (refresh_btn_)
+        refresh_btn_->setEnabled(cloud_enabled);
 }
 
 void CloudSyncSection::show_availability(const QString& text, bool warn) {
@@ -301,11 +304,15 @@ void CloudSyncSection::changeEvent(QEvent* event) {
 }
 
 void CloudSyncSection::retranslateUi() {
+    const bool cloud_enabled = policy::fincept_cloud_sync_enabled();
     if (title_)
-        title_->setText(tr("Fincept Cloud Sync"));
+        title_->setText(cloud_enabled ? tr("Fincept Cloud Sync") : tr("LOCAL-ONLY MODE"));
     if (blurb_)
-        blurb_->setText(tr("Mirror your data to your Fincept account. Your local copy stays the working "
-                           "copy — sync runs in the background, on this device and across your devices."));
+        blurb_->setText(cloud_enabled
+                            ? tr("Mirror your data to your Fincept account. Your local copy stays the working "
+                                 "copy — sync runs in the background, on this device and across your devices.")
+                            : tr("Your terminal data stays in the local database on this device. "
+                                 "No Fincept Cloud request or credit-backed sync is used."));
     if (credits_banner_)
         credits_banner_->setText(cloud_credits_banner_html());
     if (master_toggle_)
@@ -315,7 +322,8 @@ void CloudSyncSection::retranslateUi() {
     if (cloud_sync_desc_)
         cloud_sync_desc_->setText(tr("When on, changes mirror to your account and pull on this device."));
     if (sign_in_hint_)
-        sign_in_hint_->setText(tr("Sign in to enable cloud sync."));
+        sign_in_hint_->setText(cloud_enabled ? tr("Sign in to enable cloud sync.")
+                                             : tr("Cloud sync is disabled by the community credit firewall."));
     if (adv_title_)
         adv_title_->setText(tr("ADVANCED — DOMAINS"));
 

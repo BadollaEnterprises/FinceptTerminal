@@ -1,6 +1,7 @@
 ﻿#include "screens/dashboard/canvas/WidgetRegistry.h"
 
 #include "core/market/MarketProfile.h"
+#include "core/policy/CommunityPolicy.h"
 
 #include "screens/dashboard/widgets/AgentErrorsWidget.h"
 #include "screens/dashboard/widgets/AiQuickAskWidget.h"
@@ -116,7 +117,7 @@ WidgetRegistry::WidgetRegistry() {
                      QT_TRANSLATE_NOOP("fincept::screens::WidgetRegistry", "Markets"),
                      QT_TRANSLATE_NOOP("fincept::screens::WidgetRegistry",
                                        "US Treasury (today vs 1M / 1Y ago) or euro-area AAA curve, 2s10s and 3m10y "
-                                       "spreads — Fincept data API, refresh on demand"),
+                                       "spreads — public Treasury / ECB data, refresh on demand"),
                      5, 5, 3, 4, [](const QJsonObject& cfg, QWidget* p) { return new widgets::YieldCurveWidget(cfg, p); }});
 
     register_widget({"volatility", QT_TRANSLATE_NOOP("fincept::screens::WidgetRegistry", "Volatility"),
@@ -128,7 +129,7 @@ WidgetRegistry::WidgetRegistry() {
     register_widget({"crypto_overview", QT_TRANSLATE_NOOP("fincept::screens::WidgetRegistry", "Crypto Overview"),
                      QT_TRANSLATE_NOOP("fincept::screens::WidgetRegistry", "Markets"),
                      QT_TRANSLATE_NOOP("fincept::screens::WidgetRegistry",
-                                       "Total crypto market cap, 24 h change, BTC / ETH dominance and trending coins"),
+                                       "Total crypto market cap, 24 h change, BTC / ETH dominance and trending coins — CoinPaprika"),
                      5, 5, 3, 4, [](const QJsonObject&, QWidget* p) { return new widgets::CryptoOverviewWidget(p); }});
 
     register_widget({"fx_matrix", QT_TRANSLATE_NOOP("fincept::screens::WidgetRegistry", "FX Cross Matrix"),
@@ -208,7 +209,7 @@ WidgetRegistry::WidgetRegistry() {
                      QT_TRANSLATE_NOOP("fincept::screens::WidgetRegistry", "Research"),
                      QT_TRANSLATE_NOOP("fincept::screens::WidgetRegistry",
                                        "Earnings reports of the next 14 days — your region, all, or only your "
-                                       "portfolio and watchlist symbols"),
+                                       "portfolio and watchlist symbols — Nasdaq public calendar"),
                      6, 5, 3, 3, [](const QJsonObject& cfg, QWidget* p) { return new widgets::EarningsCalendarWidget(cfg, p); }});
 
     register_widget({"econ_calendar", QT_TRANSLATE_NOOP("fincept::screens::WidgetRegistry", "Economic Calendar"),

@@ -4,6 +4,7 @@
 #include "core/events/EventBus.h"
 #include "core/keys/KeyConfigManager.h"
 #include "core/logging/Logger.h"
+#include "core/policy/CommunityPolicy.h"
 #include "datahub/DataHub.h"
 #include "datahub/DataHubMetaTypes.h"
 #include "screens/common/CommandRows.h"
@@ -148,7 +149,8 @@ DashboardScreen::DashboardScreen(QWidget* parent) : QWidget(parent) {
     });
 
     // ── Enterprise strip (dismissible until the next release) ──
-    if (!ui::enterprise::placement_dismissed(QStringLiteral("dashboard"))) {
+    if (policy::commercial_promotions_enabled() &&
+        !ui::enterprise::placement_dismissed(QStringLiteral("dashboard"))) {
         ent_strip_ = build_enterprise_strip();
         vl->addWidget(ent_strip_);
     }

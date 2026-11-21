@@ -1050,7 +1050,7 @@ void TestAutoLoadLogic::requirements_all_met() {
     env.balance = 100;
     const RequirementStatus st = check_requirements(
         {Requirement::signed_in(), Requirement::api_key("FRED_API_KEY", "FRED"), Requirement::llm(),
-         Requirement::python(), Requirement::broker("zerodha"), Requirement::credits(8)},
+         Requirement::python(), Requirement::broker("zerodha")},
         env);
     QVERIFY(st.ok);
     QVERIFY(check_requirements({}, env).ok);
@@ -1085,15 +1085,16 @@ void TestAutoLoadLogic::requirements_api_key_names_key_and_link() {
 
 void TestAutoLoadLogic::requirements_credits() {
     FakeEnv env;
-    env.balance = -1; // unknown balance never blocks
-    QVERIFY(check_requirements({Requirement::credits(8)}, env).ok);
-    env.balance = 8;
-    QVERIFY(check_requirements({Requirement::credits(8)}, env).ok);
-    env.balance = 3;
+    env.balance = -1;
     const RequirementStatus st = check_requirements({Requirement::credits(8)}, env);
     QVERIFY(!st.ok);
-    QCOMPARE(st.link.screen_id, QStringLiteral("plans"));
-    QVERIFY(check_requirements({Requirement::credits(0)}, env).ok);
+    QVERIFY(st.title.contains(QStringLiteral("disabled"), Qt::CaseInsensitive));
+    QVERIFY(st.message.contains(QStringLiteral("community credit firewall"), Qt::CaseInsensitive));
+    QVERIFY(!st.link.valid());
+    QVERIFY(st.action_text.isEmpty());
+
+    env.balance = 1000;
+    QVERIFY(!check_requirements({Requirement::credits(8)}, env).ok);
 }
 
 void TestAutoLoadLogic::requirements_broker() {

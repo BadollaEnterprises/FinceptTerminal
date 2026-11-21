@@ -279,11 +279,12 @@ QWidget* HelpScreen::build_page() {
                 "follow the broker's sign-in) and press CONNECT. Keys for data providers and other services go in "
                 "Settings ▸ Credentials. Both are stored encrypted on this computer.")},
             {tr("What uses credits, and what happens when they run out?"),
-             tr("Fincept AI requests and the cloud analytics modules use credits, and some modules need a Pro plan. "
-                "Your balance is shown in the toolbar, and Profile ▸ Usage lists what used credits over the last 30 "
-                "days. When the balance runs out those requests are refused until you top up from Plans & Pricing "
-                "(click the plan badge in the toolbar); AI chat can also run on your own provider key from "
-                "Settings ▸ LLM Config.")},
+             tr("This community build uses the community credit firewall: metered Fincept AI, market-data, maritime, "
+                "macro, geopolitics and cloud-analytics requests are blocked before the network call. AI uses your "
+                "DeepSeek profile; supported analytics and QuantLib routes run locally; public data comes from "
+                "sources such as Yahoo Finance, Stooq, CBOE, FRED, World Bank, GDELT and RSS. Your own provider may "
+                "bill its normal usage, but these routes consume 0 Fincept credits. See Settings ▸ Data Sources for "
+                "the live route summary.")},
             {tr("Reset the terminal or remove it"),
              tr("Settings ▸ Storage & Cache: Reset UI State restores window and panel layouts at the next start, "
                 "Clear All Cache removes temporary data, and Delete All (Danger Zone) erases all local data except "

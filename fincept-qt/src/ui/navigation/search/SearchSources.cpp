@@ -7,6 +7,7 @@
 #include "core/command/CommandSeed.h"
 #include "core/layout/LayoutCatalog.h"
 #include "core/logging/Logger.h"
+#include "core/policy/CommunityPolicy.h"
 #include "services/agent_tasks/TaskRunService.h"
 #include "services/backtesting/BacktestRunStore.h"
 #include "services/connectors/ConnectorCatalog.h"
@@ -94,6 +95,9 @@ QString ss_action_risk(const ActionDef& def) {
 /// Actions that need a value the box cannot ask for (a name, a path) stay out; their dialogs are rows
 /// of their own (Save layout as…, Open layout…). Ctrl+K's own action is the box itself.
 bool ss_action_listed(const ActionDef& def) {
+    if (!policy::commercial_promotions_enabled() &&
+        (def.id == QLatin1String("billing.plans") || def.id == QLatin1String("help.enterprise")))
+        return false;
     if (def.id == QLatin1String("frame.browse_components"))
         return false;
     for (const ParameterSlot& p : def.parameter_slots)

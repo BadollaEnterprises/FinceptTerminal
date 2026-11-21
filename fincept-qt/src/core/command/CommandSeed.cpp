@@ -1,6 +1,7 @@
 // CommandSeed.cpp — see CommandSeed.h. Tables only: titles through QT_TRANSLATE_NOOP("CommandSeed", …),
 // aliases / keywords in English (search words, kept in every language).
 #include "core/command/CommandSeed.h"
+#include "core/policy/CommunityPolicy.h"
 
 #include <QCoreApplication>
 #include <QHash>
@@ -100,9 +101,9 @@ const ScreenRow kScreens[] = {
      QT_TRANSLATE_NOOP("CommandSeed", "Quantitative finance suite")},
     {"agent_config", QT_TRANSLATE_NOOP("CommandSeed", "Agent Config"), "agents, agent, config", "agents, ai, configuration, agent studio",
      QT_TRANSLATE_NOOP("CommandSeed", "Configure AI agents")},
-    {"agent_workbench", QT_TRANSLATE_NOOP("CommandSeed", "Agent runs (Workbench)"), "workbench, claude, codex, awb",
-     "agents, claude, codex, mcp, automation, schedule",
-     QT_TRANSLATE_NOOP("CommandSeed", "Run Claude Code / Codex agents on live terminal data; schedules; connect external agents")},
+    {"agent_workbench", QT_TRANSLATE_NOOP("CommandSeed", "Agent runs (Workbench)"), "workbench, local agent, awb",
+     "agents, local harness, mcp, automation, schedule",
+     QT_TRANSLATE_NOOP("CommandSeed", "Run local coding agents on live terminal data; schedules; connect external agents")},
     {"mcp_servers", QT_TRANSLATE_NOOP("CommandSeed", "MCP Servers"), "mcp, servers", "mcp, servers, protocol, tools",
      QT_TRANSLATE_NOOP("CommandSeed", "Model Context Protocol servers")},
     {"node_editor", QT_TRANSLATE_NOOP("CommandSeed", "Node Editor"), "nodes, workflow, node", "nodes, workflow, visual, automation",
@@ -229,10 +230,10 @@ const SectionRow kSections[] = {
     {"agent_config", "chat", QT_TRANSLATE_NOOP("CommandSeed", "Agent chat"), "chat"},
     {"agent_config", "system", QT_TRANSLATE_NOOP("CommandSeed", "Agent system"), "system"},
     // Runs (the former Agent Workbench is part of Agent Config now)
-    {"agent_config", "run", QT_TRANSLATE_NOOP("CommandSeed", "New agent run"), "run, claude, codex, workbench"},
+    {"agent_config", "run", QT_TRANSLATE_NOOP("CommandSeed", "New agent run"), "run, local harness, workbench"},
     {"agent_config", "runs", QT_TRANSLATE_NOOP("CommandSeed", "Agent runs"), "history, workbench runs"},
     {"agent_config", "schedules", QT_TRANSLATE_NOOP("CommandSeed", "Agent schedules"), "schedule, recurring"},
-    {"agent_config", "harnesses", QT_TRANSLATE_NOOP("CommandSeed", "Coding agents"), "harness, claude code, codex, gemini"},
+    {"agent_config", "harnesses", QT_TRANSLATE_NOOP("CommandSeed", "Coding agents"), "harness, local coding agent, gemini"},
     {"agent_config", "connect", QT_TRANSLATE_NOOP("CommandSeed", "Connect a coding agent"), "mcp, connect"},
     {"agent_workbench", "schedules", QT_TRANSLATE_NOOP("CommandSeed", "Schedules"), "scheduled runs, cron"},
     {"agent_workbench", "harnesses", QT_TRANSLATE_NOOP("CommandSeed", "Harnesses"), "harness"},
@@ -447,7 +448,7 @@ const SettingRow kSettings[] = {
     {"credentials", "", QT_TRANSLATE_NOOP("CommandSeed", "API keys & credentials"), "api key, keys, token, credentials, secrets"},
     {"security", "", QT_TRANSLATE_NOOP("CommandSeed", "Security & PIN"), "pin, lock, password, auto lock"},
     {"data_sources", "", QT_TRANSLATE_NOOP("CommandSeed", "Data source settings"), "providers, data"},
-    {"llm_config", "", QT_TRANSLATE_NOOP("CommandSeed", "LLM models"), "ai model, openai, anthropic, ollama, llm, provider"},
+    {"llm_config", "", QT_TRANSLATE_NOOP("CommandSeed", "LLM models"), "ai model, deepseek, openai, anthropic, llm, provider"},
     {"ai_agents", "", QT_TRANSLATE_NOOP("CommandSeed", "AI agents (MCP)"), "agent permissions, approvals"},
     {"mcp_servers", "", QT_TRANSLATE_NOOP("CommandSeed", "MCP server settings"), "mcp"},
     {"python_env", "", QT_TRANSLATE_NOOP("CommandSeed", "Python environment"), "python, packages, venv"},
@@ -661,6 +662,9 @@ QList<CommandItem> section_items() {
     for (const SectionRow& r : kSections) {
         const QString screen = QString::fromLatin1(r.screen);
         const QString section = QString::fromLatin1(r.section);
+        if (!policy::commercial_promotions_enabled() && screen == QLatin1String("profile") &&
+            section == QLatin1String("billing"))
+            continue;
         QString id_part = section;
         id_part.replace(QLatin1Char(':'), QLatin1Char('.'));
         CommandItem it = cs_item(screen + QLatin1Char('.') + id_part, cs_tr(r.title), cs_words(r.keywords), groups::kScreen);

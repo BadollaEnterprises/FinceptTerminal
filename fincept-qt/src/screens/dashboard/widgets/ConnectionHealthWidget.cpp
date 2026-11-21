@@ -186,15 +186,26 @@ void ConnectionHealthWidget::request_render() {
 
 void ConnectionHealthWidget::append_api_row(QVector<Row>& rows) const {
     Row r;
-    r.source = tr("FINCEPT API");
     if (last_health_.isEmpty()) {
+        r.source = tr("COMMUNITY RUNTIME");
         r.state = tr("CHECKING");
-        r.detail = tr("waiting for the first health probe");
+        r.detail = tr("checking the device-local runtime");
         r.tooltip = r.detail;
         r.tone = Tone::Dim;
         rows.append(r);
         return;
     }
+    if (last_health_.value("community_local").toBool()) {
+        r.source = tr("COMMUNITY RUNTIME");
+        r.state = tr("LOCAL");
+        r.detail = tr("public data + BYO AI");
+        r.tooltip = tr("Device-local community mode is active. Fincept hosted services are not probed; each public "
+                       "data source and your BYO AI provider reports errors at its own feature surface.");
+        r.tone = Tone::Pos;
+        rows.append(r);
+        return;
+    }
+    r.source = tr("FINCEPT API");
     const bool ok = last_health_.value("ok").toBool();
     const QString endpoint = last_health_.value("endpoint").toString();
     const QString when = connhealth_clock(last_health_.value("checked_at_ms").toInteger());

@@ -1,6 +1,7 @@
 #include "screens/launchpad/OnboardingTour.h"
 
 #include "core/logging/Logger.h"
+#include "core/policy/CommunityPolicy.h"
 #include "storage/repositories/SettingsRepository.h"
 #include "ui/theme/Theme.h"
 
@@ -74,11 +75,12 @@ void OnboardingTour::build_ui() {
     heading_->setStyleSheet("font-size:" + ui::fonts::px(6) + "px; font-weight:700;");
     root->addWidget(heading_);
 
-    // Build the five steps with empty labels — retranslateUi() fills in the
-    // text so language switches re-apply it. build_step() caches the labels
-    // into step_labels_ in declared order.
+    // The fifth step is commercial edition promotion. Community mode keeps the
+    // practical four-step tour and never tells users to search for unavailable
+    // Plans / Enterprise actions.
     steps_ = new QStackedWidget(this);
-    for (int i = 0; i < 5; ++i)
+    const int tour_steps = policy::commercial_promotions_enabled() ? 5 : 4;
+    for (int i = 0; i < tour_steps; ++i)
         steps_->addWidget(build_step({}, {}, {}));
     step_count_ = steps_->count();
     root->addWidget(steps_, /*stretch=*/1);
@@ -177,7 +179,7 @@ void OnboardingTour::retranslateUi() {
                                          "registry can be assigned a key."));
         step_labels_[3].tip->setText(tr("Tip: F11 toggles fullscreen on the focused window."));
     }
-    if (step_labels_.size() > 4 && step_labels_[4].title) {
+    if (policy::commercial_promotions_enabled() && step_labels_.size() > 4 && step_labels_[4].title) {
         step_labels_[4].title->setText(tr("Two editions"));
         step_labels_[4].body->setText(tr("You're on the free, open-source edition (AGPL-3.0). Your Fincept "
                                          "account is Free, or Pro at $10/month for monthly credits and higher "

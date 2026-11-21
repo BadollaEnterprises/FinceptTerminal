@@ -1,6 +1,7 @@
 #include "ui/navigation/ToolBar.h"
 
 #include "auth/AuthManager.h"
+#include "core/policy/CommunityPolicy.h"
 #include "services/agent_tasks/TaskRunService.h"
 #include "services/llm/LlmService.h"
 #include "services/billing/PlanAccess.h"
@@ -178,19 +179,24 @@ ToolBar::ToolBar(QWidget* parent) : QWidget(parent) {
     sep();
     credits_label_ = mk("---");
     credits_label_->setMaximumWidth(100);
+    credits_label_->setVisible(policy::commercial_promotions_enabled());
     hl->addWidget(credits_label_);
     sep();
     plan_btn_ = new QPushButton(QStringLiteral("---"));
     metrics::follow_fixed_height(plan_btn_, 20);
     plan_btn_->setCursor(Qt::PointingHandCursor);
     plan_btn_->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    plan_btn_->setVisible(policy::commercial_promotions_enabled());
     connect(plan_btn_, &QPushButton::clicked, this, &ToolBar::plan_clicked);
     hl->addWidget(plan_btn_);
     // The plan badge and the balance explain the plan on hover: what is
     // included, what it saved — from the server's plan table (PlanAccess).
     connect(&fincept::billing::PlanAccess::instance(), &fincept::billing::PlanAccess::changed, this, [this]() {
         if (plan_btn_)
-            plan_btn_->setToolTip(plan::badge_tooltip());
+            plan_btn_->setToolTip(policy::commercial_promotions_enabled()
+                                      ? plan::badge_tooltip()
+                                      : tr("Community credit firewall is on — AI uses your DeepSeek key and metered "
+                                           "Fincept routes are blocked."));
         if (credits_label_)
             credits_label_->setToolTip(plan::credits_tooltip());
     });
@@ -203,6 +209,7 @@ ToolBar::ToolBar(QWidget* parent) : QWidget(parent) {
     metrics::follow_fixed_height(upgrade_btn_, 20);
     upgrade_btn_->setCursor(Qt::PointingHandCursor);
     upgrade_btn_->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    upgrade_btn_->setVisible(policy::commercial_promotions_enabled());
     connect(upgrade_btn_, &QPushButton::clicked, this, &ToolBar::upgrade_clicked);
     hl->addWidget(upgrade_btn_);
     sep();
@@ -309,7 +316,10 @@ void ToolBar::retranslateUi() {
     if (live_label_)
         live_label_->setText(tr(" LIVE"));
     if (plan_btn_)
-        plan_btn_->setToolTip(plan::badge_tooltip());
+        plan_btn_->setToolTip(policy::commercial_promotions_enabled()
+                                  ? plan::badge_tooltip()
+                                  : tr("Community credit firewall is on — AI uses your DeepSeek key and metered "
+                                       "Fincept routes are blocked."));
     if (credits_label_)
         credits_label_->setToolTip(plan::credits_tooltip());
     if (upgrade_btn_) {
@@ -561,6 +571,11 @@ void ToolBar::apply_responsive_layout(int w) {
     };
 
     auto wanted = [this](QWidget* wd) {
+        if (!policy::commercial_promotions_enabled() &&
+            (wd == credits_label_ || wd == plan_btn_ || wd == separators_.value(3) || wd == separators_.value(4)))
+            return false;
+        if (wd == upgrade_btn_)
+            return policy::commercial_promotions_enabled();
         if (wd == chat_runs_badge_)
             return chat_active_runs_ > 0;
         if (wd == chat_attention_badge_)
@@ -640,7 +655,7 @@ void ToolBar::fill_overflow_menu(QMenu* menu) {
             auto* a = menu->addAction(literal_ampersands(user_label_->toolTip()));
             a->setEnabled(false);
         }
-        if (credits_label_ && credits_label_->isHidden()) {
+        if (policy::commercial_promotions_enabled() && credits_label_ && credits_label_->isHidden()) {
             auto* a = menu->addAction(literal_ampersands(credits_label_->text()));
             a->setEnabled(false);
         }
@@ -650,10 +665,10 @@ void ToolBar::fill_overflow_menu(QMenu* menu) {
             menu->addSeparator();
     };
     add_separator();
-    if (plan_btn_ && plan_btn_->isHidden())
+    if (policy::commercial_promotions_enabled() && plan_btn_ && plan_btn_->isHidden())
         menu->addAction(tr("Plan: %1 — Plans && Pricing…").arg(literal_ampersands(plan_btn_->text())), this,
                         [this]() { emit plan_clicked(); });
-    if (upgrade_btn_ && upgrade_btn_->isHidden())
+    if (policy::commercial_promotions_enabled() && upgrade_btn_ && upgrade_btn_->isHidden())
         menu->addAction(tr("Fincept Terminal Enterprise…"), this, [this]() { emit upgrade_clicked(); });
     if (chat_mode_btn_ && chat_mode_btn_->isHidden()) {
         QString label = tr("Chat Mode\tF9");
@@ -926,11 +941,13 @@ QMenu* ToolBar::build_help_menu() {
     m->addAction(tr("Terms of Service"), this, [this]() { emit navigate_to("terms"); });
     m->addAction(tr("Privacy Policy"), this, [this]() { emit navigate_to("privacy"); });
     m->addAction(tr("Trademarks"), this, [this]() { emit navigate_to("trademarks"); });
-    m->addSeparator();
-    // Plans & Pricing carries the Enterprise card (site + demo). The Enterprise
-    // dialog stays on the toolbar ENTERPRISE button and the command palette;
-    // Compare Editions in that dialog and on About; Contact in the Help Center.
-    m->addAction(tr("Plans && Pricing…"), this, [this]() { emit plan_clicked(); });
+    // Plans & Pricing is commercial account chrome. The community workspace's
+    // metered routes are hard-blocked, so showing it here suggests that a paid
+    // plan is needed for features that now run locally or with the user's key.
+    if (policy::commercial_promotions_enabled()) {
+        m->addSeparator();
+        m->addAction(tr("Plans && Pricing…"), this, [this]() { emit plan_clicked(); });
+    }
     // No other menu offers Logout (the toolbar LOGOUT button is not a menu).
     m->addSeparator();
     m->addAction(tr("Logout"), this, [this]() { emit action_triggered("logout"); });

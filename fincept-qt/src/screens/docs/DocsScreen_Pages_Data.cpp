@@ -487,10 +487,10 @@ QWidget* DocsScreen::page_relationship_map() {
 
 QWidget* DocsScreen::page_agent_workbench() {
     return make_page(
-        tr("AGENT CONFIG › RUNS"), tr("Run Claude Code and Codex agents locally, wired to the terminal's tools"),
+        tr("AGENT CONFIG › RUNS"), tr("Run local coding-agent harnesses wired to the terminal's tools"),
         {
-            {tr("OVERVIEW"), tr("The Runs area of Agent Config (formerly the Agent Workbench) runs Claude Code or "
-                                "OpenAI Codex CLI agents on this machine as background tasks that use the "
+            {tr("OVERVIEW"), tr("The Runs area of Agent Config (formerly the Agent Workbench) runs supported local "
+                                "coding-agent CLIs on this machine as background tasks that use the "
                                 "terminal's own tools over MCP. Runs keep going when the screen is closed. Find it "
                                 "in Agent Config under RUN (Alt+2) and CONNECT (Alt+3).")},
             {tr("TABS"), tr("■  RUNS — every run of every engine (coding agents, agentic tasks, chat) in one list\n"
@@ -499,7 +499,7 @@ QWidget* DocsScreen::page_agent_workbench() {
                             "■  HARNESSES — the coding agents the terminal supports: paths, default models, "
                             "sign-in\n"
                             "■  CONNECT — the terminal's MCP server for standalone agents")},
-            {tr("SETUP"), tr("■  Install the Claude Code or Codex CLI; set its path on HARNESSES and the workspace "
+            {tr("SETUP"), tr("■  Install a supported coding-agent CLI; set its path on HARNESSES and the workspace "
                              "folder under SETTINGS\n"
                              "■  Agents call the same tools AI Chat uses; actions that change data ask first")},
         });
@@ -567,26 +567,23 @@ QWidget* DocsScreen::page_settings() {
 
 QWidget* DocsScreen::page_profile() {
     return make_page(
-        tr("PROFILE"), tr("User account, subscription, and usage tracking"),
+        tr("PROFILE"), tr("Account identity, device security, and local configuration"),
         {
-            {tr("OVERVIEW"), tr("The Profile screen displays your account information, subscription status, "
-                                "usage statistics, and billing history.")},
-            {tr("KEY FEATURES"), tr("■  Overview — Account details, edit profile, credit balance and plan\n"
-                                    "■  Usage — 30-day summary, daily usage and your most-used endpoints\n"
-                                    "■  Security — API key (show / copy / regenerate), verification status, "
-                                    "login history\n"
-                                    "■  Billing — Current plan, credit balance and payment history, with UPGRADE "
-                                    "TO PRO (free accounts) or MANAGE PLAN (paid) opening Plans & Pricing\n"
-                                    "■  Support — Contact details; open tickets from the Support screen\n"
-                                    "■  Logout and delete account")},
-            {tr("REAL-WORLD USAGE"), tr("■  Monitor your plan and credit balance\n"
-                                        "■  Move from Free to Pro ($10/month) when you need more credits\n"
-                                        "■  Track API usage to stay within limits\n"
-                                        "■  Review past payments in the payment history table")},
-            {tr("SKILL LEVELS"), tr("BEGINNER: Check your account status and plan\n"
-                                    "INTERMEDIATE: Monitor credit usage, plan API call budget\n"
-                                    "ADVANCED: Optimize usage patterns for cost efficiency\n"
-                                    "PRO: Budget credits across workflows using per-endpoint usage")},
+            {tr("OVERVIEW"), tr("The Profile area identifies the signed-in account while Settings holds your "
+                                "device-local profile, credentials, security, and data-source configuration.")},
+            {tr("KEY FEATURES"), tr("■  Account identity and verification status\n"
+                                    "■  Device PIN, auto-lock, and local audit history\n"
+                                    "■  BYO provider credentials in Settings → LLM Configuration\n"
+                                    "■  Broker, exchange, and data-source credentials in Settings\n"
+                                    "■  Local storage, cache controls, support, logout, and account deletion")},
+            {tr("REAL-WORLD USAGE"), tr("■  Keep each workspace isolated with a device-local profile\n"
+                                        "■  Rotate a provider key without changing other settings\n"
+                                        "■  Review which external services are configured before running a tool\n"
+                                        "■  Lock the terminal when stepping away from the device")},
+            {tr("SKILL LEVELS"), tr("BEGINNER: Confirm your identity and set a device PIN\n"
+                                    "INTERMEDIATE: Add DeepSeek and market-data credentials\n"
+                                    "ADVANCED: Separate profiles and tune storage or cache behaviour\n"
+                                    "PRO: Audit all external connections and rotate credentials regularly")},
         });
 }
 

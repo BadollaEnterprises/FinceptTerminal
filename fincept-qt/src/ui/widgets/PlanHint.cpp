@@ -1,6 +1,7 @@
 #include "ui/widgets/PlanHint.h"
 
 #include "auth/AuthTypes.h"
+#include "core/policy/CommunityPolicy.h"
 #include "services/billing/PlanAccess.h"
 #include "ui/theme/Theme.h"
 #include "ui/theme/ThemeManager.h"
@@ -49,6 +50,9 @@ QString plan_tr(const char* text) {
 } // namespace
 
 QString badge_tooltip() {
+    if (!policy::fincept_metered_services_enabled())
+        return plan_tr("Community credit firewall is on — market data uses local/public sources and AI uses your "
+                       "DeepSeek API key.");
     const auto& access = fincept::billing::PlanAccess::instance();
     if (!access.has_table())
         return plan_tr("Plans & pricing — Pro is $10/month");
@@ -76,6 +80,9 @@ QString badge_tooltip() {
 }
 
 QString credits_tooltip() {
+    if (!policy::fincept_metered_services_enabled())
+        return plan_tr("Fincept credit balance is preserved. Metered Fincept routes are blocked; AI uses your "
+                       "DeepSeek API key and product analytics use local/public data.");
     const auto& access = fincept::billing::PlanAccess::instance();
     if (!access.has_table())
         return plan_tr("Fincept credit balance");
@@ -132,6 +139,12 @@ void PlanHintLabel::changeEvent(QEvent* event) {
 }
 
 void PlanHintLabel::render() {
+    if (!policy::commercial_promotions_enabled()) {
+        clear();
+        if (!isHidden())
+            setVisible(false);
+        return;
+    }
     const auto& access = fincept::billing::PlanAccess::instance();
     const fincept::billing::PlanPrice* price = access.price(category_);
     // Nothing to say when the server sent no table, or Pro pays the same.
@@ -356,7 +369,7 @@ void PlanBenefitsView::rebuild() {
         layout_->addLayout(grid);
     }
 
-    if (!paid && show_upgrade_button_) {
+    if (policy::commercial_promotions_enabled() && !paid && show_upgrade_button_) {
         layout_->addSpacing(8);
         auto* actions = new QHBoxLayout;
         actions->setContentsMargins(0, 0, 0, 0);

@@ -7,6 +7,7 @@
 #include "core/i18n/LanguageManager.h"
 #include "core/keys/KeyConfigManager.h"
 #include "core/logging/Logger.h"
+#include "core/policy/CommunityPolicy.h"
 #include "core/session/ScreenStateManager.h"
 #include "screens/settings/AgentConnectSection.h"
 #include "screens/settings/AppearanceSection.h"
@@ -267,7 +268,7 @@ SettingsScreen::SettingsScreen(QWidget* parent) : QWidget(parent) {
                  llm_terms.join(' '));
     make_btn(
         QStringLiteral("AI Agents (MCP)"), 16,
-        QStringLiteral("mcp server claude code codex gemini cli cursor vs code copilot windsurf claude desktop agent "
+        QStringLiteral("mcp server external ai agent gemini cli cursor vs code copilot windsurf desktop assistant "
                        "connect external token port permissions automation operate terminal ui tools python "
                        "harness harnesses grok qwen workbench model effort sign in login api key path detect"));
     make_btn(QStringLiteral("MCP Servers"), 6,
@@ -298,6 +299,7 @@ SettingsScreen::SettingsScreen(QWidget* parent) : QWidget(parent) {
         QString(), ui::enterprise::url_with_ref(ui::enterprise::site_url(), QStringLiteral("settings")),
         ui::enterprise::CtaStyle::Quiet, nav_);
     ent_link->setObjectName("settingsEnterpriseLink");
+    ent_link->setVisible(policy::commercial_promotions_enabled());
     nvl->addWidget(ent_link);
     root->addWidget(nav_);
     root->addWidget(sections_, 1);

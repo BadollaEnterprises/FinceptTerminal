@@ -13,6 +13,7 @@
 #include "core/layout/WorkspaceMatcher.h"
 #include "core/layout/WorkspaceShell.h"
 #include "core/logging/Logger.h"
+#include "core/policy/CommunityPolicy.h"
 #include "core/symbol/IGroupLinked.h"
 #include "core/symbol/SymbolContext.h"
 #include "core/symbol/SymbolGroup.h"
@@ -1004,29 +1005,30 @@ void register_builtins() {
         {},
     });
 
-    register_one(ActionDef{
-        "help.enterprise",
-        "Fincept Terminal Enterprise",
-        "Help",
-        {"enterprise", "private edition", "upgrade", "custom requirements", "partnership", "firm"},
-        QKeySequence{},
-        /*predicate*/ {},
-        &handler_help_enterprise,
-        {},
-    });
+    if (policy::commercial_promotions_enabled()) {
+        register_one(ActionDef{
+            "help.enterprise",
+            "Fincept Terminal Enterprise",
+            "Help",
+            {"enterprise", "private edition", "upgrade", "custom requirements", "partnership", "firm"},
+            QKeySequence{},
+            /*predicate*/ {},
+            &handler_help_enterprise,
+            {},
+        });
 
-    // ── Account-level actions ───────────────────────────────────────────────
-
-    register_one(ActionDef{
-        "billing.plans",
-        "Plans & Pricing",
-        "Account",
-        {"plans", "pricing", "upgrade", "pro", "billing"},
-        QKeySequence{},
-        require_unlocked_frame(),
-        &handler_billing_plans,
-        {},
-    });
+        // ── Account-level actions ───────────────────────────────────────────
+        register_one(ActionDef{
+            "billing.plans",
+            "Plans & Pricing",
+            "Account",
+            {"plans", "pricing", "upgrade", "pro", "billing"},
+            QKeySequence{},
+            require_unlocked_frame(),
+            &handler_billing_plans,
+            {},
+        });
+    }
 
     LOG_DEBUG(kBuiltinTag, QString("Registered %1 builtin actions").arg(ActionRegistry::instance().size()));
 }

@@ -1,5 +1,5 @@
 #pragma once
-// ConnectivityService — DataHub producer for the Fincept API health probe.
+// ConnectivityService — DataHub producer for terminal connectivity state.
 //
 // Topic: `system:health`. Payload: QJsonObject
 //   {
@@ -8,7 +8,8 @@
 //     "http_status":   int     — HTTP status, 0 when no response arrived
 //     "error":         string  — short failure reason, empty when ok
 //     "checked_at_ms": int64   — wall clock (ms since epoch) of the probe
-//     "endpoint":      string  — host that was probed (no path / query)
+//     "endpoint":      string  — host that was probed, or "device-local"
+//     "community_local": bool  — true when no Fincept-hosted probe was made
 //   }
 //
 // A failed probe is published as a value (ok=false), not via publish_error():

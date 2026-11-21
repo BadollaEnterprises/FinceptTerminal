@@ -2,9 +2,9 @@
 // ConnectionHealthWidget — one compact panel answering "are my data paths up?".
 //
 // Only sources that expose a status the terminal can actually read:
-//   FINCEPT API   DataHub `system:health` (ConnectivityService). The tile
-//                 registers the producer itself, so it works without the
-//                 dashboard status bar.
+//   RUNTIME       DataHub `system:health` (ConnectivityService). Community mode
+//                 reports device-local operation without probing Fincept; the
+//                 tile registers the producer itself.
 //   PYTHON        PythonSetupManager — core ready / installing / last run failed.
 //   BROKERS       AccountManager — each active account's ConnectionState and
 //                 error; DataStreamManager — whether its stream runs; DataHub

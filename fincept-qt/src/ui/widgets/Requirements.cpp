@@ -4,6 +4,8 @@
 
 #include "ui/widgets/Requirements.h"
 
+#include "core/policy/CommunityPolicy.h"
+
 #include <QCoreApplication>
 #include <QLocale>
 
@@ -181,6 +183,12 @@ RequirementStatus check_requirements(const QList<Requirement>& requirements, con
                 break;
             }
             case RequirementKind::Credits: {
+                if (!policy::fincept_metered_services_enabled()) {
+                    st.title = req_tr("Credit-backed route disabled");
+                    st.message = req_tr("The community credit firewall blocked this metered Fincept route. "
+                                        "No credits were used.");
+                    break;
+                }
                 const double balance = env.credit_balance();
                 if (r.amount <= 0 || balance < 0 || balance >= r.amount)
                     continue;

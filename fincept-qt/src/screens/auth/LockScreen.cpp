@@ -2,6 +2,7 @@
 
 #include "auth/PinManager.h"
 #include "core/logging/Logger.h"
+#include "core/policy/CommunityPolicy.h"
 #include "ui/theme/Theme.h"
 #include "ui/widgets/EnterprisePromo.h"
 #include "ui/widgets/LanguageSwitcher.h"
@@ -276,8 +277,8 @@ void LockScreen::fit_layout() {
     // account whose in-memory plan is already Enterprise (nothing is fetched,
     // nothing about the account is shown).
     const int page = pages_->currentIndex();
-    const bool promo_allowed = laid_out && page != 2 && promo_panel_ && promo_strip_ &&
-                               !ui::enterprise::session_has_enterprise_plan();
+    const bool promo_allowed = policy::commercial_promotions_enabled() && laid_out && page != 2 && promo_panel_ &&
+                               promo_strip_ && !ui::enterprise::session_has_enterprise_plan();
 
     bool wide = false;
     bool strip = false;

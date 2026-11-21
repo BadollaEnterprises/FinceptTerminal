@@ -92,6 +92,7 @@ class DashboardStatusBar : public QWidget {
     int layout_count_ = 0;
     int api_state_ = -1;       // -1 checking, 0 offline, 1 online
     int last_latency_ms_ = -2; // -2 = no probe yet, -1 = error
+    bool community_local_ = false;
     QString last_health_error_;
     qint64 last_health_checked_ms_ = 0;
     bool hub_active_ = false;

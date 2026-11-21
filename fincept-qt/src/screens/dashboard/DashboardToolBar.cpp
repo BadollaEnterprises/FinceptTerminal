@@ -2,6 +2,7 @@
 #include "screens/dashboard/DashboardPaint.h"
 
 #include "core/market/MarketProfile.h"
+#include "core/policy/CommunityPolicy.h"
 #include "ui/theme/Theme.h"
 #include "ui/theme/ThemeManager.h"
 #include "ui/widgets/ProAnalytics.h"
@@ -143,7 +144,9 @@ DashboardToolBar::DashboardToolBar(QWidget* parent) : QWidget(parent) {
     make_sep(rl);
 
     refresh_btn_ = new QPushButton(tr("REFRESH"));
-    refresh_btn_->setProperty("fincept_agent_risk", "spend"); // also reloads billed tiles (credits)
+    refresh_btn_->setProperty("fincept_agent_risk", policy::fincept_metered_services_enabled()
+                                                        ? QVariant(QStringLiteral("spend"))
+                                                        : QVariant());
     refresh_btn_->setMinimumHeight(20);
     refresh_btn_->setObjectName("dtBtn");
     refresh_btn_->setToolTip(tr("Force-refresh all live data on the dashboard (F5)"));

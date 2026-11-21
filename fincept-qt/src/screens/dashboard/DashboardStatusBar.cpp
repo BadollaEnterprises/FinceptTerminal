@@ -346,11 +346,15 @@ void DashboardStatusBar::on_health(const QVariant& v) {
     if (o.isEmpty())
         return;
     const bool ok = o.value("ok").toBool();
+    community_local_ = o.value("community_local").toBool();
     last_health_error_ = o.value("error").toString();
     last_health_checked_ms_ = static_cast<qint64>(o.value("checked_at_ms").toDouble());
     last_latency_ms_ = ok ? o.value("latency_ms").toInt(-1) : -1;
 
-    if (last_latency_ms_ < 0) {
+    if (community_local_) {
+        latency_label_->setText(tr("LAT: LOCAL"));
+        set_tone(latency_label_, "tone", QStringLiteral("pos"));
+    } else if (last_latency_ms_ < 0) {
         latency_label_->setText(tr("LAT: ERR"));
         set_tone(latency_label_, "tone", QStringLiteral("neg"));
     } else {
@@ -364,14 +368,21 @@ void DashboardStatusBar::on_health(const QVariant& v) {
     const QString when = last_health_checked_ms_ > 0
                              ? QDateTime::fromMSecsSinceEpoch(last_health_checked_ms_).toString("HH:mm:ss")
                              : QString();
-    const QString tip = ok ? tr("Fincept API %1 reachable — round trip %2 ms (checked %3)")
-                                 .arg(o.value("endpoint").toString())
-                                 .arg(last_latency_ms_)
-                                 .arg(when)
-                           : tr("Fincept API %1 unreachable: %2 (checked %3)")
-                                 .arg(o.value("endpoint").toString(), last_health_error_, when);
+    const QString tip = community_local_
+                            ? tr("Device-local community mode · public data + BYO AI (checked %1)").arg(when)
+                        : ok ? tr("Fincept API %1 reachable — round trip %2 ms (checked %3)")
+                                   .arg(o.value("endpoint").toString())
+                                   .arg(last_latency_ms_)
+                                   .arg(when)
+                             : tr("Fincept API %1 unreachable: %2 (checked %3)")
+                                   .arg(o.value("endpoint").toString(), last_health_error_, when);
     latency_label_->setToolTip(tip);
     feeds_label_->setToolTip(tip);
+
+    if (feeds_caption_lbl_) {
+        feeds_caption_lbl_->setText(community_local_ ? tr("MODE:") : tr("API:"));
+        feeds_caption_lbl_->setToolTip(tip);
+    }
 
     set_api_state(ok ? 1 : 0);
 }
@@ -379,7 +390,8 @@ void DashboardStatusBar::on_health(const QVariant& v) {
 void DashboardStatusBar::set_api_state(int state) {
     const bool changed = state != api_state_;
     api_state_ = state;
-    feeds_label_->setText(state > 0 ? tr("ONLINE") : state == 0 ? tr("OFFLINE") : tr("CHECKING"));
+    feeds_label_->setText(community_local_ ? tr("LOCAL")
+                                          : state > 0 ? tr("ONLINE") : state == 0 ? tr("OFFLINE") : tr("CHECKING"));
     set_tone(feeds_label_, "tone",
              state > 0 ? QStringLiteral("pos") : state == 0 ? QStringLiteral("neg") : QStringLiteral("dim"));
     update_ready_label();
@@ -516,16 +528,22 @@ void DashboardStatusBar::retranslateUi() {
     if (layout_caption_lbl_)
         layout_caption_lbl_->setText(tr("LAYOUT:"));
     if (feeds_caption_lbl_) {
-        feeds_caption_lbl_->setText(tr("API:"));
-        feeds_caption_lbl_->setToolTip(tr("Fincept API health — probed every 30 s while the dashboard is visible"));
+        feeds_caption_lbl_->setText(community_local_ ? tr("MODE:") : tr("API:"));
+        feeds_caption_lbl_->setToolTip(
+            community_local_ ? tr("Device-local community runtime; no Fincept health request is made")
+                             : tr("Fincept API health — probed while the dashboard is visible"));
     }
     update_ready_label();
     if (layout_label_)
         layout_label_->setText(layout_count_ > 0 ? tr("ACTIVE") : tr("EMPTY"));
     if (feeds_label_)
-        feeds_label_->setText(api_state_ > 0 ? tr("ONLINE") : api_state_ == 0 ? tr("OFFLINE") : tr("CHECKING"));
+        feeds_label_->setText(community_local_
+                                  ? tr("LOCAL")
+                                  : api_state_ > 0 ? tr("ONLINE") : api_state_ == 0 ? tr("OFFLINE") : tr("CHECKING"));
     if (latency_label_) {
-        if (last_latency_ms_ == -2)
+        if (community_local_)
+            latency_label_->setText(tr("LAT: LOCAL"));
+        else if (last_latency_ms_ == -2)
             latency_label_->setText(tr("LAT: ---"));
         else if (last_latency_ms_ < 0)
             latency_label_->setText(tr("LAT: ERR"));
