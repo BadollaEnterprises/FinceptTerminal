@@ -5,11 +5,16 @@
 #include "auth/AuthManager.h"
 #include "core/config/AppConfig.h"
 #include "core/logging/Logger.h"
+#include "core/metrics/LocalUsageMetrics.h"
+#include "core/policy/CommunityPolicy.h"
 #include "core/telemetry/ClientInfo.h"
 #include "network/http/HttpClient.h"
+#include "python/PythonRunner.h"
+#include "services/quantlib/QuantLibAccess.h"
 #include "storage/cache/CacheManager.h"
 
 #include <QFutureWatcher>
+#include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonParseError>
@@ -17,6 +22,7 @@
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QThread>
+#include <QSet>
 #include <QUrl>
 #include <QtConcurrent/QtConcurrentRun>
 
@@ -310,6 +316,22 @@ bool QuantLibClient::is_query_param_endpoint(const QString& endpoint) {
     return query_param_endpoints().contains(endpoint);
 }
 
+bool QuantLibClient::has_local_route(const QString& endpoint) {
+    static const QSet<QString> routes = [] {
+        QSet<QString> loaded;
+        QFile file(python::PythonRunner::instance().scripts_dir() + QStringLiteral("/byo_quantlib_routes.json"));
+        if (!file.open(QIODevice::ReadOnly)) {
+            LOG_ERROR(kQuantLibClientTag, QString("Cannot read local route manifest: %1").arg(file.errorString()));
+            return loaded;
+        }
+        const QJsonDocument document = QJsonDocument::fromJson(file.readAll());
+        for (const QJsonValue& route : document.object().value(QStringLiteral("routes")).toArray())
+            loaded.insert(route.toString());
+        return loaded;
+    }();
+    return routes.contains(endpoint);
+}
+
 int QuantLibClient::transfer_timeout_seconds() {
     return kQuantLibTransferTimeoutMs / 1000;
 }
@@ -385,6 +407,22 @@ quint64 QuantLibClient::call(const QString& endpoint, const QJsonObject& body, Q
         return 0;
     }
 
+    // The bundled manifest covers every endpoint in the screen, including the
+    // server's nominally-free reference routes. Prefer that deterministic
+    // implementation before any cloud logic so the UI's "LOCAL" label is true
+    // in execution, not merely in its capability check. Community mode also
+    // keeps an unknown future route local-only: unsupported is safer than an
+    // accidental hosted request.
+    if (has_local_route(endpoint) || !policy::fincept_metered_services_enabled())
+        return call_local(endpoint, body, std::move(callback));
+
+    // A commercial build may still use an explicitly free server route when a
+    // future endpoint is absent from its bundled manifest. Paid tiers never
+    // fall through to the network.
+    const bool free_server_route = quantlib_endpoint_tier(endpoint) == QuantLibTier::Free;
+    if (!free_server_route)
+        return call_local(endpoint, body, std::move(callback));
+
     const bool get = is_get_endpoint(endpoint);
     const bool query = is_query_param_endpoint(endpoint);
 
@@ -418,6 +456,11 @@ quint64 QuantLibClient::call(const QString& endpoint, const QJsonObject& body, Q
 }
 
 void QuantLibClient::cancel(quint64 request_id) {
+    const auto local = local_in_flight_.constFind(request_id);
+    if (local != local_in_flight_.constEnd()) {
+        local.value()->store(true);
+        return;
+    }
     const auto it = in_flight_.constFind(request_id);
     if (it == in_flight_.constEnd())
         return;
@@ -482,6 +525,72 @@ void QuantLibClient::on_finished(quint64 id, QNetworkReply* reply, const QString
         deliver(result);
     });
     watcher->setFuture(QtConcurrent::run([status, raw]() { return parse_response(status, raw); }));
+}
+
+quint64 QuantLibClient::call_local(const QString& endpoint, const QJsonObject& body, QuantLibCallback callback) {
+    const quint64 id = ++next_id_;
+    auto cancelled = std::make_shared<std::atomic<bool>>(false);
+    local_in_flight_.insert(id, cancelled);
+
+    python::PythonRunner::RunOptions options;
+    options.timeout_ms = kQuantLibTransferTimeoutMs;
+    options.cancel_token = cancelled;
+    options.credential_allowlist = QStringList{};
+    options.max_output_bytes = 4 * 1024 * 1024;
+    options.stdin_data = QJsonDocument(body).toJson(QJsonDocument::Compact);
+
+    python::PythonRunner::instance().run_with_options(
+        QStringLiteral("byo_quantlib.py"), {QStringLiteral("run"), endpoint}, options,
+        [this, id, endpoint, callback = std::move(callback)](python::PythonResult result) {
+            const auto token = local_in_flight_.take(id);
+            if ((token && token->load()) || result.error.compare(QStringLiteral("Cancelled"), Qt::CaseInsensitive) == 0) {
+                auto failure = mcp::ToolResult::fail(tr("Cancelled."));
+                failure.data = QJsonObject{{QStringLiteral("cancelled"), true},
+                                           {QStringLiteral("error_code"), QStringLiteral("LOCAL_CANCELLED")}};
+                callback(failure);
+                return;
+            }
+            if (!result.success) {
+                auto failure = mcp::ToolResult::fail(
+                    result.error.isEmpty() ? tr("The local QuantLib calculation failed.") : result.error);
+                failure.data = QJsonObject{{QStringLiteral("error_code"), QStringLiteral("LOCAL_ERROR")}};
+                callback(failure);
+                return;
+            }
+
+            QJsonParseError parse_error{};
+            const QJsonDocument document = QJsonDocument::fromJson(result.output.toUtf8(), &parse_error);
+            if (parse_error.error != QJsonParseError::NoError || !document.isObject()) {
+                auto failure = mcp::ToolResult::fail(tr("The local QuantLib adapter returned an unreadable answer."));
+                failure.data = QJsonObject{{QStringLiteral("error_code"), QStringLiteral("LOCAL_INVALID_JSON")}};
+                callback(failure);
+                return;
+            }
+
+            const QJsonObject answer = document.object();
+            if (!answer.value(QStringLiteral("supported")).toBool()) {
+                auto failure = mcp::ToolResult::fail(
+                    answer.value(QStringLiteral("message")).toString(
+                        tr("No zero-credit local implementation exists for this endpoint yet. "
+                           "No paid Fincept request was sent.")));
+                failure.data = QJsonObject{{QStringLiteral("error_code"), QStringLiteral("LOCAL_UNSUPPORTED")},
+                                           {QStringLiteral("local_only"), true}};
+                LOG_INFO(kQuantLibClientTag, QString("Local route unavailable — %1; cloud call suppressed").arg(endpoint));
+                callback(failure);
+                return;
+            }
+
+            QJsonValue data = answer.value(QStringLiteral("data"));
+            if (data.isObject()) {
+                QJsonObject object = data.toObject();
+                object.insert(QStringLiteral("_local"), answer.value(QStringLiteral("meta")));
+                data = object;
+            }
+            LOG_DEBUG(kQuantLibClientTag, QString("Local zero-credit route — %1 — OK").arg(endpoint));
+            metrics::LocalUsageMetrics::record_local_quantlib();
+            callback(mcp::ToolResult::ok_data(data));
+        });
+    return id;
 }
 
 } // namespace fincept::services

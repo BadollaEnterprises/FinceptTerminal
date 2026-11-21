@@ -10,6 +10,8 @@
 #include <QPointer>
 
 #include <functional>
+#include <atomic>
+#include <memory>
 
 class QNetworkAccessManager;
 class QNetworkReply;
@@ -52,6 +54,9 @@ class QuantLibClient : public QObject {
     /// Query-param endpoints: body fields become URL query params, POST with empty body.
     static bool is_query_param_endpoint(const QString& endpoint);
 
+    /// True when the bundled zero-credit adapter implements this exact route.
+    static bool has_local_route(const QString& endpoint);
+
     /// Seconds the client waits for an answer before giving up (shown in the timeout message).
     static int transfer_timeout_seconds();
 
@@ -71,12 +76,17 @@ class QuantLibClient : public QObject {
     void on_finished(quint64 id, QNetworkReply* reply, const QString& endpoint, const QString& cache_key,
                      const QuantLibCallback& callback);
 
+    /// Runs a non-free endpoint through the deterministic local adapter. It
+    /// never falls back to the Fincept network when the route is unsupported.
+    quint64 call_local(const QString& endpoint, const QJsonObject& body, QuantLibCallback callback);
+
     /// Parses raw HTTP response bytes into a ToolResult, unwrapping the
     /// {"success", "message", "data"} envelope. Pure: safe on a worker thread.
     static mcp::ToolResult parse_response(int http_status, const QByteArray& raw);
 
     QNetworkAccessManager* nam_ = nullptr;
     QHash<quint64, QPointer<QNetworkReply>> in_flight_;
+    QHash<quint64, std::shared_ptr<std::atomic<bool>>> local_in_flight_;
     quint64 next_id_ = 0;
 };
 

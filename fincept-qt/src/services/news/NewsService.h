@@ -214,15 +214,12 @@ class NewsService : public QObject, public fincept::datahub::Producer {
     int max_requests_per_sec() const override; // RSS — cap at 2/s
 
     void fetch_all_news(bool force, ArticlesCallback cb);
-    /// POST /news/analyze. `headline` / `text` (the feed item's title and summary) are
-    /// sent when non-empty: newer servers analyse them — and say so — when the
-    /// article page itself cannot be read, instead of answering 422
-    /// article_content_unavailable (nothing charged). Older servers ignore them.
+    /// Analyze the feed item's title and summary with the user's configured AI
+    /// provider. This never calls the metered Fincept /news/analyze endpoint.
     void analyze_article(const QString& url, AnalysisCallback cb, const QString& headline = {},
                          const QString& text = {});
-    /// Transfer timeout of the /news/analyze request (the server may fetch the
-    /// article for up to 15 s and spend up to 60 s in the model call). UI guards
-    /// should wait at least this long before giving up on a result.
+    /// UI guard for a BYO provider call. The blocking model request itself owns
+    /// its provider timeout; this prevents the button staying disabled forever.
     static constexpr int kAnalyzeTimeoutMs = 90000;
 
     /// Request body of POST /news/analyze: `url`, plus `headline` / `text` when the

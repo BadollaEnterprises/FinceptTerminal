@@ -2,6 +2,7 @@
 #include "screens/calendars/CalendarPanel.h"
 
 #include "core/events/EventBus.h"
+#include "core/policy/CommunityPolicy.h"
 #include "screens/equity_research/EquityResearchFormat.h"
 #include "services/billing/PlanAccess.h"
 #include "services/fincept_data/FinceptDataParse.h"
@@ -248,6 +249,8 @@ QString CalendarPanel::plan_category() {
 }
 
 bool CalendarPanel::plan_includes_loads() {
+    if (!policy::fincept_metered_services_enabled())
+        return true; // every community calendar uses a public zero-credit adapter
     const auto& access = billing::PlanAccess::instance();
     return access.has_table() && access.included(plan_category());
 }
@@ -475,13 +478,17 @@ void CalendarPanel::build_pane() {
     pane_->set_timeout(90); // the service always answers; this only guards a lost reply
     pane_->skeleton()->set_shape(ui::LoadingSkeleton::Shape::Table);
     pane_->skeleton()->set_row_count(12);
-    pane_->set_requirements({ui::Requirement::signed_in()});
+    if (policy::fincept_metered_services_enabled())
+        pane_->set_requirements({ui::Requirement::signed_in()});
+    else
+        pane_->set_requirements({});
     // A server without the /data API is known after the first call: say so instead of
     // offering a LOAD that can only fail (re-checked on every show; the service forgets
     // it when the signed-in account changes).
     pane_->set_requirement_check([this]() {
         ui::RequirementStatus st;
-        if (service_used_ && fd::FinceptDataService::instance().server_lacks_api()) {
+        if (policy::fincept_metered_services_enabled() && service_used_ &&
+            fd::FinceptDataService::instance().server_lacks_api()) {
             st.ok = false;
             st.title = tr("Calendars are not available on this server");
             st.message = fd::FinceptDataService::unavailable_text();
@@ -552,8 +559,11 @@ void CalendarPanel::retranslate() {
     apply_btn_->setText(tr("APPLY"));
     apply_btn_->setToolTip(tr("Load the first page for these dates"));
     refresh_btn_->setText(tr("⟳ REFRESH"));
-    refresh_btn_->setToolTip(tr("Ask for newer data. Each data call is billed like a /market call; while the source "
-                                "has nothing newer the answer comes from this terminal's copy, free."));
+    refresh_btn_->setToolTip(
+        policy::fincept_metered_services_enabled()
+            ? tr("Ask for newer data. Each data call is billed like a /market call; while the source has nothing "
+                 "newer the answer comes from this terminal's copy, free.")
+            : tr("Ask the public source for newer data · 0 Fincept credits."));
     prev_btn_->setText(tr("◀ PREV"));
     next_btn_->setText(tr("NEXT ▶"));
     table_->setToolTip(symbol_column() >= 0 ? tr("Double-click a row to open its symbol in Equity Research · click a "
@@ -742,19 +752,16 @@ void CalendarPanel::on_answer(quint64 id, const fd::DataResult& r) {
     }
     case ErrorKind::NoCredits: {
         ui::EmptyState::Spec page;
-        page.glyph = QStringLiteral("¢");
+        page.glyph = QStringLiteral("◇");
         page.glyph_tone = ui::EmptyState::Tone::Warning;
-        page.title = tr("Not enough credits");
-        // "Market data is included with Pro …" when the server's plan table says so.
-        page.message = billing::PlanAccess::instance().with_upgrade_note(text, plan_category());
-        page.primary = tr("VIEW PLANS");
-        page.secondary = tr("RETRY");
-        page.secondary_agent_risk = QStringLiteral("spend"); // RETRY sends the billed call again
+        page.title = tr("Credit firewall");
+        page.message = tr("Blocked by the community credit firewall. Open Data Sources to use a configured public "
+                          "or BYO calendar feed; no paid retry will run.");
+        page.primary = tr("OPEN DATA SOURCES");
         page.technical = technical;
-        pane_->fail(
-            id, page,
-            [this]() { ui::open_setup_link(ui::SetupLink{QStringLiteral("plans"), QString(), QString()}, this); },
-            [this]() { pane_->run(); });
+        pane_->fail(id, page, []() {
+            EventBus::instance().publish("nav.switch_screen", {{"screen_id", "data_sources"}});
+        });
         return;
     }
     case ErrorKind::NotSignedIn:
@@ -895,7 +902,11 @@ void CalendarPanel::update_preview() {
     const double credits = list_credits();
     const auto& access = billing::PlanAccess::instance();
     QString note;
-    if (plan_includes_loads()) {
+    if (!policy::fincept_metered_services_enabled()) {
+        note = kind_ == fd::CalendarKind::Economic
+                   ? tr("Forex Factory public weekly export · 0 Fincept credits")
+                   : tr("Nasdaq public calendar · 0 Fincept credits");
+    } else if (plan_includes_loads()) {
         note = tr("Included with your plan — no credits used");
     } else if (access.has_table() && credits > 0.0) {
         note = tr("%1 credit(s) per load on your plan · a repeat while the source has nothing newer is free")
@@ -945,7 +956,11 @@ void CalendarPanel::show_no_events() {
         action = tr("NEXT %1 DAYS").arg(wide);
     ui::EmptyState::Spec spec = ui::EmptyState::no_data_spec(tr("No events in this range"), message, action);
     spec.glyph = QStringLiteral("◷");
-    spec.primary_tooltip = action.isEmpty() ? QString() : tr("Loads again — each load is billed like a /market call");
+    spec.primary_tooltip = action.isEmpty()
+                               ? QString()
+                               : policy::fincept_metered_services_enabled()
+                                     ? tr("Loads again — each load is billed like a /market call")
+                                     : tr("Loads again from the public source · 0 Fincept credits");
     if (!action.isEmpty() && !plan_includes_loads())
         spec.primary_agent_risk = QStringLiteral("spend"); // the action loads again (billed)
     no_events_->apply(spec);

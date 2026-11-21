@@ -6,6 +6,7 @@
 // Part of the partial-class split of MaritimeScreen.cpp.
 
 #include "core/logging/Logger.h"
+#include "core/policy/CommunityPolicy.h"
 #include "core/session/ScreenStateManager.h"
 #include "screens/maritime/MaritimeScreen.h"
 #include "screens/maritime/MaritimeScreen_internal.h"
@@ -103,14 +104,18 @@ QWidget* MaritimeScreen::build_top_bar() {
 
     // Every marine call is metered (area search 8 credits, history 5, position 1);
     // the balance after the last call is shown here, with PLANS when it runs low.
-    credits_label_ = new QLabel(tr("CREDITS: —"), bar);
+    const bool metered = policy::fincept_metered_services_enabled();
+    credits_label_ = new QLabel(metered ? tr("CREDITS: —") : tr("LOCAL SAMPLE · 0 FINCEPT CREDITS"), bar);
     credits_label_->setObjectName(QStringLiteral("mtCredits"));
-    credits_label_->setToolTip(tr("Fincept API credit balance after the last vessel request"));
+    credits_label_->setToolTip(metered ? tr("Fincept API credit balance after the last vessel request")
+                                      : tr("The community build uses built-in vessel samples and never spends "
+                                           "Fincept credits."));
     hl->addWidget(credits_label_);
     // What the plan changes for vessel data (half price on Pro) — hidden until
     // the server has sent its plan table.
     auto* plan_hint = new ui::PlanHintLabel(QStringLiteral("maritime"), bar);
     plan_hint->set_compact(true);
+    plan_hint->setVisible(metered && policy::commercial_promotions_enabled());
     hl->addWidget(plan_hint);
 
     plans_btn_ = new QPushButton(tr("PLANS"), bar);
@@ -130,6 +135,7 @@ QWidget* MaritimeScreen::build_top_bar() {
 
 // ── Left Panel ───────────────────────────────────────────────────────────────
 QWidget* MaritimeScreen::build_left_panel() {
+    const bool metered = policy::fincept_metered_services_enabled();
     auto* panel = new QWidget(this);
     panel->setObjectName(QStringLiteral("mtLeftPanel"));
     panel->setFixedWidth(std::max(260, mt_text_width(30, -1, QFont::Bold) + 24));
@@ -138,14 +144,17 @@ QWidget* MaritimeScreen::build_left_panel() {
     vl->setContentsMargins(12, 12, 12, 12);
     vl->setSpacing(8);
 
-    global_btn_ = new QPushButton(tr("GLOBAL VIEW (200 VESSELS)"), panel);
+    global_btn_ = new QPushButton(metered ? tr("GLOBAL VIEW (200 VESSELS)")
+                                         : tr("LOCAL GLOBAL VIEW (200 VESSELS)"),
+                                  panel);
     global_btn_->setCursor(Qt::PointingHandCursor);
     mt_set_role(global_btn_, "primary");
     connect(global_btn_, &QPushButton::clicked, this, &MaritimeScreen::load_global_sample);
     vl->addWidget(global_btn_);
 
-    load_btn_ = new QPushButton(tr("LOAD VESSELS IN AREA"), panel);
-    load_btn_->setProperty("fincept_agent_risk", "spend"); // agents: loads vessels (credits)
+    load_btn_ = new QPushButton(metered ? tr("LOAD VESSELS IN AREA") : tr("LOAD LOCAL VESSELS IN AREA"), panel);
+    if (metered)
+        load_btn_->setProperty("fincept_agent_risk", "spend");
     load_btn_->setCursor(Qt::PointingHandCursor);
     mt_set_role(load_btn_, "outline");
     connect(load_btn_, &QPushButton::clicked, this, &MaritimeScreen::on_load_vessels);
@@ -295,6 +304,7 @@ QWidget* MaritimeScreen::build_left_panel() {
 
 // ── Center Panel ─────────────────────────────────────────────────────────────
 QWidget* MaritimeScreen::build_center_panel() {
+    const bool metered = policy::fincept_metered_services_enabled();
     auto* panel = new QWidget(this);
     auto* vl = new QVBoxLayout(panel);
     vl->setContentsMargins(0, 0, 0, 0);
@@ -319,7 +329,7 @@ QWidget* MaritimeScreen::build_center_panel() {
     accent->setFixedSize(3, 14);
     hhl->addWidget(accent);
 
-    center_title_ = new QLabel(tr("LIVE VESSEL MAP"), header);
+    center_title_ = new QLabel(metered ? tr("LIVE VESSEL MAP") : tr("LOCAL VESSEL MAP"), header);
     center_title_->setObjectName(QStringLiteral("mtCenterTitle"));
     hhl->addWidget(center_title_);
     hhl->addStretch();
@@ -331,14 +341,16 @@ QWidget* MaritimeScreen::build_center_panel() {
     // Manual refresh + visible AUTO-refresh toggle (off by default so it never
     // silently burns API credits — the user opts in).
     refresh_btn_ = new QPushButton(tr("⟳ REFRESH"), header);
-    refresh_btn_->setProperty("fincept_agent_risk", "spend"); // agents: reloads vessels (credits)
+    if (metered)
+        refresh_btn_->setProperty("fincept_agent_risk", "spend");
     refresh_btn_->setCursor(Qt::PointingHandCursor);
     mt_set_role(refresh_btn_, "toolbar");
     connect(refresh_btn_, &QPushButton::clicked, this, [this]() { do_refresh(); });
     hhl->addWidget(refresh_btn_);
 
     auto_refresh_btn_ = new QPushButton(tr("AUTO ⟳ OFF"), header);
-    auto_refresh_btn_->setProperty("fincept_agent_risk", "spend"); // agents: turns on billed auto-refresh
+    if (metered)
+        auto_refresh_btn_->setProperty("fincept_agent_risk", "spend");
     auto_refresh_btn_->setCursor(Qt::PointingHandCursor);
     auto_refresh_btn_->setCheckable(true);
     mt_set_role(auto_refresh_btn_, "toolbar");
@@ -502,7 +514,7 @@ QWidget* MaritimeScreen::build_center_panel() {
     vessels_pane_->set_content(vessels_table_);
     vessels_pane_->skeleton()->set_shape(ui::LoadingSkeleton::Shape::Table);
     vessels_pane_->skeleton()->set_row_count(8);
-    vessels_pane_->set_cost_credits(8, QStringLiteral("maritime")); // list price; a known balance below the plan's price → "Not enough credits" + VIEW PLANS
+    vessels_pane_->set_cost_credits(metered ? 8 : 0, QStringLiteral("maritime"));
     vessels_pane_->set_max_age(60 * 60); // older positions → "may be out of date · REFRESH"
     vessels_pane_->set_persist_limit(0); // the service keeps the copy (remembered_vessels)
     vessels_pane_->set_remembered_source(
@@ -530,11 +542,14 @@ QWidget* MaritimeScreen::build_center_panel() {
             return;
         // Nothing loaded for this view: say so on the map and in the status bar,
         // and on a first visit (no saved map view) show the free reference layers.
+        const bool metered = policy::fincept_metered_services_enabled();
         if (map_widget_ && rendered_vessels_.isEmpty())
-            map_widget_->set_overlay_message(tr("Vessels not loaded yet — 8 credits per area search"));
+            map_widget_->set_overlay_message(metered ? tr("Vessels not loaded yet — 8 credits per area search")
+                                                     : tr("Local vessels not loaded yet — choose a global or area view"));
         set_status(tr("NOT LOADED"), "muted");
         if (status_label_)
-            status_label_->setToolTip(tr("Vessel positions are loaded on request (8 credits per area search)."));
+            status_label_->setToolTip(metered ? tr("Vessel positions are loaded on request (8 credits per area search).")
+                                              : tr("Deterministic local vessel positions · 0 Fincept credits."));
         if (!restored_map_view_ && !layers_defaulted_) {
             layers_defaulted_ = true;
             if (ports_layer_btn_ && !ports_layer_btn_->isChecked())
@@ -599,14 +614,15 @@ QWidget* MaritimeScreen::build_right_panel() {
         QString imo;
         if (!read_imo(&imo))
             return;
-        // A view of the vessel-list pane of its own (5 credits; the service
-        // answers a copy younger than 30 min for free).
+        // A view of the vessel-list pane of its own. Hosted history is metered;
+        // the community service generates the deterministic local track.
         MtView v;
         v.imo = imo;
         const QString key = QStringLiteral("history/") + imo;
         views_.insert(key, v);
         configure_vessels_preview(v);
-        vessels_pane_->set_cost_credits(5, QStringLiteral("maritime"));
+        const bool metered = policy::fincept_metered_services_enabled();
+        vessels_pane_->set_cost_credits(metered ? 5 : 0, QStringLiteral("maritime"));
         vessels_pane_->set_view(key);
         vessels_pane_->run();
     });
@@ -1104,6 +1120,7 @@ constexpr MtLayPort kMtLayPorts[] = {
 void MaritimeScreen::fill_default_places() {
     if (!place_table_)
         return;
+    const bool metered = policy::fincept_metered_services_enabled();
     place_results_.clear();
     for (const auto& a : kMtLayAreas) {
         GeoPlace p;
@@ -1122,12 +1139,16 @@ void MaritimeScreen::fill_default_places() {
     for (int i = 0; i < place_results_.size(); ++i) {
         const auto& p = place_results_[i];
         auto* name = new QTableWidgetItem(p.display_name);
-        name->setToolTip(tr("Load the vessels in %1 (8 credits)").arg(p.display_name));
+        name->setToolTip(metered ? tr("Load the vessels in %1 (8 credits)").arg(p.display_name)
+                                 : tr("Load the local vessel sample for %1 (0 Fincept credits)")
+                                       .arg(p.display_name));
         place_table_->setItem(i, 0, name);
         place_table_->setItem(i, 1, new QTableWidgetItem(p.type));
     }
     if (place_status_)
-        place_status_->setText(tr("Key shipping lanes — click one to load its vessels (8 credits)."));
+        place_status_->setText(metered ? tr("Key shipping lanes — click one to load its vessels (8 credits).")
+                                       : tr("Key shipping lanes — click one to load a local vessel sample "
+                                            "(0 Fincept credits)."));
 }
 
 void MaritimeScreen::fill_default_ports() {

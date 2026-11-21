@@ -12,6 +12,7 @@
 #include "services/billing/PlanAccess.h"
 #include "auth/AuthTypes.h"
 #include "core/logging/Logger.h"
+#include "core/policy/CommunityPolicy.h"
 #include "core/session/ScreenStateManager.h"
 #include "network/http/HttpClient.h"
 #include "screens/maritime/MaritimeScreen.h"
@@ -225,7 +226,8 @@ QString MaritimeScreen::select_area_view(const AreaSearchParams& params, bool gl
     v.shapes = shapes;
     views_.insert(key, v);
     configure_vessels_preview(v);
-    vessels_pane_->set_cost_credits(8, QStringLiteral("maritime"));
+    const bool metered = policy::fincept_metered_services_enabled();
+    vessels_pane_->set_cost_credits(metered ? 8 : 0, QStringLiteral("maritime"));
     vessels_pane_->set_view(key);
     return key;
 }
@@ -235,6 +237,30 @@ void MaritimeScreen::configure_vessels_preview(const MtView& v) {
     auto* es = vessels_pane_->preview();
     es->set_compact(true);
     es->set_glyph(QStringLiteral("◈"), ui::EmptyState::Tone::Warning);
+    if (!policy::fincept_metered_services_enabled()) {
+        if (!v.imo.isEmpty()) {
+            es->set_title(tr("Local voyage history of IMO %1").arg(v.imo));
+            es->set_message(tr("A deterministic 24-point local voyage track for charting and workflow testing."));
+            es->set_details({{tr("Source"), tr("Local community generator")},
+                             {tr("Fincept cost"), tr("0 Fincept credits")}},
+                            tr("LOCAL ROUTE"));
+            es->set_note(tr("No hosted maritime request will run."), ui::EmptyState::Tone::Info);
+            es->set_primary_action(tr("LOAD LOCAL HISTORY"));
+            es->set_secondary_action(QString());
+            return;
+        }
+        es->set_title(tr("Local vessel positions"));
+        es->set_message(tr("Deterministic vessel positions for the selected area, including speed, heading, "
+                           "route progress and map/table analytics."));
+        es->set_details({{tr("Area"), v.global ? tr("Global local sample") : tr("Selected bounding box")},
+                         {tr("Source"), tr("Local community generator")},
+                         {tr("Fincept cost"), tr("0 Fincept credits")}},
+                        tr("LOCAL ROUTE"));
+        es->set_note(tr("Refresh regenerates the local view without a network request."), ui::EmptyState::Tone::Info);
+        es->set_primary_action(v.global ? tr("LOAD LOCAL GLOBAL VIEW") : tr("LOAD LOCAL AREA"));
+        es->set_secondary_action(tr("SHOW PORTS & CHOKEPOINTS"));
+        return;
+    }
     if (!v.imo.isEmpty()) {
         es->set_title(tr("Voyage history of IMO %1").arg(v.imo));
         es->set_message(tr("Every reported position of this vessel: the trail on the map, speed over ground and the "
@@ -468,6 +494,7 @@ void MaritimeScreen::on_vessels_loaded(VesselsPage page) {
 
 void MaritimeScreen::apply_vessels_page(VesselsPage page, bool global_sample) {
     hide_map_loading();
+    const bool metered = policy::fincept_metered_services_enabled();
     // Leaving voyage-history mode: the table goes back to fleet columns and the
     // history summary (or its empty state) is hidden.
     history_mode_ = false;
@@ -577,13 +604,15 @@ void MaritimeScreen::apply_vessels_page(VesselsPage page, bool global_sample) {
                                                          : QDateTime::currentDateTime();
         sb_refresh_val_->setText(fetched.toString(QStringLiteral("HH:mm:ss")));
         const qint64 age_min = fetched.secsTo(QDateTime::currentDateTime()) / 60;
-        sb_refresh_val_->setToolTip(age_min >= 1 ? tr("Cached copy, %1 min old — ⟳ REFRESH fetches the latest "
-                                                      "(uses credits)")
-                                                       .arg(age_min)
-                                                 : QString());
+        sb_refresh_val_->setToolTip(
+            age_min < 1
+                ? QString()
+                : metered ? tr("Cached copy, %1 min old — ⟳ REFRESH fetches the latest (uses credits)").arg(age_min)
+                          : tr("Local sample, %1 min old — ⟳ REFRESH regenerates it with 0 Fincept credits")
+                                .arg(age_min));
     }
     // A cache hit carries no balance; show the session's (it follows billed calls).
-    if (page.remaining_credits < 0) {
+    if (metered && page.remaining_credits < 0) {
         const auto& session = auth::AuthManager::instance().session();
         if (session.authenticated)
             update_credits(session.user_info.credit_balance);
@@ -593,7 +622,7 @@ void MaritimeScreen::apply_vessels_page(VesselsPage page, bool global_sample) {
     // a request: say how old it is and what refreshing costs.
     const qint64 copy_age_min =
         page.fetched_at_ms > 0 ? (QDateTime::currentMSecsSinceEpoch() - page.fetched_at_ms) / 60000 : 0;
-    if (page.remaining_credits < 0 && copy_age_min >= 10) {
+    if (metered && page.remaining_credits < 0 && copy_age_min >= 10) {
         const QDateTime at = QDateTime::fromMSecsSinceEpoch(page.fetched_at_ms);
         const bool today = at.date() == QDate::currentDate();
         set_status(tr("AS OF %1 · ⟳ REFRESH = 8 CR")
@@ -603,6 +632,10 @@ void MaritimeScreen::apply_vessels_page(VesselsPage page, bool global_sample) {
             status_label_->setToolTip(tr("Vessel positions of your last load (%1), shown without spending credits. "
                                          "⟳ REFRESH fetches the latest (8 credits).")
                                           .arg(QLocale().toString(at, QLocale::ShortFormat)));
+    } else if (!metered) {
+        set_status(tr("LOCAL SAMPLE · 0 FINCEPT CREDITS"), "positive");
+        if (status_label_)
+            status_label_->setToolTip(tr("Deterministic local vessel positions; refreshes never use Fincept credits."));
     } else if (page.vessels.size() > kMtRenderLimit) {
         set_status(tr("READY (table: newest %1 of %2, map: %3)")
                        .arg(render_n)
@@ -715,7 +748,7 @@ void MaritimeScreen::on_error(const QString& context, const QString& message) {
     if (http_status == 401)
         note = tr("Sign in to Fincept to load vessel positions");
     else if (http_status == 402)
-        note = tr("Out of Fincept credits — a vessel area search costs 8 credits");
+        note = tr("Blocked by the community credit firewall — configure a BYO maritime data source");
     else if (http_status == 0)
         note = tr("Vessel positions could not be loaded (network / timeout) — ⟳ REFRESH retries");
     else
@@ -728,16 +761,13 @@ void MaritimeScreen::on_error(const QString& context, const QString& message) {
         if (const quint64 id = std::exchange(vessels_request_id_, 0); id != 0)
             vessels_pane_->fail(id,
                                 http_status == 402
-                                    ? fincept::billing::PlanAccess::instance().with_upgrade_note(
-                                          tr("Out of Fincept credits. Top up or change your plan (PLANS in the top "
-                                             "bar), then retry — a failed request is not charged."),
-                                          QStringLiteral("maritime"))
+                                    ? tr("Blocked by the community credit firewall. No paid retry will run; configure "
+                                         "a BYO maritime source in Data Sources.")
                                     : note + QLatin1Char('.'),
-                                http_status == 402 ? tr("Out of Fincept credits") : QString());
+                                http_status == 402 ? tr("Credit firewall") : QString());
     }
     if (http_status == 402) {
-        // Out of credits — a retry cannot help; say so and offer the plans.
-        set_status(tr("OUT OF CREDITS"), "negative");
+        set_status(tr("CREDIT FIREWALL"), "negative");
         update_credits(0);
     } else {
         set_status(tr("ERROR"), "negative");
@@ -945,13 +975,15 @@ void MaritimeScreen::update_intelligence(int region_total, int loaded) {
 }
 
 void MaritimeScreen::update_credits(double remaining) {
+    if (!policy::fincept_metered_services_enabled())
+        return;
     // < 0 = not reported (cache hits never report a balance — it would be stale).
     if (!credits_label_ || remaining < 0)
         return;
     credits_label_->setText(tr("CREDITS: %1").arg(auth::format_credits(remaining)));
     mt_set_tone(credits_label_, remaining < kMaritimeLowCredits ? "negative" : (remaining < 100.0 ? "amber" : "positive"));
     if (plans_btn_)
-        plans_btn_->setVisible(remaining < kMaritimeLowCredits);
+        plans_btn_->setVisible(policy::commercial_promotions_enabled() && remaining < kMaritimeLowCredits);
 }
 
 void MaritimeScreen::update_map(const QVector<VesselData>& vessels, bool fit_camera, bool update_stats) {

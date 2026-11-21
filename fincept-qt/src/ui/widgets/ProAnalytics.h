@@ -1,9 +1,9 @@
 #pragma once
-// ProAnalytics — Pro analytics reports (/data/pro/* on the Fincept API) in the
-// terminal: one renderer for every report, a window that hosts it, and the
-// small toolbar button tabs use to open it for what the user is looking at.
+// ProAnalytics — local/public-data analytics reports in the terminal: one
+// renderer for every report, a window that hosts it, and the small toolbar
+// button tabs use to open it for what the user is looking at.
 //
-// The server computes each report and sends it ready to render
+// scripts/byo_pro_analytics.py computes each report and sends it ready to render
 // ({title, headline, tone, stats[], tables[], notes[]}), so a report added on
 // the server needs no terminal change beyond a Kind and a path here.
 //
@@ -12,11 +12,8 @@
 //   Portfolio risk        volatility, drawdown, VaR, beta, correlations             (holdings)
 //   Market pulse          risk appetite, sector breadth and leadership              (no input)
 //
-// Billing: included with Pro; on Free a report costs credits, so it never runs
-// by itself there — the window shows what the report is and its price, and RUN
-// starts it. On Pro it runs when the window opens. Everything here stays hidden
-// while the server has not announced the "pro_analytics" price category
-// (billing::PlanAccess), i.e. against a server without these routes.
+// Cost: 0 Fincept credits. Deterministic calculations run locally and obtain
+// delayed market inputs from a public source. No LLM key is exposed to Python.
 
 #include <QDialog>
 #include <QJsonObject>
@@ -55,30 +52,28 @@ QString title(Kind kind);
 /// One sentence saying what the report contains, translated.
 QString description(Kind kind);
 
-/// True when the signed-in account's server offers Pro analytics.
+/// True because the local analytics adapter ships with the terminal.
 bool available();
 
 /// Opens the report window for `request` over the window of `origin` (one
 /// window per kind: asking again re-targets and raises it).
 void open(const Request& request, QWidget* origin);
 
-/// A small toolbar button ("PRO  POSITIONING") that opens the report for
-/// whatever `provider` returns when clicked. It hides itself while Pro
-/// analytics are not available and re-styles with the theme. The button is
-/// owned by `parent`.
+/// A small toolbar button ("LOCAL  POSITIONING") that opens the report for
+/// whatever `provider` returns when clicked. The button is owned by `parent`.
 QPushButton* make_button(Kind kind, std::function<Request()> provider, QWidget* parent);
 
 } // namespace pro
 
-/// Renders one report: intro (what it is, what it costs) → loading → result or
-/// error. Embeddable anywhere; ProAnalyticsDialog hosts it.
+/// Renders one report: intro → local loading → result or error. Embeddable
+/// anywhere; ProAnalyticsDialog hosts it.
 class ProAnalyticsPanel : public QWidget {
     Q_OBJECT
   public:
     explicit ProAnalyticsPanel(QWidget* parent = nullptr);
 
-    /// Shows the intro for `request`. With `autorun`, a report the plan includes
-    /// (no credits) runs at once; otherwise it waits for RUN / run().
+    /// Shows the intro for `request`. With `autorun`, a ready zero-credit report
+    /// runs at once; otherwise it waits for RUN / run().
     void set_request(const pro::Request& request, bool autorun = true);
     const pro::Request& request() const { return request_; }
 
@@ -92,14 +87,14 @@ class ProAnalyticsPanel : public QWidget {
     enum Page { Intro = 0, Loading = 1, Failed = 2, Result = 3 };
 
     void retranslate();
-    /// Marks RUN / RETRY as spending credits for outside agents while the plan
-    /// does not include the report (core/agent/AgentRiskMarkers.h).
+    /// Marks RUN / RETRY as local-public-data actions for outside agents.
     void sync_risk_markers();
     void show_intro();
     void show_error(const QString& message, bool out_of_credits);
     void show_report(const QJsonObject& data, const QJsonObject& meta);
+    void run_ai_explanation(const QJsonObject& report, const QJsonObject& meta, QPushButton* button,
+                            QLabel* status, QLabel* output);
     bool request_ready(QString* why) const;
-    QString request_path() const;
 
     pro::Request request_;
     quint64 generation_ = 0;

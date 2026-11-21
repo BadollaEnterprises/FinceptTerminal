@@ -3,8 +3,9 @@
 
 #include "auth/AuthManager.h"
 #include "core/config/AppPaths.h"
-#include "core/process/ProcessTree.h"
 #include "core/logging/Logger.h"
+#include "core/policy/CommunityPolicy.h"
+#include "core/process/ProcessTree.h"
 #include "python/PythonRunner.h"
 #include "storage/cache/CacheManager.h"
 #include "storage/repositories/LlmProfileRepository.h"
@@ -209,18 +210,48 @@ void AIQuantLabService::run_module(const QString& module_id, const QString& comm
 }
 
 QJsonObject AIQuantLabService::agent_llm_config(const QJsonObject& params) const {
-    const QJsonObject given = params.value(QStringLiteral("config")).toObject();
-    if (!given.value(QStringLiteral("llm_provider")).toString().isEmpty())
-        return given;
-    // No provider in the caller's block: use the profile assigned to AI Quant
-    // Lab, same keys QuantModulePanel builds.
-    const ResolvedLlmProfile p = LlmProfileRepository::instance().resolve_for_context(QStringLiteral("ai_quant_lab"));
-    if (p.provider.isEmpty())
-        return {};
-    return QJsonObject{{QStringLiteral("llm_provider"), p.provider},
-                       {QStringLiteral("llm_api_key"), p.api_key},
-                       {QStringLiteral("llm_model"), p.model_id},
-                       {QStringLiteral("llm_base_url"), p.base_url}};
+    QJsonObject chosen = params.value(QStringLiteral("config")).toObject();
+    if (chosen.value(QStringLiteral("llm_provider")).toString().isEmpty()) {
+        // No provider in the caller's block: use the profile assigned to AI Quant
+        // Lab, same keys QuantModulePanel builds.
+        const ResolvedLlmProfile p =
+            LlmProfileRepository::instance().resolve_for_context(QStringLiteral("ai_quant_lab"));
+        if (!p.provider.isEmpty())
+            chosen = QJsonObject{{QStringLiteral("llm_provider"), p.provider},
+                                 {QStringLiteral("llm_api_key"), p.api_key},
+                                 {QStringLiteral("llm_model"), p.model_id},
+                                 {QStringLiteral("llm_base_url"), p.base_url}};
+    }
+
+    const QString provider = chosen.value(QStringLiteral("llm_provider")).toString().trimmed();
+    chosen[QStringLiteral("llm_model")] =
+        policy::normalize_llm_model(provider, chosen.value(QStringLiteral("llm_model")).toString());
+    const bool hosted_fincept = provider.compare(QLatin1String("fincept"), Qt::CaseInsensitive) == 0;
+    const bool requires_byo = provider.isEmpty() || policy::is_deprecated_llm_provider(provider) ||
+                              (hosted_fincept && !policy::fincept_metered_services_enabled());
+    if (!requires_byo)
+        return chosen;
+
+    // Empty, metered Fincept and saved deprecated profiles must never turn a
+    // long multi-agent run into a credit-backed or legacy local request. Prefer
+    // the user's configured DeepSeek profile.
+    const QString byo_provider = policy::default_llm_provider();
+    const auto profiles = LlmProfileRepository::instance().list_profiles();
+    if (profiles.is_ok()) {
+        for (const LlmProfile& p : profiles.value()) {
+            if (p.provider.compare(byo_provider, Qt::CaseInsensitive) == 0)
+                return QJsonObject{{QStringLiteral("llm_provider"), p.provider},
+                                   {QStringLiteral("llm_api_key"), p.api_key},
+                                   {QStringLiteral("llm_model"), p.model_id},
+                                   {QStringLiteral("llm_base_url"), p.base_url}};
+        }
+    }
+    // No BYO profile yet: fail visibly for a missing user key instead of
+    // silently falling back to Fincept credits.
+    return QJsonObject{{QStringLiteral("llm_provider"), byo_provider},
+                       {QStringLiteral("llm_api_key"), QString()},
+                       {QStringLiteral("llm_model"), policy::default_llm_model()},
+                       {QStringLiteral("llm_base_url"), policy::default_llm_base_url()}};
 }
 
 // ── Qlib core ────────────────────────────────────────────────────────────────
@@ -735,7 +766,8 @@ void AIQuantLabService::run_deep_agent(const QJsonObject& params) {
     // provider gets the account key; any other provider keeps its own (the
     // script never sends a non-Fincept key to api.fincept.in). Signed out: the
     // profile's key, if it holds one, is all there is.
-    if (llm.value(QStringLiteral("llm_provider")).toString().trimmed().compare(QLatin1String("fincept"),
+    if (policy::fincept_metered_services_enabled() &&
+        llm.value(QStringLiteral("llm_provider")).toString().trimmed().compare(QLatin1String("fincept"),
                                                                                Qt::CaseInsensitive) == 0) {
         const QString account_key = fincept::auth::AuthManager::instance().fincept_api_key();
         if (!account_key.isEmpty())

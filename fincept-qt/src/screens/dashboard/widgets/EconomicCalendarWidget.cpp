@@ -1,6 +1,7 @@
 #include "screens/dashboard/widgets/EconomicCalendarWidget.h"
 
 #include "core/market/MarketProfile.h"
+#include "core/policy/CommunityPolicy.h"
 #include "datahub/DataHub.h"
 #include "screens/dashboard/widgets/RegionPin.h"
 #include "screens/dashboard/widgets/TileBilling.h"
@@ -70,7 +71,9 @@ namespace fincept::screens::widgets {
 
 EconomicCalendarWidget::EconomicCalendarWidget(const QJsonObject& cfg, QWidget* parent)
     : BaseWidget(tr("ECONOMIC CALENDAR"), parent, ui::colors::CYAN()) {
-    set_agent_risk(tile_billing::agent_kind(QStringLiteral("macro"))); // refresh / LOAD: billed ("macro" credits)
+    const bool metered = policy::fincept_metered_services_enabled();
+    set_agent_risk(metered ? tile_billing::agent_kind(QStringLiteral("macro")) : nullptr);
+    setToolTip(metered ? QString() : tr("PUBLIC CALENDAR · 0 Fincept credits"));
     auto* vl = content_layout();
     vl->setContentsMargins(0, 0, 0, 0);
     vl->setSpacing(0);
@@ -193,7 +196,8 @@ EconomicCalendarWidget::EconomicCalendarWidget(const QJsonObject& cfg, QWidget* 
             window->setSingleShot(true);
             window->setInterval(4 * 60 * 1000);
             connect(window, &QTimer::timeout, this, [this]() {
-                if (hub_active_ && !tile_billing::plan_includes(QStringLiteral("macro")))
+                if (policy::fincept_metered_services_enabled() && hub_active_ &&
+                    !tile_billing::plan_includes(QStringLiteral("macro")))
                     hub_unsubscribe();
             });
         }
@@ -202,8 +206,10 @@ EconomicCalendarWidget::EconomicCalendarWidget(const QJsonObject& cfg, QWidget* 
     // The plan table arrived / changed: a plan that includes macro data loads the
     // offered calendar now, as a free tile would.
     connect(&billing::PlanAccess::instance(), &billing::PlanAccess::changed, this, [this]() {
-        set_agent_risk(tile_billing::agent_kind(QStringLiteral("macro"))); // agents: an included load is free
-        if (isVisible() && is_empty_state_shown() && tile_billing::plan_includes(QStringLiteral("macro")))
+        const bool metered = policy::fincept_metered_services_enabled();
+        set_agent_risk(metered ? tile_billing::agent_kind(QStringLiteral("macro")) : nullptr);
+        if (isVisible() && is_empty_state_shown() &&
+            (!metered || tile_billing::plan_includes(QStringLiteral("macro"))))
             request_refresh();
     });
 
@@ -350,7 +356,7 @@ void EconomicCalendarWidget::showEvent(QShowEvent* e) {
     BaseWidget::showEvent(e);
     if (hub_active_)
         return; // a LOAD / refresh is in flight
-    if (tile_billing::plan_includes(QStringLiteral("macro"))) {
+    if (!policy::fincept_metered_services_enabled() || tile_billing::plan_includes(QStringLiteral("macro"))) {
         hub_subscribe(); // included with the plan: kept fresh by the hub, as before
         return;
     }

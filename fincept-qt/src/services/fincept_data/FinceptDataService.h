@@ -146,6 +146,11 @@ class FinceptDataService : public QObject {
     };
 
     void dispatch(Request request);
+    /// Community-mode replacement for hosted /data calls. Runs the bundled,
+    /// dependency-free Nasdaq adapter with no stored credentials and reuses the
+    /// same client cache / in-flight fan-out as hosted answers.
+    void fetch_community(const QString& dataset_id, const QString& operation, const QJsonObject& payload,
+                         const QObject* context, Callback callback, bool refresh);
     void send(const QString& dataset_id, const QString& key);
     void on_reply(const QString& dataset_id, const QString& key, quint64 generation, const Result<QJsonDocument>& reply);
     void record(const QString& dataset_id, const QString& key, const DataResult& result, qint64 now_ms);

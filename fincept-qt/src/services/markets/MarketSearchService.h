@@ -1,17 +1,17 @@
 #pragma once
 
-#include <QJsonObject>
+#include <QHash>
 #include <QList>
 #include <QObject>
 #include <QString>
+#include <QVector>
 
 namespace fincept::services {
 
-/// Symbol/asset search proxy for screen-side search-as-you-type UIs.
-///
-/// Wraps the `/market/search` REST endpoint so screens never call `HttpClient`
-/// directly. Callers pass a `request_id` (typically the current query string)
-/// so they can ignore stale responses without subclassing the service.
+/// Compatibility search facade for screen-side search-as-you-type UIs.
+/// Tradable instruments come from InstrumentResolver (local index, then public
+/// Yahoo); economic datasets come from public DBnomics. No Fincept endpoint is
+/// used.
 ///
 /// The service is intentionally thin — it is the seam, not the cache. Hot
 /// search-as-you-type widgets should debounce client-side before calling.
@@ -43,8 +43,16 @@ class MarketSearchService : public QObject {
     void search_failed(const QString& request_id, const QString& query, const QString& reason);
 
   private:
+    struct EconomicRequest {
+        QString request_id;
+        QString query;
+        int limit = 10;
+    };
+
     MarketSearchService();
     Q_DISABLE_COPY(MarketSearchService)
+
+    QHash<QString, QVector<EconomicRequest>> economic_requests_;
 };
 
 } // namespace fincept::services

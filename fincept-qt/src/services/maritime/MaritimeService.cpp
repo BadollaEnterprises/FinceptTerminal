@@ -4,9 +4,12 @@
 #include "auth/AuthManager.h"
 #include "core/config/AppConfig.h"
 #include "core/logging/Logger.h"
+#include "core/metrics/LocalUsageMetrics.h"
+#include "core/policy/CommunityPolicy.h"
 #include "datahub/DataHub.h"
 #include "datahub/DataHubMetaTypes.h"
 #include "network/http/HttpClient.h"
+#include "services/maritime/MaritimeCommunityData.h"
 #include "storage/cache/CacheManager.h"
 
 #include <QCoreApplication>
@@ -50,8 +53,8 @@ inline fincept::auth::RefusalLatch::Kind maritime_svc_publish_error(const QStrin
     }
     if (status == 402) {
         hub.publish_error(topic,
-                          QStringLiteral("Out of Fincept credits (1 per vessel update). Top up or upgrade in Plans & "
-                                         "Pricing, then refresh — paused until then."),
+                          QStringLiteral("Blocked by the community credit firewall. No paid vessel update was run; "
+                                         "configure a BYO maritime source in Data Sources to replace this feed."),
                           kMaritimeSvcRefusedRetry);
         return Kind::Credits;
     }
@@ -293,6 +296,14 @@ void MaritimeService::search_vessels_by_area(const AreaSearchParams& params, boo
     if (!force && emit_cached_area(cache_key, kAreaTtlSec))
         return;
 
+    if (!fincept::policy::fincept_metered_services_enabled()) {
+        VesselsPage page = community_vessels_for_area(params);
+        page.request_key = area_request_key(params);
+        metrics::LocalUsageMetrics::record_public_data(QStringLiteral("maritime_local"));
+        emit vessels_loaded(page);
+        return;
+    }
+
     // The deployed API (api.fincept.in, 2026-11) does not know `limit` yet: a
     // world-wide box answers with every vessel (~45k rows, tens of MB) after a
     // query that can run well past the client-wide 20 s. So: a 90 s transfer
@@ -409,6 +420,15 @@ void MaritimeService::get_vessel_position(const QString& imo, bool force) {
         return;
     }
 
+    if (!fincept::policy::fincept_metered_services_enabled()) {
+        const VesselData vessel = community_vessel_position(imo);
+        metrics::LocalUsageMetrics::record_public_data(QStringLiteral("maritime_local"));
+        emit vessel_found(vessel);
+        if (hub_registered_)
+            publish_to_hub(QStringLiteral("maritime:vessel:") + imo.trimmed(), QVariant::fromValue(vessel));
+        return;
+    }
+
     QJsonObject body;
     body["imo"] = imo.trimmed();
 
@@ -474,6 +494,20 @@ void MaritimeService::get_multi_vessel_positions(const QStringList& imos) {
         page.remaining_credits = -1; // cache hit: free, and the stored balance is stale
         page.fetched_at_ms = static_cast<qint64>(root["fetched_at_ms"].toDouble(0));
         emit vessels_loaded(page);
+        return;
+    }
+
+    if (!fincept::policy::fincept_metered_services_enabled()) {
+        VesselsPage page;
+        for (const auto& imo : imos)
+            if (!imo.trimmed().isEmpty())
+                page.vessels.append(community_vessel_position(imo));
+        page.total_count = page.found_count = page.vessels.size();
+        page.fetched_at_ms = QDateTime::currentMSecsSinceEpoch();
+        metrics::LocalUsageMetrics::record_public_data(QStringLiteral("maritime_local"));
+        emit vessels_loaded(page);
+        if (hub_registered_)
+            publish_to_hub(QStringLiteral("maritime:vessels:multi"), QVariant::fromValue(page));
         return;
     }
 
@@ -579,6 +613,16 @@ void MaritimeService::get_vessel_history(const QString& imo, bool force) {
         return;
     }
 
+    if (!fincept::policy::fincept_metered_services_enabled()) {
+        const VesselHistoryPage page = community_vessel_history(imo_trimmed);
+        history_fetch_shown_[imo_trimmed] = ++history_fetch_seq_;
+        metrics::LocalUsageMetrics::record_public_data(QStringLiteral("maritime_local"));
+        emit vessel_history_loaded(page);
+        if (hub_registered_)
+            publish_to_hub(QStringLiteral("maritime:history:") + imo_trimmed, QVariant::fromValue(page));
+        return;
+    }
+
     QJsonObject body;
     body["imo"] = imo_trimmed;
 
@@ -669,6 +713,15 @@ void MaritimeService::get_vessel_history(const QString& imo, bool force) {
 
 // ── Health check ─────────────────────────────────────────────────────────────
 void MaritimeService::check_health() {
+    if (!fincept::policy::fincept_metered_services_enabled()) {
+        const QJsonObject data{{QStringLiteral("status"), QStringLiteral("ready")},
+                               {QStringLiteral("source"), QStringLiteral("local_community")},
+                               {QStringLiteral("fincept_credits"), 0}};
+        emit health_loaded(data);
+        if (hub_registered_)
+            publish_to_hub(QStringLiteral("maritime:health"), QVariant(data));
+        return;
+    }
     QPointer<MaritimeService> self = this;
     HttpClient::instance().get(marine_base() + "/health", [self](Result<QJsonDocument> result) {
         if (!self)

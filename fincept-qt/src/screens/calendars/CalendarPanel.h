@@ -25,19 +25,18 @@ class EmptyState;
 namespace fincept::screens {
 
 /// One sub-tab of the Calendars screen: earnings, IPOs, splits or economic events
-/// from the Fincept /data API (GET /data/calendar/{kind}).
+/// from the Fincept /data API or, in the community build, public Nasdaq and
+/// Forex Factory adapters that never spend Fincept credits.
 ///
 /// FROM / TO (default: today .. today + 7 days), an optional symbol filter where the
 /// route has one, server-side paging (50 events per page, PREV / NEXT) and
 /// click-to-sort columns. Double-clicking a row with a symbol opens it in Equity
 /// Research.
 ///
-/// Every /data call is billed, so nothing is requested by itself: the result area
-/// is a ui::AutoLoadPane (Policy::Manual) that opens on the last loaded page with
-/// its "as of" time (kept across sessions), or on a preview naming what LOAD will
-/// fetch and what it costs. APPLY / LOAD / REFRESH / PREV / NEXT are the user's
-/// requests; each carries a request id, so a late answer for an older query is
-/// dropped.
+/// Hosted /data calls remain manual unless a plan includes them. Community
+/// public routes auto-load at zero Fincept credits. The result area keeps the
+/// last page across sessions; every request carries an id so a late answer for
+/// an older query is dropped.
 class CalendarPanel : public QWidget {
     Q_OBJECT
   public:
@@ -47,8 +46,7 @@ class CalendarPanel : public QWidget {
     services::fincept_data::CalendarKind kind() const { return kind_; }
     /// Stable key for saved state ("earnings", "ipos", "splits", "economic").
     QString key() const;
-    /// The sub-tab is on screen: refresh the preview (the cost from the dataset
-    /// catalogue, the dates). Requests nothing — every calendar call is billed.
+    /// The sub-tab is on screen: refresh the preview and current source/cost.
     void activate();
     /// Re-fetch the page on screen (REFRESH / F5), or load the first page when
     /// nothing has been loaded yet.

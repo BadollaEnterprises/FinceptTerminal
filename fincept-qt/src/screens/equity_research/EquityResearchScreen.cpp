@@ -2,6 +2,7 @@
 #include "screens/equity_research/EquityResearchScreen.h"
 
 #include "core/events/EventBus.h"
+#include "core/policy/CommunityPolicy.h"
 #include "core/session/ScreenStateManager.h"
 #include "core/symbol/SymbolContext.h"
 #include "core/symbol/SymbolDragSource.h"
@@ -119,6 +120,13 @@ static const ResearchTabSpec kResearchTabs[] = {
     {"analyst", QT_TRANSLATE_NOOP("EquityResearchScreen", "Analyst")},
     {"ownership", QT_TRANSLATE_NOOP("EquityResearchScreen", "Ownership")},
 };
+
+static bool research_tab_enabled(const char* key) {
+    Q_UNUSED(key);
+    // Community mode now serves these panels from the bundled Nasdaq public
+    // adapter; hosted mode keeps the richer Fincept /data feeds.
+    return true;
+}
 static const char* const kLegacyTabOrder[] = {"overview", "financials", "analysis",  "technicals",
                                               "peers",    "news",       "sentiment", "valuation"};
 static constexpr const char* kResearchTabKeyProp = "er_tab_key";
@@ -354,6 +362,10 @@ void EquityResearchScreen::build_ui() {
     static_assert(std::size(tabs) == std::size(kResearchTabs), "tab table out of sync");
     for (size_t i = 0; i < std::size(tabs); ++i) {
         tabs[i]->setProperty(kResearchTabKeyProp, QString::fromLatin1(kResearchTabs[i].key));
+        if (!research_tab_enabled(kResearchTabs[i].key)) {
+            tabs[i]->hide();
+            continue;
+        }
         tab_widget_->addTab(tabs[i], QString()); // titles set by retranslateUi()
     }
 
@@ -1181,8 +1193,15 @@ void EquityResearchScreen::retranslateUi() {
         mktcap_label_->setText(tr("MKT CAP: %1").arg(equity_fmt::dash()));
 
     if (tab_widget_) {
-        for (int i = 0; i < tab_widget_->count() && i < static_cast<int>(std::size(kResearchTabs)); ++i)
-            tab_widget_->setTabText(i, tr(kResearchTabs[i].title));
+        for (int i = 0; i < tab_widget_->count(); ++i) {
+            const QString key = tab_widget_->widget(i)->property(kResearchTabKeyProp).toString();
+            for (const auto& spec : kResearchTabs) {
+                if (key == QLatin1String(spec.key)) {
+                    tab_widget_->setTabText(i, tr(spec.title));
+                    break;
+                }
+            }
+        }
     }
 }
 
@@ -1456,6 +1475,8 @@ QList<command::CommandItem> er_command_rows() {
     };
     QList<command::CommandItem> out;
     for (const Row& r : kRows) {
+        if (!research_tab_enabled(r.section))
+            continue;
         QStringList kw = QString::fromLatin1(r.keywords).split(QStringLiteral(", "), Qt::SkipEmptyParts);
         kw << QStringLiteral("research") << QStringLiteral("stock");
         out.append(rows::section(screen, QString::fromLatin1(r.section),

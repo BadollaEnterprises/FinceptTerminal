@@ -1,6 +1,7 @@
 // src/screens/equity_research/EquityOptionsTab.cpp
 #include "screens/equity_research/EquityOptionsTab.h"
 
+#include "core/policy/CommunityPolicy.h"
 #include "screens/equity_research/EquityResearchUi.h"
 #include "ui/charts/BarChart.h"
 #include "ui/charts/TimeSeriesChart.h"
@@ -68,7 +69,8 @@ void EquityOptionsTab::build_ui() {
     expiry_caption_ = make_caption(QString(), this);
     controls_layout()->addWidget(expiry_caption_);
     expiry_combo_ = new QComboBox(this);
-    expiry_combo_->setProperty("fincept_agent_risk", "spend"); // each expiration is a billed chain request
+    if (policy::fincept_metered_services_enabled())
+        expiry_combo_->setProperty("fincept_agent_risk", "spend"); // each expiration is a billed chain request
     expiry_combo_->setMinimumWidth(150);
     controls_layout()->addWidget(expiry_combo_);
     connect(expiry_combo_, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int index) {
@@ -84,7 +86,8 @@ void EquityOptionsTab::build_ui() {
     strikes_caption_ = make_caption(QString(), this);
     controls_layout()->addWidget(strikes_caption_);
     strikes_combo_ = new QComboBox(this);
-    strikes_combo_->setProperty("fincept_agent_risk", "spend"); // reloads the chain (billed)
+    if (policy::fincept_metered_services_enabled())
+        strikes_combo_->setProperty("fincept_agent_risk", "spend"); // reloads the chain (billed)
     for (int n : kStrikeChoices)
         strikes_combo_->addItem(QStringLiteral("±%1").arg(n), n);
     strikes_combo_->setCurrentIndex(strikes_combo_->findData(kDefaultStrikes));
@@ -163,7 +166,8 @@ void EquityOptionsTab::build_ui() {
         return r;
     }, body_widget()));
     more_btn_ = make_button(QString(), body_widget());
-    more_btn_->setProperty("fincept_agent_risk", "spend"); // next page: billed
+    if (policy::fincept_metered_services_enabled())
+        more_btn_->setProperty("fincept_agent_risk", "spend"); // next page: billed
     more_btn_->hide();
     connect(more_btn_, &QPushButton::clicked, this, [this]() {
         if (pagination_.has_more)
@@ -192,7 +196,9 @@ void EquityOptionsTab::retranslate() {
     calls_caption_->setText(tr("◂ CALLS"));
     puts_caption_->setText(tr("PUTS ▸"));
     more_btn_->setText(tr("LOAD MORE"));
-    more_btn_->setToolTip(tr("Load the next page of contracts (one more data call)"));
+    more_btn_->setToolTip(policy::fincept_metered_services_enabled()
+                              ? tr("Load the next page of contracts (one more data call)")
+                              : tr("Load the next page from the public/local source (0 Fincept credits)"));
     table_->setToolTip(tr("Bright cells are in the money, dimmed ones out of the money; the amber strike is nearest "
                           "the underlying's price"));
     if (!chain_.contracts.isEmpty()) {
@@ -565,7 +571,11 @@ void EquityOptionsTab::update_analytics() {
         if (fd::has(atm_iv))
             parts << tr("<b>ATM IV</b> %1").arg(ou::fraction_pct(atm_iv, 1, false));
     }
-    parts << tr("IV term structure needs one request per expiration (credit-metered) — pick expirations above to compare");
+    parts << (policy::fincept_metered_services_enabled()
+                  ? tr("IV term structure needs one request per expiration (credit-metered) — pick expirations above "
+                       "to compare")
+                  : tr("IV term structure uses the public/local adapter (0 Fincept credits) — pick expirations above "
+                       "to compare"));
     analytics_label_->setText(parts.join(QStringLiteral(" · ")));
 }
 

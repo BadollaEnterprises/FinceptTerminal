@@ -1,6 +1,7 @@
 // src/screens/equity_research/EquityDataTab.cpp
 #include "screens/equity_research/EquityDataTab.h"
 
+#include "core/policy/CommunityPolicy.h"
 #include "screens/equity_research/EquityResearchFormat.h"
 #include "services/billing/PlanAccess.h"
 #include "services/fincept_data/FinceptDataService.h"
@@ -131,7 +132,8 @@ void EquityDataTab::build_frame() {
     fresh_label_->setObjectName(QStringLiteral("fdFresh"));
     hl->addWidget(fresh_label_);
     refresh_btn_ = make_button(QString(), ctrl);
-    refresh_btn_->setProperty("fincept_agent_risk", "spend"); // billed /data call
+    if (policy::fincept_metered_services_enabled())
+        refresh_btn_->setProperty("fincept_agent_risk", "spend"); // billed /data call
     connect(refresh_btn_, &QPushButton::clicked, this, [this]() {
         // LOAD (nothing loaded yet) asks normally; REFRESH asks for newer data.
         if (!symbol_.isEmpty())
@@ -170,6 +172,11 @@ void EquityDataTab::build_frame() {
 }
 
 void EquityDataTab::retranslate_frame() {
+    if (!policy::fincept_metered_services_enabled()) {
+        refresh_btn_->setText(tr("⟳ REFRESH"));
+        refresh_btn_->setToolTip(tr("Refresh from the public/local source — 0 Fincept credits."));
+        return;
+    }
     if (offering_) {
         refresh_btn_->setText(tr("LOAD"));
         refresh_btn_->setToolTip(tr("Load this tab's data. Each data call is billed like a /market call."));
@@ -197,12 +204,18 @@ void EquityDataTab::set_symbol(const QString& symbol) {
     body_->show();
     refresh_btn_->show();
     clear_view();
-    show_remembered_or_offer(); // billed: never a request by itself (see the header)
+    show_remembered_or_offer();
 }
 
 // ── Remembered answers / LOAD offer ──────────────────────────────────────────
 
 void EquityDataTab::show_remembered_or_offer() {
+    // Analyst, ownership and option-chain requests have community adapters.
+    // Load them like normal research data instead of showing a paid-call gate.
+    if (!policy::fincept_metered_services_enabled()) {
+        request(/*refresh=*/false);
+        return;
+    }
     // A plan that includes market data at no credit cost loads by itself, as a free tab would.
     const auto& access = billing::PlanAccess::instance();
     if (access.has_table() && access.included(QStringLiteral("market_data"))) {
@@ -232,10 +245,16 @@ void EquityDataTab::show_load_offer() {
     fresh_label_->clear();
     body_->hide();
     retranslate_frame();
-    set_message(tr("Nothing is loaded for %1 yet. This tab's data is billed per load, like a /market call — press "
-                   "LOAD to fetch it.")
-                    .arg(symbol_.toHtmlEscaped()),
-                QString());
+    if (policy::fincept_metered_services_enabled()) {
+        set_message(tr("Nothing is loaded for %1 yet. This tab's data is billed per load, like a /market call — press "
+                       "LOAD to fetch it.")
+                        .arg(symbol_.toHtmlEscaped()),
+                    QString());
+    } else {
+        set_message(tr("No public/local data is available for %1 yet — refresh to try again (0 Fincept credits).")
+                        .arg(symbol_.toHtmlEscaped()),
+                    QString());
+    }
 }
 
 QString EquityDataTab::remembered_key() const {
@@ -430,8 +449,12 @@ void EquityDataTab::update_freshness() {
     }
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
     QString fresh = fd::FinceptDataService::freshness_text(last_ok_, now);
-    if (showing_remembered_)
-        fresh += QStringLiteral(" · ") + tr("saved from your last load — REFRESH asks for newer data (billed)");
+    if (showing_remembered_) {
+        fresh += QStringLiteral(" · ") +
+                 (policy::fincept_metered_services_enabled()
+                      ? tr("saved from your last load — REFRESH asks for newer data (billed)")
+                      : tr("saved from your last load — REFRESH checks the public/local source (0 Fincept credits)"));
+    }
     fresh_label_->setText(fresh);
     const QString tone = last_ok_.meta.stale ? QStringLiteral("stale") : QString();
     if (fresh_label_->property("tone").toString() != tone) {
@@ -469,7 +492,7 @@ void EquityDataTab::on_availability_changed() {
     body_->show();
     refresh_btn_->show();
     clear_view();
-    show_remembered_or_offer(); // billed: never a request by itself
+    show_remembered_or_offer();
 }
 
 // ── Events ───────────────────────────────────────────────────────────────────

@@ -4,7 +4,10 @@
 
 #include "auth/AuthManager.h"
 #include "core/logging/Logger.h"
+#include "core/metrics/LocalUsageMetrics.h"
+#include "core/policy/CommunityPolicy.h"
 #include "network/http/HttpClient.h"
+#include "python/PythonRunner.h"
 #include "services/billing/PlanAccess.h"
 
 #include <QCryptographicHash>
@@ -135,6 +138,14 @@ FinceptDataService::DatasetState FinceptDataService::dataset_state(const QString
 }
 
 void FinceptDataService::start_discovery() {
+    // Discovery itself is a hosted Fincept request. Keep the firewall here as
+    // defense in depth: callers normally stop in dispatch(), but account-change
+    // recovery can also try to restart a discovery used by an older session.
+    if (!policy::fincept_metered_services_enabled()) {
+        set_availability(Availability::Unavailable);
+        release_awaiting();
+        return;
+    }
     if (availability_ == Availability::Checking)
         return;
     discovery_used_ = true;
@@ -220,9 +231,78 @@ void FinceptDataService::fetch(const QString& dataset_id, const QString& path, c
     dispatch(std::move(r));
 }
 
+void FinceptDataService::fetch_community(const QString& dataset_id, const QString& operation,
+                                         const QJsonObject& payload, const QObject* context, Callback callback,
+                                         bool refresh) {
+    Waiter waiter;
+    waiter.context = const_cast<QObject*>(context);
+    waiter.scoped = context != nullptr;
+    waiter.callback = std::move(callback);
+
+    QJsonObject request = payload;
+    request.insert(QStringLiteral("operation"), operation);
+    const QByteArray compact = QJsonDocument(request).toJson(QJsonDocument::Compact);
+    const QString key = QStringLiteral("community:") + dataset_id + QLatin1Char(':') + QString::fromUtf8(compact);
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    if (const auto it = cache_.constFind(key); it != cache_.constEnd()) {
+        if (now < (refresh ? it->fresh_until_ms : it->keep_until_ms)) {
+            DataResult copy = it->result;
+            copy.from_client_cache = true;
+            deliver_later(waiter, copy);
+            return;
+        }
+    }
+    if (const auto it = inflight_.find(key); it != inflight_.end()) {
+        it->append(std::move(waiter));
+        return;
+    }
+    inflight_.insert(key, {std::move(waiter)});
+
+    python::PythonRunner::RunOptions options;
+    options.timeout_ms = 120000;
+    options.credential_allowlist = QStringList{};
+    options.max_output_bytes = 8 * 1024 * 1024;
+    QPointer<FinceptDataService> self(this);
+    python::PythonRunner::instance().run_with_options(
+        QStringLiteral("byo_equity_data.py"), {QStringLiteral("fetch"), QString::fromUtf8(compact)}, options,
+        [self, dataset_id, key](python::PythonResult answer) {
+            if (!self)
+                return;
+            DataResult result;
+            if (!answer.success) {
+                result = local_error(ErrorKind::Upstream, QStringLiteral("public_equity_unavailable"),
+                                     answer.error.isEmpty() ? tr("Nasdaq public data is unavailable.") : answer.error);
+            } else {
+                QJsonParseError parse_error;
+                const QJsonDocument document = QJsonDocument::fromJson(answer.output.toUtf8(), &parse_error);
+                if (parse_error.error != QJsonParseError::NoError || !document.isObject())
+                    result = local_error(ErrorKind::BadResponse, QStringLiteral("invalid_public_equity_answer"),
+                                         tr("The public equity adapter returned an invalid answer."));
+                else
+                    result = parse_envelope(document);
+            }
+            if (result.ok())
+                metrics::LocalUsageMetrics::record_public_data(result.meta.source);
+            const qint64 received = QDateTime::currentMSecsSinceEpoch();
+            result.received_ms = received;
+            self->record(dataset_id, key, result, received);
+            self->deliver(self->inflight_.take(key), result);
+        });
+}
+
 void FinceptDataService::dispatch(Request r) {
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
 
+    // Generic /data callers must never reach sign-in, capability discovery, or
+    // a hosted request in community mode. Public adapters use fetch_community()
+    // directly and therefore do not pass through this gate.
+    if (!policy::fincept_metered_services_enabled()) {
+        deliver_later(r.waiter,
+                      local_error(ErrorKind::NoCredits, QStringLiteral("community_credit_firewall"),
+                                  tr("Metered Fincept data is disabled by the community credit firewall. "
+                                     "Choose a local or user-owned data source.")));
+        return;
+    }
     if (!signed_in()) {
         deliver_later(r.waiter, local_error(ErrorKind::NotSignedIn));
         return;
@@ -462,6 +542,16 @@ DataResult FinceptDataService::local_error(ErrorKind kind, const QString& code, 
 void FinceptDataService::fetch_option_chain(const QString& symbol, const QString& expiration, int strikes_around_atm,
                                             int page, int page_size, const QObject* context, Callback callback,
                                             bool refresh) {
+    if (!policy::fincept_metered_services_enabled()) {
+        fetch_community(QStringLiteral("options.chain"), QStringLiteral("options"),
+                        {{QStringLiteral("symbol"), symbol},
+                         {QStringLiteral("expiration"), expiration},
+                         {QStringLiteral("strikes_around_atm"), std::clamp(strikes_around_atm, 1, 100)},
+                         {QStringLiteral("page"), std::clamp(page, 1, 1000)},
+                         {QStringLiteral("page_size"), std::clamp(page_size, 1, 500)}},
+                        context, std::move(callback), refresh);
+        return;
+    }
     QueryParams q{{QStringLiteral("page"), QString::number(std::clamp(page, 1, 1000))},
                   {QStringLiteral("page_size"), QString::number(std::clamp(page_size, 1, 500))}};
     if (strikes_around_atm > 0)
@@ -475,6 +565,13 @@ void FinceptDataService::fetch_option_chain(const QString& symbol, const QString
 
 void FinceptDataService::fetch_analyst(const QString& symbol, int upgrades_limit, const QObject* context,
                                        Callback callback, bool refresh) {
+    if (!policy::fincept_metered_services_enabled()) {
+        fetch_community(QStringLiteral("analyst.overview"), QStringLiteral("analyst"),
+                        {{QStringLiteral("symbol"), symbol},
+                         {QStringLiteral("upgrades_limit"), std::clamp(upgrades_limit, 0, 500)}},
+                        context, std::move(callback), refresh);
+        return;
+    }
     fetch(QStringLiteral("analyst.overview"), QStringLiteral("/data/analyst/") + path_segment(symbol),
           {{QStringLiteral("upgrades_limit"), QString::number(std::clamp(upgrades_limit, 0, 500))}}, context,
           std::move(callback), refresh);
@@ -482,6 +579,13 @@ void FinceptDataService::fetch_analyst(const QString& symbol, int upgrades_limit
 
 void FinceptDataService::fetch_ownership(const QString& symbol, int transactions_limit, const QObject* context,
                                          Callback callback, bool refresh) {
+    if (!policy::fincept_metered_services_enabled()) {
+        fetch_community(QStringLiteral("ownership.overview"), QStringLiteral("ownership"),
+                        {{QStringLiteral("symbol"), symbol},
+                         {QStringLiteral("transactions_limit"), std::clamp(transactions_limit, 0, 200)}},
+                        context, std::move(callback), refresh);
+        return;
+    }
     fetch(QStringLiteral("ownership.overview"), QStringLiteral("/data/ownership/") + path_segment(symbol),
           {{QStringLiteral("transactions_limit"), QString::number(std::clamp(transactions_limit, 0, 200))}}, context,
           std::move(callback), refresh);
@@ -490,6 +594,18 @@ void FinceptDataService::fetch_ownership(const QString& symbol, int transactions
 void FinceptDataService::fetch_calendar(CalendarKind kind, const QDate& start, const QDate& end,
                                         const QString& symbol, const QString& sort, int page, int page_size,
                                         const QObject* context, Callback callback, bool refresh) {
+    if (!policy::fincept_metered_services_enabled()) {
+        const QString operation = calendar_name(kind);
+        fetch_community(calendar_dataset_id(kind), operation,
+                        {{QStringLiteral("start_date"), start.toString(Qt::ISODate)},
+                         {QStringLiteral("end_date"), end.toString(Qt::ISODate)},
+                         {QStringLiteral("symbol"), symbol.trimmed().toUpper()},
+                         {QStringLiteral("sort"), sort},
+                         {QStringLiteral("page"), std::clamp(page, 1, 500)},
+                         {QStringLiteral("page_size"), std::clamp(page_size, 1, 100)}},
+                        context, std::move(callback), refresh);
+        return;
+    }
     QueryParams q{{QStringLiteral("start_date"), start.toString(Qt::ISODate)},
                   {QStringLiteral("end_date"), end.toString(Qt::ISODate)},
                   {QStringLiteral("page"), QString::number(std::clamp(page, 1, 500))},
@@ -521,6 +637,8 @@ QString FinceptDataService::age_text(int seconds) {
 
 QString FinceptDataService::error_text(const DataError& e) {
     const QString server = e.message;
+    if (e.code == QLatin1String("community_credit_firewall"))
+        return server;
     const QString retry_at = e.retry_after_s > 0
                                  ? QTime::currentTime().addSecs(e.retry_after_s).toString(QStringLiteral("HH:mm:ss"))
                                  : QString();

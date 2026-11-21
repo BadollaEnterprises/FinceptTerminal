@@ -7,17 +7,13 @@
 //   <message line: failure reason / notice — hidden when there is none>
 //   <body: the tab's own content>
 //
-// Lazy and billing-aware like the other tabs: nothing is requested until the
+// Lazy and source-aware like the other tabs: nothing is requested until the
 // screen hands the tab a symbol while it is shown (set_symbol), the same symbol
-// is never fetched twice, and REFRESH is the only re-fetch (the service answers
-// it from its copy while the server's freshness window lasts).
+// is never fetched twice, and REFRESH is the only re-fetch.
 //
-// Billing rule (every /data call is billed): set_symbol() never sends a request by
-// itself unless the account's plan includes market data at no credit cost
-// (billing::PlanAccess). It shows the remembered answer of this tab and symbol —
-// the last one loaded, kept 14 days in CacheManager, with its "as of" — and
-// otherwise a LOAD offer (the header button, marked "spend"); only LOAD / REFRESH
-// and the tab's own controls send a request.
+// Community mode auto-loads the public/local adapters at zero Fincept credits.
+// When metered services are enabled, set_symbol() instead shows the remembered
+// answer (kept 14 days) or a LOAD offer unless the plan includes market data.
 //
 // Every answer carries the token of the request that asked; an answer for a
 // symbol / expiration the user has since left is dropped (is_current()). The
@@ -124,8 +120,8 @@ class EquityDataTab : public QWidget {
     void update_freshness();
     void on_availability_changed();
     void set_message(const QString& html, const QString& tone);
-    /// set_symbol() / availability: the remembered answer, else the LOAD offer — a
-    /// request only when the plan includes market data at no credit cost.
+    /// set_symbol() / availability: auto-load the community adapter, otherwise
+    /// use the remembered answer or the metered LOAD offer.
     void show_remembered_or_offer();
     void show_load_offer();
     QString remembered_key() const;

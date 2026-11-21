@@ -1,5 +1,6 @@
 #include "screens/dashboard/widgets/GeopoliticsEventsWidget.h"
 
+#include "core/policy/CommunityPolicy.h"
 #include "datahub/DataHub.h"
 #include "screens/dashboard/widgets/TileBilling.h"
 #include "services/geopolitics/GeopoliticsTypes.h"
@@ -36,7 +37,9 @@ QString geo_format_relative(const QString& iso) {
 
 GeopoliticsEventsWidget::GeopoliticsEventsWidget(const QJsonObject& cfg, QWidget* parent)
     : BaseWidget(tr("GEOPOLITICS EVENTS"), parent, ui::colors::DANGER()) {
-    set_agent_risk(tile_billing::agent_kind(QStringLiteral("news_events"))); // refresh / LOAD: billed ("news_events" credits)
+    const bool metered = policy::fincept_metered_services_enabled();
+    set_agent_risk(metered ? tile_billing::agent_kind(QStringLiteral("news_events")) : nullptr);
+    setToolTip(metered ? QString() : tr("PUBLIC EVENTS · 0 Fincept credits"));
     auto* vl = content_layout();
     vl->setContentsMargins(0, 0, 0, 0);
     vl->setSpacing(0);
@@ -101,7 +104,8 @@ GeopoliticsEventsWidget::GeopoliticsEventsWidget(const QJsonObject& cfg, QWidget
             window->setSingleShot(true);
             window->setInterval(4 * 60 * 1000);
             connect(window, &QTimer::timeout, this, [this]() {
-                if (hub_active_ && !tile_billing::plan_includes(QStringLiteral("news_events")))
+                if (policy::fincept_metered_services_enabled() && hub_active_ &&
+                    !tile_billing::plan_includes(QStringLiteral("news_events")))
                     hub_unsubscribe_all();
             });
         }
@@ -110,8 +114,10 @@ GeopoliticsEventsWidget::GeopoliticsEventsWidget(const QJsonObject& cfg, QWidget
     // The plan table arrived / changed: a plan that includes news events loads the
     // offered events now, as a free tile would.
     connect(&billing::PlanAccess::instance(), &billing::PlanAccess::changed, this, [this]() {
-        set_agent_risk(tile_billing::agent_kind(QStringLiteral("news_events"))); // agents: an included load is free
-        if (isVisible() && is_empty_state_shown() && tile_billing::plan_includes(QStringLiteral("news_events")))
+        const bool metered = policy::fincept_metered_services_enabled();
+        set_agent_risk(metered ? tile_billing::agent_kind(QStringLiteral("news_events")) : nullptr);
+        if (isVisible() && is_empty_state_shown() &&
+            (!metered || tile_billing::plan_includes(QStringLiteral("news_events"))))
             request_refresh();
     });
 
@@ -154,7 +160,7 @@ void GeopoliticsEventsWidget::showEvent(QShowEvent* e) {
     BaseWidget::showEvent(e);
     if (hub_active_)
         return; // a LOAD / refresh is in flight
-    if (tile_billing::plan_includes(QStringLiteral("news_events"))) {
+    if (!policy::fincept_metered_services_enabled() || tile_billing::plan_includes(QStringLiteral("news_events"))) {
         hub_resubscribe(); // included with the plan: kept fresh by the hub, as before
         if (const QVariant v = datahub::DataHub::instance().peek(QStringLiteral("geopolitics:events")); v.isValid())
             populate(v);

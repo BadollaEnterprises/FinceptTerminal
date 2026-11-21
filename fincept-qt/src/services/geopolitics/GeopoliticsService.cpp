@@ -5,6 +5,8 @@
 #include "services/billing/PlanAccess.h"
 #include "core/config/AppConfig.h"
 #include "core/logging/Logger.h"
+#include "core/metrics/LocalUsageMetrics.h"
+#include "core/policy/CommunityPolicy.h"
 #include "datahub/DataHub.h"
 #include "datahub/DataHubMetaTypes.h"
 #include "network/http/HttpClient.h"
@@ -21,6 +23,7 @@
 #include <QUrlQuery>
 #include <QVariant>
 
+#include <algorithm>
 #include <utility>
 
 namespace fincept::services::geo {
@@ -138,6 +141,79 @@ void GeopoliticsService::fetch_events(const QString& country, const QString& cit
                               date_to.trimmed().isEmpty() && page <= 1;
     const QString request_key = events_request_key(country, city, category, limit, page, source, date_from, date_to);
 
+    if (!fincept::policy::fincept_metered_services_enabled()) {
+        QStringList terms;
+        for (const QString& value : {country, city, category, source})
+            if (!value.trimmed().isEmpty())
+                terms << QLatin1Char('"') + value.trimmed() + QLatin1Char('"');
+        if (terms.isEmpty())
+            terms << QStringLiteral("geopolitics OR economy OR markets");
+        QJsonObject payload{{QStringLiteral("query"), terms.join(QStringLiteral(" AND "))},
+                            {QStringLiteral("limit"), std::clamp(limit, 1, 250)}};
+        python::PythonRunner::RunOptions options;
+        options.timeout_ms = 45000;
+        options.credential_allowlist = QStringList{};
+        options.max_output_bytes = 2 * 1024 * 1024;
+        QPointer<GeopoliticsService> self = this;
+        python::PythonRunner::instance().run_with_options(
+            QStringLiteral("byo_public_data.py"),
+            {QStringLiteral("gdelt"), QString::fromUtf8(QJsonDocument(payload).toJson(QJsonDocument::Compact))},
+            options,
+            [self, request_key, hub_eligible, country, city, category, limit, page](python::PythonResult result) {
+                if (!self)
+                    return;
+                if (!result.success) {
+                    emit self->error_occurred("events", result.error.isEmpty()
+                                                               ? QStringLiteral("GDELT public feed did not answer")
+                                                               : result.error);
+                    return;
+                }
+                QJsonParseError error;
+                const QJsonDocument doc = QJsonDocument::fromJson(result.output.toUtf8(), &error);
+                if (error.error != QJsonParseError::NoError || !doc.isObject()) {
+                    emit self->error_occurred("events", QStringLiteral("GDELT returned invalid data"));
+                    return;
+                }
+                const QJsonObject root = doc.object();
+                if (root.value(QStringLiteral("cost_route")).toString() != QLatin1String("public_zero_credit")) {
+                    emit self->error_occurred("events", QStringLiteral("Public-data cost marker was missing"));
+                    return;
+                }
+                EventsPage public_page;
+                public_page.request_key = request_key;
+                public_page.current_page = page;
+                public_page.events_per_page = limit;
+                public_page.credits_used = 0;
+                public_page.remaining_credits = -1;
+                const QJsonArray rows = root.value(QStringLiteral("rows")).toArray();
+                public_page.events.reserve(rows.size());
+                for (const QJsonValue& value : rows) {
+                    const QJsonObject row = value.toObject();
+                    NewsEvent event;
+                    event.url = row.value(QStringLiteral("url")).toString();
+                    event.title = row.value(QStringLiteral("title")).toString();
+                    event.source = row.value(QStringLiteral("domain")).toString(QStringLiteral("GDELT"));
+                    event.event_category = category.isEmpty() ? QStringLiteral("gdelt_public") : category;
+                    event.country = country;
+                    event.city = city;
+                    event.extracted_date = row.value(QStringLiteral("seen_at")).toString();
+                    event.created_at = event.extracted_date;
+                    if (!event.title.isEmpty() && !event.url.isEmpty())
+                        public_page.events.append(event);
+                }
+                public_page.total_events = public_page.events.size();
+                public_page.total_pages = 1;
+                LOG_INFO("Geopolitics", QString("Loaded %1 public_zero_credit GDELT articles")
+                                                .arg(public_page.events.size()));
+                metrics::LocalUsageMetrics::record_public_data(QStringLiteral("gdelt"));
+                emit self->events_loaded(public_page);
+                if (self->hub_registered_ && hub_eligible)
+                    publish_to_hub(QStringLiteral("geopolitics:events"), QVariant::fromValue(public_page));
+            },
+            {});
+        return;
+    }
+
     QPointer<GeopoliticsService> self = this;
     HttpClient::instance().get(
         url.toString(),
@@ -250,6 +326,11 @@ bool GeopoliticsService::fetch_unique_countries(bool cache_only) {
     if (cache_only)
         return false;
 
+    if (!fincept::policy::fincept_metered_services_enabled()) {
+        emit error_occurred("countries", tr("Blocked by the community credit firewall; cached reference data remains available."));
+        return false;
+    }
+
     QPointer<GeopoliticsService> self = this;
     HttpClient::instance().get(
         geo_api_base() + "?get_unique_countries=true&limit=100", [self](Result<QJsonDocument> result) {
@@ -306,6 +387,11 @@ bool GeopoliticsService::fetch_unique_categories(bool cache_only) {
     }
     if (cache_only)
         return false;
+
+    if (!fincept::policy::fincept_metered_services_enabled()) {
+        emit error_occurred("categories", tr("Blocked by the community credit firewall; cached reference data remains available."));
+        return false;
+    }
 
     QPointer<GeopoliticsService> self = this;
     HttpClient::instance().get(geo_api_base() + "?get_unique_categories=true", [self](Result<QJsonDocument> result) {
@@ -380,6 +466,11 @@ bool GeopoliticsService::fetch_unique_cities(bool cache_only) {
     }
     if (cache_only)
         return false;
+
+    if (!fincept::policy::fincept_metered_services_enabled()) {
+        emit error_occurred("cities", tr("Blocked by the community credit firewall; cached reference data remains available."));
+        return false;
+    }
 
     // Every city the events database knows (no limit): its size grows with the
     // data, so the body is parsed on HttpClient's worker, not the GUI thread.

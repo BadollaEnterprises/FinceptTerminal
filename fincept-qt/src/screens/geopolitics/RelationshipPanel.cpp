@@ -1,6 +1,7 @@
 // src/screens/geopolitics/RelationshipPanel.cpp
 #include "screens/geopolitics/RelationshipPanel.h"
 
+#include "core/policy/CommunityPolicy.h"
 #include "ui/theme/Theme.h"
 #include "ui/widgets/EmptyState.h"
 #include "ui/widgets/LoadingSkeleton.h"
@@ -88,9 +89,13 @@ void RelationshipPanel::build_ui() {
 
     hhl->addStretch();
 
-    // The live statistics are two paid reference lists: fetched only on request.
+    const bool metered = policy::fincept_metered_services_enabled();
+    // The hosted statistics action exists only in builds that explicitly allow
+    // metered Fincept services. Community users derive these cards from the
+    // zero-credit public events already loaded on the Monitor tab.
     load_stats_btn_ = new QPushButton(header);
-    load_stats_btn_->setProperty("fincept_agent_risk", "spend"); // agents: loads relationship statistics (6 credits)
+    if (metered)
+        load_stats_btn_->setProperty("fincept_agent_risk", "spend");
     load_stats_btn_->setCursor(Qt::PointingHandCursor);
     load_stats_btn_->setStyleSheet(QString("QPushButton { color:%1; background:transparent; border:1px solid %2;"
                                            "font-family:%3; font-size:%4px; font-weight:700; padding:3px 10px; }"
@@ -101,8 +106,10 @@ void RelationshipPanel::build_ui() {
                                        .arg(ui::fonts::TINY.get())
                                        .arg(ui::colors::alpha(ui::colors::INFO, 0.10), ui::colors::TEXT_TERTIARY(),
                                             ui::colors::BORDER_DIM()));
-    load_stats_btn_->setToolTip(tr("Fetch the live country and category statistics of the news-event feed "
-                                   "(two lists, 3 Fincept credits each)."));
+    load_stats_btn_->setToolTip(
+        metered ? tr("Fetch the live country and category statistics of the news-event feed "
+                     "(two lists, 3 Fincept credits each).")
+                : tr("Community mode uses the public events loaded on the Monitor tab."));
     connect(load_stats_btn_, &QPushButton::clicked, this, &RelationshipPanel::stats_requested);
     hhl->addWidget(load_stats_btn_);
 
@@ -206,6 +213,7 @@ void RelationshipPanel::rebuild_sections() {
     }
     sec_conflicts_ = sec_crisis_ = sec_orgs_ = nullptr;
     QWidget* host = sections_layout_->parentWidget();
+    const bool metered = policy::fincept_metered_services_enabled();
 
     // Live inputs, most active first — or, while those are not loaded, the
     // counts of the events page on the Monitor. The unknown-country
@@ -302,7 +310,7 @@ void RelationshipPanel::rebuild_sections() {
     if (conflict_cards.isEmpty() && crisis_cards.isEmpty()) {
         // Nothing to draw yet: a skeleton while the lists load, else what LOAD
         // fetches and what it costs (or why it failed) — never "waiting…".
-        if (stats_loading_) {
+        if (stats_loading_ && metered) {
             auto* sk = new ui::LoadingSkeleton(ui::LoadingSkeleton::Shape::Cards, host);
             sk->set_message(tr("LOADING LIVE EVENT STATISTICS…"));
             sk->set_opaque(false);
@@ -311,7 +319,17 @@ void RelationshipPanel::rebuild_sections() {
         } else {
             auto* es = new ui::EmptyState(host);
             es->set_alignment(Qt::AlignTop);
-            if (!stats_error_.isEmpty()) {
+            if (!metered) {
+                es->set_glyph(QStringLiteral("◎"), ui::EmptyState::Tone::Info);
+                es->set_title(tr("PUBLIC MONITOR EVENTS"));
+                es->set_message(tr("Load public GDELT events on the MONITOR tab. This Relations view will group "
+                                   "that page by country and category automatically."));
+                es->set_details({{tr("Data route"), tr("GDELT public feed")},
+                                 {tr("Fincept cost"), tr("0 Fincept credits")},
+                                 {tr("Refresh"), tr("Use APPLY FILTERS on Monitor")}},
+                                tr("COMMUNITY ROUTE"));
+                es->set_note(tr("No paid reference-list request will run."), ui::EmptyState::Tone::Info);
+            } else if (!stats_error_.isEmpty()) {
                 es->set_glyph(QStringLiteral("!"), ui::EmptyState::Tone::Danger);
                 es->set_title(tr("Live statistics could not be loaded"));
                 es->set_message(stats_error_.left(160));
@@ -330,7 +348,8 @@ void RelationshipPanel::rebuild_sections() {
                 es->set_note(tr("Not loaded automatically — 6 credits per load"), ui::EmptyState::Tone::Warning);
                 es->set_primary_action(tr("LOAD LIVE STATISTICS (6 CREDITS)"));
             }
-            connect(es, &ui::EmptyState::primary_clicked, this, &RelationshipPanel::stats_requested);
+            if (metered)
+                connect(es, &ui::EmptyState::primary_clicked, this, &RelationshipPanel::stats_requested);
             sections_layout_->addWidget(es);
         }
     } else {
@@ -500,11 +519,16 @@ void RelationshipPanel::retranslateUi() {
     if (title_lbl_)
         title_lbl_->setText(tr("GEOPOLITICAL RELATIONSHIP NETWORK"));
     const bool page_counts = !showing_live_ && (!page_countries_.isEmpty() || !page_categories_.isEmpty());
+    const bool metered = policy::fincept_metered_services_enabled();
     if (sample_badge_) {
         // What the cards show: live statistics (no badge), the Monitor's page
         // counts, a load in progress, or nothing loaded yet.
         sample_badge_->setVisible(!showing_live_);
-        if (stats_loading_) {
+        if (!metered) {
+            sample_badge_->setText(page_counts ? tr("LATEST %1 EVENTS").arg(page_events_) : tr("PUBLIC DATA"));
+            sample_badge_->setToolTip(page_counts ? tr("Counts from the zero-credit public events on the Monitor tab.")
+                                                  : tr("Load public events on the Monitor tab to build these cards."));
+        } else if (stats_loading_) {
             sample_badge_->setText(tr("LOADING"));
             sample_badge_->setToolTip(tr("Fetching the live event statistics."));
         } else if (page_counts) {
@@ -517,20 +541,31 @@ void RelationshipPanel::retranslateUi() {
         }
     }
     if (load_stats_btn_) {
-        load_stats_btn_->setVisible(!showing_live_);
+        load_stats_btn_->setVisible(metered && !showing_live_);
         load_stats_btn_->setEnabled(!stats_loading_);
         load_stats_btn_->setText(stats_loading_ ? tr("LOADING…") : tr("LOAD LIVE STATISTICS · 6 CR"));
     }
-    if (sample_note_)
-        sample_note_->setText(
-            page_counts
-                ? tr("Counts of the %1 events on the Monitor tab, with severity relative to the busiest entry "
-                     "(critical ≥ 50 %, high ≥ 20 % of its events). LOAD LIVE STATISTICS ranks the whole feed. "
-                     "Click a card for its events in the Monitor and its HDX datasets.")
-                      .arg(page_events_)
-                : tr("Live event statistics: the most active countries and event categories of the news-event feed, "
-                     "with severity relative to the busiest entry (critical ≥ 50 %, high ≥ 20 % of its events). "
-                     "Click a card for its events in the Monitor and its HDX datasets."));
+    if (sample_note_) {
+        if (!metered) {
+            sample_note_->setText(
+                page_counts
+                    ? tr("Counts of the %1 zero-credit public events on the Monitor tab, with severity relative to "
+                         "the busiest entry. Click a card for its events or HDX datasets.")
+                          .arg(page_events_)
+                    : tr("This view uses the public event page from the Monitor tab. Load events there to populate "
+                         "country and category cards without Fincept credits."));
+        } else {
+            sample_note_->setText(
+                page_counts
+                    ? tr("Counts of the %1 events on the Monitor tab, with severity relative to the busiest entry "
+                         "(critical ≥ 50 %, high ≥ 20 % of its events). LOAD LIVE STATISTICS ranks the whole feed. "
+                         "Click a card for its events in the Monitor and its HDX datasets.")
+                          .arg(page_events_)
+                    : tr("Live event statistics: the most active countries and event categories of the news-event "
+                         "feed, with severity relative to the busiest entry (critical ≥ 50 %, high ≥ 20 % of its "
+                         "events). Click a card for its events in the Monitor and its HDX datasets."));
+        }
+    }
     if (stats_lbl_)
         stats_lbl_->setText(tr("COUNTRIES: %1  |  CATEGORIES: %2  |  ORGANIZATIONS: %3")
                                 .arg(conflict_count_)

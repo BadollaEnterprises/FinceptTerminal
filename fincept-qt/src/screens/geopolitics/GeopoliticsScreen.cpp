@@ -2,6 +2,7 @@
 #include "screens/geopolitics/GeopoliticsScreen.h"
 
 #include "core/logging/Logger.h"
+#include "core/policy/CommunityPolicy.h"
 #include "core/session/ScreenStateManager.h"
 #include "screens/geopolitics/ConflictMonitorPanel.h"
 #include "screens/geopolitics/HDXDataPanel.h"
@@ -363,9 +364,14 @@ void GeopoliticsScreen::build_ui() {
         connect(pane, &ui::AutoLoadPane::state_changed, this, [this](ui::AutoLoadPane::State st) {
             if (st != ui::AutoLoadPane::State::Preview)
                 return;
-            monitor_panel_->set_map_message(tr("Events not loaded yet — LOAD EVENTS (3 credits) plots them here"));
+            const bool metered = policy::fincept_metered_services_enabled();
+            monitor_panel_->set_map_message(
+                metered ? tr("Events not loaded yet — LOAD EVENTS (3 credits) plots them here")
+                        : tr("Events not loaded yet — LOAD PUBLIC EVENTS plots GDELT / RSS data here"));
             status_label_->setText(tr("NOT LOADED"));
-            status_label_->setToolTip(tr("Events are loaded on request: LOAD EVENTS or ⟳ REFRESH (3 credits)."));
+            status_label_->setToolTip(
+                metered ? tr("Events are loaded on request: LOAD EVENTS or ⟳ REFRESH (3 credits).")
+                        : tr("Load or refresh public GDELT / RSS events with 0 Fincept credits."));
             set_status_color(ui::colors::TEXT_SECONDARY());
         });
         connect(pane->preview(), &ui::EmptyState::secondary_clicked, this, [this]() { on_tab_changed(1); });
@@ -607,7 +613,8 @@ QWidget* GeopoliticsScreen::build_filter_panel(QWidget* parent) {
     vl->addSpacing(4);
 
     apply_btn_ = new QPushButton(tr("APPLY FILTERS"), panel);
-    apply_btn_->setProperty("fincept_agent_risk", "spend"); // agents: reloads events (3 credits)
+    if (policy::fincept_metered_services_enabled())
+        apply_btn_->setProperty("fincept_agent_risk", "spend");
     apply_btn_->setCursor(Qt::PointingHandCursor);
     apply_btn_->setStyleSheet(QString("QPushButton { background:%1; color:%2; font-family:%3; font-size:%4px;"
                                       "font-weight:700; border:none; padding:6px 12px; }"
@@ -678,6 +685,7 @@ QWidget* GeopoliticsScreen::build_filter_panel(QWidget* parent) {
 // ── Status Bar ───────────────────────────────────────────────────────────────
 QWidget* GeopoliticsScreen::build_status_bar() {
     auto* bar = new QWidget(this);
+    const bool metered = policy::fincept_metered_services_enabled();
     bar->setMinimumHeight(26);
     bar->setStyleSheet(
         QString("background:%1; border-top:1px solid %2;").arg(ui::colors::BG_RAISED(), ui::colors::BORDER_DIM()));
@@ -698,7 +706,9 @@ QWidget* GeopoliticsScreen::build_status_bar() {
     status_source_lbl_ = new QLabel(tr("SOURCE:"), bar);
     status_source_lbl_->setStyleSheet(s);
     // Tech/brand identifier — shown verbatim, not translated.
-    status_source_val_ = new QLabel("NEWS-EVENTS API + HDX", bar);
+    status_source_val_ = new QLabel(metered ? QStringLiteral("NEWS-EVENTS API + HDX")
+                                            : QStringLiteral("GDELT / RSS + HDX"),
+                                    bar);
     status_source_val_->setStyleSheet(sv);
     hl->addWidget(status_source_lbl_);
     hl->addWidget(status_source_val_);
@@ -731,23 +741,25 @@ QWidget* GeopoliticsScreen::build_status_bar() {
     auto* pl = new QHBoxLayout(pager);
     pl->setContentsMargins(0, 0, 0, 0);
     pl->setSpacing(6);
-    // Re-buy the page on screen (same filters / page): the explicit refresh for a
-    // page shown from the cache.
-    refresh_btn_ = new QPushButton(tr("⟳ REFRESH · 3 CR"), pager);
-    refresh_btn_->setProperty("fincept_agent_risk", "spend"); // agents: reloads events (3 credits)
-    refresh_btn_->setToolTip(tr("Fetch the latest events for the filters and page on screen (3 credits)"));
+    refresh_btn_ = new QPushButton(metered ? tr("⟳ REFRESH · 3 CR") : tr("⟳ REFRESH"), pager);
+    if (metered)
+        refresh_btn_->setProperty("fincept_agent_risk", "spend");
+    refresh_btn_->setToolTip(metered ? tr("Fetch the latest events for the filters and page on screen (3 credits)")
+                                     : tr("Refresh the public GDELT / RSS event page (0 Fincept credits)"));
     connect(refresh_btn_, &QPushButton::clicked, this, [this]() { request_events(current_page_, /*reuse_filters=*/true); });
     pl->addWidget(refresh_btn_);
     prev_page_btn_ = new QPushButton(tr("◀ PREV"), pager);
     next_page_btn_ = new QPushButton(tr("NEXT ▶"), pager);
-    next_page_btn_->setProperty("fincept_agent_risk", "spend"); // agents: loads a page of events (credits)
+    if (metered)
+        next_page_btn_->setProperty("fincept_agent_risk", "spend");
     page_lbl_ = new QLabel(tr("PAGE %1").arg(1), pager);
     for (auto* b : {refresh_btn_, prev_page_btn_, next_page_btn_}) {
         b->setFixedHeight(18);
         b->setCursor(Qt::PointingHandCursor);
     }
     prev_page_btn_->setToolTip(tr("Newer events (previous page)"));
-    next_page_btn_->setToolTip(tr("Older events (next page) — each page uses API credits"));
+    next_page_btn_->setToolTip(metered ? tr("Older events (next page) — each page uses API credits")
+                                       : tr("Older public events, when the source provides another page"));
     connect(prev_page_btn_, &QPushButton::clicked, this, &GeopoliticsScreen::on_prev_page);
     connect(next_page_btn_, &QPushButton::clicked, this, &GeopoliticsScreen::on_next_page);
     pl->addWidget(prev_page_btn_);
@@ -759,13 +771,17 @@ QWidget* GeopoliticsScreen::build_status_bar() {
     // Opt-in auto refresh: each events fetch costs API credits (the 5-min timer
     // used to run whenever the screen was visible).
     auto_refresh_btn_ = new QPushButton(tr("AUTO ⟳ OFF"), bar);
-    auto_refresh_btn_->setProperty("fincept_agent_risk", "spend"); // agents: turns on billed auto-refresh
+    if (policy::fincept_metered_services_enabled())
+        auto_refresh_btn_->setProperty("fincept_agent_risk", "spend");
     auto_refresh_btn_->setObjectName("geoAutoBtn");
     auto_refresh_btn_->setCheckable(true);
     auto_refresh_btn_->setFixedHeight(18);
     auto_refresh_btn_->setCursor(Qt::PointingHandCursor);
-    auto_refresh_btn_->setToolTip(tr("Re-fetch the current events page every 5 minutes while this screen is "
-                                     "visible. Each fetch uses API credits; off by default."));
+    auto_refresh_btn_->setToolTip(policy::fincept_metered_services_enabled()
+                                      ? tr("Re-fetch the current events page every 5 minutes while this screen is "
+                                           "visible. Each fetch uses API credits; off by default.")
+                                      : tr("Refresh public GDELT / RSS event data every 5 minutes. "
+                                           "This uses 0 Fincept credits; off by default."));
     connect(auto_refresh_btn_, &QPushButton::toggled, this, [this](bool on) {
         set_auto_refresh(on);
         ScreenStateManager::instance().notify_changed(this);
@@ -773,14 +789,17 @@ QWidget* GeopoliticsScreen::build_status_bar() {
     hl->addWidget(auto_refresh_btn_);
 
     // Styled by the root sheet (#geoCredits[state=...]).
-    credits_label_ = new QLabel(tr("CREDITS: —"), bar);
+    credits_label_ = new QLabel(metered ? tr("CREDITS: —") : tr("PUBLIC DATA · 0 FINCEPT CREDITS"), bar);
     credits_label_->setObjectName("geoCredits");
-    credits_label_->setToolTip(tr("Fincept API credit balance after the last events request"));
+    credits_label_->setToolTip(metered ? tr("Fincept API credit balance after the last events request")
+                                      : tr("Events use public GDELT / RSS sources under the community credit "
+                                           "firewall."));
     hl->addWidget(credits_label_);
     // What the plan changes for events (included with Pro: no credits used) —
     // hidden until the server has sent its plan table.
     auto* plan_hint = new ui::PlanHintLabel(QStringLiteral("news_events"), bar);
     plan_hint->set_compact(true);
+    plan_hint->setVisible(metered && policy::commercial_promotions_enabled());
     hl->addWidget(plan_hint);
 
     plans_btn_ = new QPushButton(tr("PLANS"), bar);
@@ -861,10 +880,15 @@ void GeopoliticsScreen::start_events_request(quint64 id) {
                                                        QDateTime::currentDateTime().addMSecs(-age_ms));
                 const int minutes = static_cast<int>(age_ms / 60000);
                 status_label_->setText(minutes < 1 ? tr("READY · JUST NOW") : tr("READY · %1 MIN OLD").arg(minutes));
+                const QString fetched_at =
+                    QDateTime::currentDateTime().addMSecs(-age_ms).toString(QStringLiteral("HH:mm"));
                 status_label_->setToolTip(
-                    tr("Events fetched at %1 and reused without spending credits. ⟳ REFRESH fetches the latest "
-                       "(3 credits).")
-                        .arg(QDateTime::currentDateTime().addMSecs(-age_ms).toString(QStringLiteral("HH:mm"))));
+                    policy::fincept_metered_services_enabled()
+                        ? tr("Events fetched at %1 and reused without spending credits. ⟳ REFRESH fetches the "
+                             "latest (3 credits).")
+                              .arg(fetched_at)
+                        : tr("Public events fetched at %1 and reused locally. ⟳ REFRESH uses 0 Fincept credits.")
+                              .arg(fetched_at));
                 LOG_DEBUG("Geopolitics", QString("Reused events page fetched %1 s ago (no request)").arg(age_ms / 1000));
                 return;
             }
@@ -892,6 +916,19 @@ void GeopoliticsScreen::configure_events_preview() {
     auto* es = monitor_panel_->events_pane()->preview();
     es->set_glyph(QStringLiteral("◉"), ui::EmptyState::Tone::Warning);
     es->set_title(tr("Latest geopolitical events"));
+    if (!policy::fincept_metered_services_enabled()) {
+        es->set_message(tr("Public geopolitical news from GDELT / RSS, plotted on the map and grouped by country "
+                           "and category. Opening this screen never sends a paid Fincept request."));
+        es->set_details({{tr("Filters"), filters.isEmpty() ? tr("All countries · all categories")
+                                                           : filters.join(QStringLiteral(" · "))},
+                         {tr("Page"), tr("Up to %1 public events").arg(kGeoScreenEventsLimit)},
+                         {tr("Fincept cost"), tr("0 Fincept credits")}},
+                        tr("PUBLIC DATA ROUTE"));
+        es->set_note(tr("Uses the community public-data adapter."), ui::EmptyState::Tone::Info);
+        es->set_primary_action(tr("LOAD PUBLIC EVENTS"));
+        es->set_secondary_action(tr("BROWSE HDX DATA (FREE)"));
+        return;
+    }
     es->set_message(tr("Conflict, protest and crisis events from the Fincept news-event feed: plotted on the map, "
                        "ranked by category and hotspot, newest first. Events are loaded on request — opening this "
                        "screen never spends credits."));
@@ -925,6 +962,11 @@ void GeopoliticsScreen::configure_no_match_state() {
                                       : tr("Nothing was reported for %1 on this page. Widen the filters or clear "
                                            "them for the global feed.")
                                             .arg(filters.join(QStringLiteral(" · "))));
+    if (!policy::fincept_metered_services_enabled()) {
+        es->set_note(tr("Public GDELT / RSS retry · 0 Fincept credits"), ui::EmptyState::Tone::Info);
+        es->set_primary_action(filters.isEmpty() ? QString() : tr("CLEAR FILTERS"));
+        return;
+    }
     const bool included = billing::PlanAccess::instance().included(QStringLiteral("news_events"));
     if (included)
         es->set_note(tr("Included with your Pro plan — no credits used"), ui::EmptyState::Tone::Info);
@@ -982,9 +1024,15 @@ void GeopoliticsScreen::render_events_payload(const QJsonValue& payload, const Q
         const bool today = local.date() == QDate::currentDate();
         status_label_->setText(tr("AS OF %1").arg(
             local.toString(today ? QStringLiteral("HH:mm") : QStringLiteral("dd MMM HH:mm")).toUpper()));
-        status_label_->setToolTip(tr("The events of your last load (%1), shown without spending credits. "
-                                     "⟳ REFRESH fetches the latest (3 credits).")
-                                      .arg(QLocale().toString(local, QLocale::ShortFormat)));
+        const QString loaded_at = QLocale().toString(local, QLocale::ShortFormat);
+        status_label_->setToolTip(
+            policy::fincept_metered_services_enabled()
+                ? tr("The events of your last load (%1), shown without spending credits. "
+                     "⟳ REFRESH fetches the latest (3 credits).")
+                      .arg(loaded_at)
+                : tr("The public events from your last load (%1), shown from local cache. "
+                     "⟳ REFRESH uses 0 Fincept credits.")
+                      .arg(loaded_at));
         set_status_color(ui::colors::INFO());
     } else {
         status_label_->setText(tr("READY"));
@@ -1165,6 +1213,8 @@ void GeopoliticsScreen::on_events_loaded(services::geo::EventsPage page) {
 }
 
 void GeopoliticsScreen::update_credits(double remaining, double used) {
+    if (!policy::fincept_metered_services_enabled())
+        return;
     if (!credits_label_ || remaining < 0)
         return;
     // Colour-coded so depletion is glanceable; fractional balances (0.35-credit
@@ -1178,7 +1228,7 @@ void GeopoliticsScreen::update_credits(double remaining, double used) {
     credits_label_->style()->unpolish(credits_label_);
     credits_label_->style()->polish(credits_label_);
     if (plans_btn_)
-        plans_btn_->setVisible(remaining < kGeoLowCredits);
+        plans_btn_->setVisible(policy::commercial_promotions_enabled() && remaining < kGeoLowCredits);
 }
 
 void GeopoliticsScreen::set_auto_refresh(bool on) {
@@ -1364,15 +1414,14 @@ void GeopoliticsScreen::on_error(const QString& context, const QString& message)
     if (http_status == 401)
         monitor_panel_->set_map_message(tr("Sign in to Fincept to load geopolitical events"));
     else if (http_status == 402)
-        monitor_panel_->set_map_message(tr("Out of Fincept credits — events cannot load (3 credits per update)"));
+        monitor_panel_->set_map_message(tr("Paid events are blocked — use the zero-credit GDELT / RSS route"));
     else if (http_status == 0)
         monitor_panel_->set_map_message(tr("Events could not be loaded (network) — APPLY FILTERS retries"));
     else
         monitor_panel_->set_map_message(
             tr("Events could not be loaded: %1").arg(HttpClient::message_from_error(message.toStdString()).left(80)));
     if (http_status == 402) {
-        // Out of credits — retrying cannot help; point at the plans instead.
-        status_label_->setText(tr("OUT OF CREDITS"));
+        status_label_->setText(tr("CREDIT FIREWALL"));
         status_label_->setToolTip(HttpClient::message_from_error(message.toStdString()));
         set_status_color(ui::colors::DANGER());
         update_credits(0, 0);
@@ -1386,8 +1435,8 @@ void GeopoliticsScreen::on_error(const QString& context, const QString& message)
     // table when nothing was on screen, else keeps the page ("refresh failed").
     if (const quint64 id = std::exchange(events_request_id_, 0); id != 0)
         monitor_panel_->events_pane()->fail(
-            id, http_status == 402 ? tr("Out of Fincept credits — loading events costs 3 credits. Top up or change "
-                                        "your plan (PLANS in the status bar), then retry.")
+            id, http_status == 402 ? tr("Blocked by the community credit firewall. Use GDELT / RSS in Data Sources; "
+                                        "no paid Fincept retry will run.")
                                    : tr("Events could not be loaded: %1")
                                          .arg(HttpClient::message_from_error(message.toStdString()).left(160)));
     // A failed auto-refresh must not leave the flag set for the next manual apply.

@@ -3,6 +3,7 @@
 #include "auth/AuthTypes.h"
 #include "core/i18n/LanguageManager.h"
 #include "core/logging/Logger.h"
+#include "core/policy/CommunityPolicy.h"
 #include "network/http/HttpClient.h"
 #include "screens/news/NewsFeedPanel.h"
 #include "services/file_manager/FileManagerService.h"
@@ -160,8 +161,8 @@ NewsDetailPanel::NewsDetailPanel(QWidget* parent) : QWidget(parent) {
             analyze_slow_notice_shown_ = true;
             analyze_btn_->setText(tr("STILL WORKING…"));
             sync_analysis_preview();
-            analysis_notice_->setText(tr("Still working — the server is reading the article and running the "
-                                         "analysis. This can take up to %1 seconds; the result appears here.")
+            analysis_notice_->setText(tr("Still working — your configured AI provider is analyzing the supplied "
+                                         "article text. This can take up to %1 seconds; the result appears here.")
                                           .arg(services::NewsService::kAnalyzeTimeoutMs / 1000));
             analysis_notice_->show();
             analyze_timeout_->start(services::NewsService::kAnalyzeTimeoutMs - kAnalyzeSlowNoticeMs + 5000);
@@ -335,10 +336,11 @@ QWidget* NewsDetailPanel::build_content_view() {
     copy_title_btn_->setObjectName("newsDetailCopyTitleBtn");
     copy_title_btn_->setToolTip(tr("Copy article headline to clipboard"));
     analyze_btn_ = new QPushButton(tr("ANALYZE"), content);
-    analyze_btn_->setProperty("fincept_agent_risk", "spend"); // agents: a Fincept AI analysis (credits)
+    analyze_btn_->setProperty("fincept_agent_risk", "spend"); // agents: the user's provider quota may be billed
+    analyze_btn_->setProperty("fincept_cost_route", "byo_api");
     analyze_btn_->setObjectName("newsDetailAnalyzeBtn");
-    analyze_btn_->setToolTip(tr("Fincept AI analysis of the full article — uses Fincept API credits "
-                                "(the cost and remaining balance are shown after each run)"));
+    analyze_btn_->setToolTip(tr("Analysis through your configured AI provider — 0 Fincept credits; your provider "
+                                "may bill API usage"));
     save_btn_ = new QPushButton(tr("SAVE"), content);
     save_btn_->setObjectName("newsDetailSaveBtn");
     save_btn_->setToolTip(tr("Save article to File Manager"));
@@ -510,7 +512,7 @@ QWidget* NewsDetailPanel::build_content_view() {
     layout->addWidget(sep);
 
     // Where the AI analysis goes until one exists for this article: what it
-    // returns and that it costs credits — it is never run automatically (a
+    // returns and which provider pays — it is never run automatically (a
     // saved analysis of the article is shown instead, free).
     analysis_preview_ = new ui::EmptyState(content);
     analysis_preview_->set_compact(true);
@@ -519,8 +521,8 @@ QWidget* NewsDetailPanel::build_content_view() {
     analysis_preview_->set_title(tr("AI analysis of this article"));
     analysis_preview_->set_message(tr("Sentiment and confidence, urgency and outlook, the key points, risk signals and "
                                       "the companies, people and places in the full article."));
-    analysis_preview_->set_note(tr("Uses Fincept credits — the cost and your balance are shown after the run"),
-                                ui::EmptyState::Tone::Warning);
+    analysis_preview_->set_note(tr("BYO AI PROVIDER · 0 Fincept credits · your API provider may bill usage"),
+                                ui::EmptyState::Tone::Info);
     analysis_preview_->set_primary_action(tr("ANALYZE"));
     connect(analysis_preview_, &ui::EmptyState::primary_clicked, this, [this]() {
         if (analyze_btn_ && analyze_btn_->isEnabled())
@@ -847,8 +849,8 @@ void NewsDetailPanel::show_article(const services::NewsArticle& article) {
     analysis_preview_->show();
     sync_analysis_preview();
     // A previous article's failure reason must not stay on the button.
-    analyze_btn_->setToolTip(tr("Fincept AI analysis of the full article — uses Fincept API credits "
-                                "(the cost and remaining balance are shown after each run)"));
+    analyze_btn_->setToolTip(tr("Analysis through your configured AI provider — 0 Fincept credits; your provider "
+                                "may bill API usage"));
     plans_btn_->hide();
     analysis_notice_->hide();
     open_btn_->setEnabled(has_link);
@@ -902,12 +904,16 @@ void NewsDetailPanel::show_analysis_failed(const QString& error) {
     analyze_btn_->setEnabled(true);
     analysis_notice_->hide(); // a "still working" notice; the branches below set their own
     const int status = HttpClient::status_from_error(error.toStdString());
-    // Out of credits: retrying cannot help — say so and offer the plans.
+    // A 402 here is the configured BYO provider's quota, never a reason to
+    // route the user into Fincept billing from the research workspace.
     if (status == 402) {
-        analyze_btn_->setText(tr("NO CREDITS"));
-        analyze_btn_->setToolTip(HttpClient::message_from_error(error.toStdString()));
-        plans_btn_->setText(tr("INSUFFICIENT CREDITS — SEE PLANS"));
-        plans_btn_->show();
+        const QString text = tr("Your configured AI provider declined the request because its quota is unavailable. "
+                                "Choose another BYO provider or update its API key in Settings → LLM Configuration.");
+        analyze_btn_->setText(tr("CHECK AI SETTINGS"));
+        analyze_btn_->setToolTip(text);
+        analysis_notice_->setText(text);
+        analysis_notice_->show();
+        plans_btn_->hide();
         return;
     }
     // 422 article_content_unavailable (the article page could not be read and no
@@ -1225,21 +1231,28 @@ void NewsDetailPanel::show_analysis(const services::NewsAnalysis& analysis) {
         ai_keywords_->hide();
     }
 
-    // Credits footer — fractional balances (one call can cost 0.35 credits), shown
-    // only when the backend reported them (negative = not reported).
+    // Cost footer. The BYO path records zero Fincept credits and no Fincept
+    // balance; older cached server responses may still carry their historical
+    // credit figures.
     if (analysis.credits_used >= 0 || analysis.credits_remaining >= 0) {
         QStringList parts;
-        if (analysis.credits_used >= 0)
-            parts << tr("Credits used: %1").arg(auth::format_credits(analysis.credits_used));
-        if (analysis.credits_remaining >= 0)
-            parts << tr("remaining: %1").arg(auth::format_credits(analysis.credits_remaining));
+        const bool byo = analysis.credits_used == 0.0 && analysis.credits_remaining < 0;
+        if (byo) {
+            parts << tr("BYO AI provider") << tr("0 Fincept credits");
+        } else {
+            if (analysis.credits_used >= 0)
+                parts << tr("Fincept credits used: %1").arg(auth::format_credits(analysis.credits_used));
+            if (analysis.credits_remaining >= 0)
+                parts << tr("remaining: %1").arg(auth::format_credits(analysis.credits_remaining));
+        }
         ai_credits_->setText(parts.join(QStringLiteral("  •  ")));
-        const bool low = analysis.credits_remaining >= 0 && analysis.credits_remaining < kNewsLowCreditThreshold;
+        const bool low = !byo && analysis.credits_remaining >= 0 &&
+                         analysis.credits_remaining < kNewsLowCreditThreshold;
         ai_credits_->setProperty("low", low);
         ai_credits_->style()->unpolish(ai_credits_);
         ai_credits_->style()->polish(ai_credits_);
         ai_credits_->show();
-        if (low) {
+        if (policy::commercial_promotions_enabled() && low) {
             plans_btn_->setText(tr("LOW CREDITS — SEE PLANS"));
             plans_btn_->show();
         } else {
@@ -1398,8 +1411,8 @@ void NewsDetailPanel::retranslateUi() {
         analysis_preview_->set_title(tr("AI analysis of this article"));
         analysis_preview_->set_message(tr("Sentiment and confidence, urgency and outlook, the key points, risk signals "
                                           "and the companies, people and places in the full article."));
-        analysis_preview_->set_note(tr("Uses Fincept credits — the cost and your balance are shown after the run"),
-                                    ui::EmptyState::Tone::Warning);
+        analysis_preview_->set_note(tr("BYO AI PROVIDER · 0 Fincept credits · your API provider may bill usage"),
+                                    ui::EmptyState::Tone::Info);
     }
     if (ai_title_)
         ai_title_->setText(tr("AI ANALYSIS"));

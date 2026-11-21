@@ -5,6 +5,7 @@
 #include "screens/economics/EconomicsScreen.h"
 
 #include "core/logging/Logger.h"
+#include "core/policy/CommunityPolicy.h"
 #include "core/session/ScreenStateManager.h"
 #include "screens/common/CommandRows.h"
 #include "screens/economics/panels/AdbPanel.h"
@@ -101,6 +102,18 @@ static const struct {
     {"bea", "BEA", "#E65100"},
     {"fincept", "Fincept Macro", "#d97706"},
 };
+
+static bool economics_source_enabled(const char* id) {
+    return QString::fromLatin1(id) != QStringLiteral("fincept") || policy::fincept_metered_services_enabled();
+}
+
+static int visible_economics_source_count() {
+    int count = 0;
+    for (const auto& source : kSources)
+        if (economics_source_enabled(source.id))
+            ++count;
+    return count;
+}
 
 // ── Panel factory ─────────────────────────────────────────────────────────────
 static EconPanelBase* make_panel(const QString& id, QWidget* parent) {
@@ -210,7 +223,7 @@ void EconomicsScreen::build_ui() {
     title_->setObjectName(QStringLiteral("econScreenTitle"));
     // Derive the count from the registry — the hard-coded "32" was one more
     // than the number of panels actually registered.
-    subtitle_ = new QLabel(tr("%1 global data sources · 1000+ indicators").arg(static_cast<int>(std::size(kSources))));
+    subtitle_ = new QLabel(tr("%1 global data sources · 1000+ indicators").arg(visible_economics_source_count()));
     subtitle_->setObjectName(QStringLiteral("econScreenSubtitle"));
 
     hl->addWidget(title_);
@@ -234,6 +247,8 @@ void EconomicsScreen::build_ui() {
     bhl->setSpacing(4);
 
     for (const auto& src : kSources) {
+        if (!economics_source_enabled(src.id))
+            continue;
         SourceEntry entry;
         entry.id = src.id;
         entry.label = src.label;
@@ -298,6 +313,8 @@ QString EconomicsScreen::screen_style() const {
     // One rule per source badge (id selectors): the provider's identity colour, made readable on the
     // active theme (legible_color / tint are recomputed by the re-style pass on a theme change).
     for (const auto& src : kSources) {
+        if (!economics_source_enabled(src.id))
+            continue;
         const QColor c = legible_color(QColor(QString::fromLatin1(src.color)));
         qss += QString("QPushButton#econBadge_%1 { background:%2; color:%3; border:1px solid %4;"
                        "  font-size:%9px; font-weight:700; padding:0 10px; letter-spacing:0.3px; }"
@@ -321,8 +338,7 @@ void EconomicsScreen::retranslateUi() {
     if (title_)
         title_->setText(tr("ECONOMICS DATA EXPLORER"));
     if (subtitle_)
-        subtitle_->setText(
-            tr("%1 global data sources · 1000+ indicators").arg(static_cast<int>(std::size(kSources))));
+        subtitle_->setText(tr("%1 global data sources · 1000+ indicators").arg(visible_economics_source_count()));
     // Source badge labels are brand/source names (data) and are not translated.
 }
 
@@ -567,8 +583,11 @@ QList<command::CommandItem> econ_command_rows() {
         out.append(rows::section(screen, QString::fromLatin1(r.id), econ_tr(r.title), kw, where,
                                  rows::where(where, econ_tr(r.what))));
     };
-    for (const EconCmdRow& r : kEconCmdRows)
+    for (const EconCmdRow& r : kEconCmdRows) {
+        if (!economics_source_enabled(r.id))
+            continue;
         add(r);
+    }
     for (const EconCmdRow& r : kEconModelViews)
         add(r);
     return out;

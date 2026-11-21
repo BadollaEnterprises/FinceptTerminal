@@ -9,6 +9,7 @@
 
 #include "auth/AuthManager.h"
 #include "core/logging/Logger.h"
+#include "core/policy/CommunityPolicy.h"
 #include "core/session/ScreenStateManager.h"
 #include "screens/quantlib/QuantLibGuide.h"
 #include "screens/quantlib/QuantLibParamForm.h"
@@ -510,31 +511,6 @@ static QStringList panel_path_tokens(const QString& panel) {
     return {"/" + token + "/", "/" + token};
 }
 
-// Badge text / colour for one cost on the Free plan.
-static QString ql_cost_badge(QuantLibCost cost) {
-    switch (cost) {
-        case QuantLibCost::Included:
-            return QuantLibScreen::tr("FREE");
-        case QuantLibCost::OneCredit:
-            return QuantLibScreen::tr("1 CR");
-        case QuantLibCost::NeedsPro:
-            break;
-    }
-    return QuantLibScreen::tr("PRO");
-}
-
-static QColor ql_cost_color(QuantLibCost cost) {
-    switch (cost) {
-        case QuantLibCost::Included:
-            return QColor(colors::SUCCESS());
-        case QuantLibCost::OneCredit:
-            return QColor(colors::WARNING());
-        case QuantLibCost::NeedsPro:
-            break;
-    }
-    return QColor(colors::AMBER());
-}
-
 // ── Constructor ─────────────────────────────────────────────────────────────
 
 QuantLibScreen::QuantLibScreen(QWidget* parent) : QWidget(parent) {
@@ -855,7 +831,8 @@ QWidget* QuantLibScreen::create_center_panel() {
     pbl->addWidget(param_form_);
 
     exec_btn_ = new QPushButton(tr("EXECUTE"));
-    exec_btn_->setProperty("fincept_agent_risk", "spend"); // agents: a QuantLib API call uses Fincept API credits
+    exec_btn_->setProperty("fincept_agent_risk", QVariant());
+    exec_btn_->setProperty("fincept_cost_route", QStringLiteral("local_deterministic"));
     exec_btn_->setObjectName("qlExecBtn");
     exec_btn_->setCursor(Qt::PointingHandCursor);
     exec_btn_->setMinimumHeight(34);
@@ -985,23 +962,42 @@ QuantLibCost QuantLibScreen::cost_of(const QString& endpoint) const {
 void QuantLibScreen::refresh_plan_ui() {
     paid_plan_ = services::quantlib_paid_plan();
     const bool signed_in = auth::AuthManager::instance().is_authenticated();
+    const bool metered = policy::fincept_metered_services_enabled();
 
     int total = 0;
+    int zero_credit = 0;
     for (const auto& m : modules_)
         total += m.endpoint_count;
+    for (const auto& endpoints : module_endpoints()) {
+        for (const QString& endpoint : endpoints) {
+            if (services::quantlib_endpoint_tier(endpoint) == services::QuantLibTier::Free ||
+                services::QuantLibClient::has_local_route(endpoint))
+                ++zero_credit;
+        }
+    }
 
     if (header_badge_) {
-        header_badge_->setText(paid_plan_ ? tr("PRO PLAN") : signed_in ? tr("FREE PLAN") : tr("SIGNED OUT"));
-        header_badge_->setProperty("plan", paid_plan_ ? "pro" : "free");
+        header_badge_->setText(!metered ? tr("LOCAL + FREE")
+                                        : paid_plan_ ? tr("PRO PLAN") : signed_in ? tr("FREE PLAN")
+                                                                                 : tr("SIGNED OUT"));
+        header_badge_->setProperty("plan", !metered ? "local" : paid_plan_ ? "pro" : "free");
         ql_repolish(header_badge_);
     }
     if (plan_note_) {
-        plan_note_->setText(paid_plan_ ? tr("All %1 endpoints included · 0 credits per call").arg(total)
-                                       : signed_in ? tr("Unlock every module with Pro — %1/month").arg(ql_pro_price())
-                                                   : tr("Sign in to run QuantLib computations"));
+        plan_note_->setText(!metered ? tr("%1 of %2 endpoints available locally or free · 0 Fincept credits")
+                                           .arg(zero_credit)
+                                           .arg(total)
+                                     : paid_plan_ ? tr("All %1 endpoints included · 0 credits per call").arg(total)
+                                                  : signed_in
+                                                        ? tr("Unlock every module with Pro — %1/month").arg(ql_pro_price())
+                                                        : tr("Sign in to run QuantLib computations"));
     }
-    if (upgrade_btn_)
-        upgrade_btn_->setVisible(!paid_plan_);
+    if (upgrade_btn_) {
+        if (!metered)
+            upgrade_btn_->setVisible(false);
+        else
+            upgrade_btn_->setVisible(!paid_plan_);
+    }
 
     refresh_tree_badges();
     decorate_endpoint_items();
@@ -1046,32 +1042,40 @@ QStringList QuantLibScreen::endpoints_for(int module_index, const QString& panel
 void QuantLibScreen::refresh_tree_badges() {
     if (!module_tree_)
         return;
-    // One badge per module / panel: FREE, 1 CR or PRO when every endpoint in
-    // it costs the same on the current plan, MIXED otherwise (the tooltip has
-    // the split). Pro accounts pay 0 credits everywhere: no badges.
-    auto badge_for = [this](const QStringList& eps, QTreeWidgetItem* item) {
-        if (paid_plan_ || eps.isEmpty()) {
+    // One badge per module / panel. A manifest-backed route is local even when
+    // the hosted service historically classified it as a free reference route.
+    auto badge_for = [](const QStringList& eps, QTreeWidgetItem* item) {
+        if (eps.isEmpty()) {
             item->setText(1, QString());
             item->setToolTip(1, QString());
             return;
         }
-        int counts[3] = {0, 0, 0};
-        for (const auto& ep : eps)
-            counts[static_cast<int>(cost_of(ep))] += 1;
-        const int kinds = (counts[0] > 0) + (counts[1] > 0) + (counts[2] > 0);
-        if (kinds == 1) {
-            const auto cost = counts[0] ? QuantLibCost::Included : counts[1] ? QuantLibCost::OneCredit
-                                                                              : QuantLibCost::NeedsPro;
-            item->setText(1, ql_cost_badge(cost));
-            item->setForeground(1, ql_cost_color(cost));
+        int free = 0;
+        int local = 0;
+        for (const auto& ep : eps) {
+            const bool is_local = services::QuantLibClient::has_local_route(ep);
+            const bool is_free = services::quantlib_endpoint_tier(ep) == services::QuantLibTier::Free;
+            local += is_local ? 1 : 0;
+            free += !is_local && is_free ? 1 : 0;
+        }
+        const int blocked = eps.size() - free - local;
+        if (free == eps.size()) {
+            item->setText(1, tr("FREE"));
+            item->setForeground(1, QColor(colors::SUCCESS()));
+        } else if (local == eps.size()) {
+            item->setText(1, tr("LOCAL"));
+            item->setForeground(1, QColor(colors::AMBER()));
+        } else if (blocked == eps.size()) {
+            item->setText(1, tr("BLOCKED"));
+            item->setForeground(1, QColor(colors::TEXT_TERTIARY()));
         } else {
             item->setText(1, tr("MIXED"));
             item->setForeground(1, QColor(colors::TEXT_SECONDARY()));
         }
-        item->setToolTip(1, tr("Free plan: %1 free · %2 at 1 credit per call · %3 need Pro")
-                                .arg(counts[0])
-                                .arg(counts[1])
-                                .arg(counts[2]));
+        item->setToolTip(1, tr("0 Fincept credits: %1 local · %2 free cloud fallback · %3 not yet local")
+                                    .arg(local)
+                                    .arg(free)
+                                    .arg(blocked));
     };
     for (int i = 0; i < module_tree_->topLevelItemCount(); ++i) {
         QTreeWidgetItem* mod_item = module_tree_->topLevelItem(i);
@@ -1089,19 +1093,17 @@ void QuantLibScreen::decorate_endpoint_items() {
         return;
     for (int i = 0; i < endpoint_combo_->count(); ++i) {
         const QString ep = endpoint_combo_->itemData(i).toString();
-        if (paid_plan_) {
-            endpoint_combo_->setItemText(i, ep);
-            endpoint_combo_->setItemData(i, QVariant(), Qt::ForegroundRole);
-            endpoint_combo_->setItemData(i, QVariant(), Qt::ToolTipRole);
-            continue;
-        }
-        const auto cost = cost_of(ep);
-        endpoint_combo_->setItemText(i, ep + QStringLiteral("    ") + ql_cost_badge(cost));
-        endpoint_combo_->setItemData(i, ql_cost_color(cost), Qt::ForegroundRole);
+        const bool free_cloud = services::quantlib_endpoint_tier(ep) == services::QuantLibTier::Free;
+        const bool local = services::QuantLibClient::has_local_route(ep);
+        const QString badge = local ? tr("LOCAL") : free_cloud ? tr("FREE") : tr("NOT YET LOCAL");
+        endpoint_combo_->setItemText(i, ep + QStringLiteral("    ") + badge);
         endpoint_combo_->setItemData(i,
-                                     cost == QuantLibCost::Included    ? tr("Free on your plan")
-                                     : cost == QuantLibCost::OneCredit ? tr("1 credit per call on the Free plan")
-                                                                       : tr("Needs Pro (%1/month)").arg(ql_pro_price()),
+                                     QColor(local ? colors::AMBER()
+                                                  : free_cloud ? colors::SUCCESS() : colors::TEXT_TERTIARY()),
+                                     Qt::ForegroundRole);
+        endpoint_combo_->setItemData(i, local ? tr("Local deterministic route · 0 credits")
+                                     : free_cloud ? tr("Free server route · 0 credits")
+                                                  : tr("Not yet local · paid Fincept fallback is blocked"),
                                      Qt::ToolTipRole);
     }
 }
@@ -1116,26 +1118,15 @@ void QuantLibScreen::update_access_label() {
     }
     QString text;
     QString tier;
-    if (paid_plan_) {
-        text = tr("INCLUDED IN YOUR PRO PLAN · 0 credits per call");
+    if (services::QuantLibClient::has_local_route(ep)) {
+        text = tr("LOCAL ENGINE · 0 Fincept credits · unsupported routes never fall back to paid calls");
         tier = QStringLiteral("included");
+    } else if (services::quantlib_endpoint_tier(ep) == services::QuantLibTier::Free) {
+        text = tr("FREE SERVER ROUTE · 0 Fincept credits");
+        tier = QStringLiteral("free");
     } else {
-        switch (cost_of(ep)) {
-            case QuantLibCost::Included:
-                text = tr("FREE · 0 credits on the Free plan");
-                tier = QStringLiteral("free");
-                break;
-            case QuantLibCost::OneCredit:
-                text = tr("1 CREDIT PER CALL on the Free plan · included in Pro at 0 credits");
-                tier = QStringLiteral("credit");
-                break;
-            case QuantLibCost::NeedsPro:
-                text = tr("PRO · this endpoint needs Pro (%1/month) — on the Free plan the server answers with an "
-                          "upgrade notice")
-                           .arg(ql_pro_price());
-                tier = QStringLiteral("pro");
-                break;
-        }
+        text = tr("NOT YET LOCAL · paid Fincept execution is blocked · 0 credits at risk");
+        tier = QStringLiteral("pro");
     }
     access_label_->setText(text);
     access_label_->setProperty("tier", tier);
@@ -1229,12 +1220,15 @@ void QuantLibScreen::on_execute() {
         return;
     }
 
-    if (!auth::AuthManager::instance().is_authenticated()) {
-        // Every QuantLib route needs an API key: say so instead of sending a call bound to fail.
+    if (!services::QuantLibClient::has_local_route(endpoint) &&
+        services::quantlib_endpoint_tier(endpoint) == services::QuantLibTier::Free &&
+        !auth::AuthManager::instance().is_authenticated()) {
+        // Only a future free route absent from the local manifest needs an
+        // account API key. Every current screen route runs without sign-in.
         abandon_request();
         services::QuantLibFailure failure;
         failure.kind = services::QuantLibFailureKind::AuthRequired;
-        failure.message = tr("Sign in to run QuantLib computations.");
+        failure.message = tr("Sign in to run this free server-backed QuantLib reference calculation.");
         result_view_->show_failure(endpoint, failure);
         return;
     }
@@ -1358,12 +1352,15 @@ void QuantLibScreen::execute_api(const QString& endpoint, const QJsonObject& par
     if (automatic)
         auto_ran_.insert(endpoint);
     set_loading(true);
-    const QuantLibCost cost = cost_of(endpoint);
     // A remembered result being refreshed stays fully visible ("as of … · refreshing").
     if (automatic && result_view_->has_result() && result_view_->shown_endpoint() == endpoint)
         result_view_->set_refreshing(true);
     else
-        result_view_->show_loading(endpoint, cost == QuantLibCost::OneCredit ? tr("1 credit") : QString());
+        result_view_->show_loading(endpoint, services::QuantLibClient::has_local_route(endpoint)
+                                                 ? tr("local · 0 credits")
+                                             : services::quantlib_endpoint_tier(endpoint) == services::QuantLibTier::Free
+                                                 ? tr("free cloud")
+                                                 : tr("local-only firewall"));
     view_endpoint_ = endpoint;
 
     QElapsedTimer timer;
@@ -1454,9 +1451,13 @@ void QuantLibScreen::update_exec_button() {
     // Ctrl+Enter re-run with the current inputs).
     const bool cancels = loading_ && loading_endpoint_ == current_endpoint();
     exec_btn_->setText(cancels ? tr("CANCEL") : tr("EXECUTE"));
+    const bool local = services::QuantLibClient::has_local_route(current_endpoint());
     exec_btn_->setToolTip(cancels ? tr("Cancel the running computation (Esc). Enter or Ctrl+Enter re-runs it with "
                                        "the current inputs.")
-                                  : tr("Run the selected endpoint (Enter in a field, or Ctrl+Enter)"));
+                                  : local ? tr("Run locally with 0 Fincept credits (Enter in a field, or Ctrl+Enter)")
+                                  : services::quantlib_endpoint_tier(current_endpoint()) == services::QuantLibTier::Free
+                                      ? tr("Run the free server route with 0 credits")
+                                      : tr("This route is not local yet; paid fallback is blocked"));
     exec_btn_->setAccessibleName(cancels ? tr("Cancel computation") : tr("Execute computation"));
 }
 
@@ -1494,8 +1495,10 @@ void QuantLibScreen::hideEvent(QHideEvent* event) {
 }
 
 bool QuantLibScreen::can_auto_run(const QString& endpoint) const {
-    return auth::AuthManager::instance().is_authenticated() && cost_of(endpoint) == QuantLibCost::Included &&
-           QDateTime::currentMSecsSinceEpoch() >= auto_paused_until_ms_;
+    const bool available = services::QuantLibClient::has_local_route(endpoint) ||
+                           (auth::AuthManager::instance().is_authenticated() &&
+                            services::quantlib_endpoint_tier(endpoint) == services::QuantLibTier::Free);
+    return available && QDateTime::currentMSecsSinceEpoch() >= auto_paused_until_ms_;
 }
 
 void QuantLibScreen::show_default_view(bool force) {
@@ -1518,7 +1521,11 @@ void QuantLibScreen::show_default_view(bool force) {
 
     // 1. This endpoint's run is in flight (the user's, started earlier).
     if (loading_ && loading_endpoint_ == ep) {
-        result_view_->show_loading(ep, cost_of(ep) == QuantLibCost::OneCredit ? tr("1 credit") : QString());
+        result_view_->show_loading(ep, services::QuantLibClient::has_local_route(ep)
+                                           ? tr("local · 0 credits")
+                                       : services::quantlib_endpoint_tier(ep) == services::QuantLibTier::Free
+                                           ? tr("free cloud")
+                                           : tr("local-only firewall"));
         return;
     }
     // 2. A remembered result, at once. One from an earlier session is refreshed
@@ -1593,40 +1600,33 @@ void QuantLibScreen::show_preview_for(const QString& endpoint, const QString& st
                                                         : tr("SAMPLE INPUTS — EDIT THEM ON THE LEFT");
 
     const bool signed_in = auth::AuthManager::instance().is_authenticated();
+    const bool local = services::QuantLibClient::has_local_route(endpoint);
+    const bool blocked = services::quantlib_endpoint_tier(endpoint) != services::QuantLibTier::Free && !local;
     QString status;
-    if (!signed_in) {
-        pv.note = tr("Sign in to run QuantLib computations — every route needs your account's API key.");
+    if (local) {
+        pv.note = tr("Local deterministic engine · 0 Fincept credits · no paid fallback. "
+                     "If this route is not implemented yet, nothing is sent to the cloud.");
+        pv.note_tone = ui::EmptyState::Tone::Success;
+        pv.run_text = tr("RUN LOCAL");
+        status = tr("Not run yet · local route");
+    } else if (blocked) {
+        pv.note = tr("NOT YET LOCAL · paid Fincept execution is blocked, so this endpoint cannot consume credits. "
+                     "Choose a LOCAL route or wait for deterministic coverage.");
+        pv.note_tone = ui::EmptyState::Tone::Warning;
+        pv.run_text = tr("NOT YET LOCAL");
+        status = tr("Blocked · 0 credits at risk");
+    } else if (!signed_in) {
+        pv.note = tr("Sign in to run this free server-backed reference calculation.");
         pv.note_tone = ui::EmptyState::Tone::Warning;
         pv.run_text = tr("RUN");
         status = tr("Signed out");
     } else {
-        switch (cost_of(endpoint)) {
-            case QuantLibCost::Included:
-                pv.note = paid_plan_ ? tr("Included in your Pro plan · 0 credits per run")
-                                     : tr("Free on your plan · 0 credits per run");
-                pv.note_tone = ui::EmptyState::Tone::Success;
-                pv.run_text = tr("RUN");
-                status = QDateTime::currentMSecsSinceEpoch() < auto_paused_until_ms_
-                             ? tr("Not run · automatic runs pause for a minute after a service error")
-                             : tr("Not run yet");
-                break;
-            case QuantLibCost::OneCredit:
-                pv.note = tr("1 credit per run on the Free plan · Pro includes every endpoint at 0 credits");
-                pv.note_tone = ui::EmptyState::Tone::Warning;
-                pv.run_text = tr("RUN · 1 CREDIT");
-                pv.plans_secondary = true;
-                status = tr("Not run · 1 credit per run");
-                break;
-            case QuantLibCost::NeedsPro:
-                pv.note = tr("Needs Pro (%1/month) — on the Free plan the server answers with an upgrade notice "
-                             "instead of a result")
-                              .arg(ql_pro_price());
-                pv.note_tone = ui::EmptyState::Tone::Accent;
-                pv.run_text = tr("RUN");
-                pv.upgrade_primary = true;
-                status = tr("Not run · needs Pro");
-                break;
-        }
+        pv.note = tr("Free server route · 0 Fincept credits per run");
+        pv.note_tone = ui::EmptyState::Tone::Success;
+        pv.run_text = tr("RUN");
+        status = QDateTime::currentMSecsSinceEpoch() < auto_paused_until_ms_
+                     ? tr("Not run · automatic runs pause for a minute after a service error")
+                     : tr("Not run yet");
     }
     pv.status = status_note.isEmpty() ? status : status_note;
     result_view_->show_preview(pv);

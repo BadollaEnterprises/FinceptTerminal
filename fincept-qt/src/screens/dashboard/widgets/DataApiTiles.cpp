@@ -3,8 +3,10 @@
 #include "core/agent/AgentRiskMarkers.h"
 #include "core/market/MarketProfile.h"
 #include "core/market/MarketSessions.h"
+#include "core/policy/CommunityPolicy.h"
 #include "datahub/DataHub.h"
 #include "datahub/DataHubMetaTypes.h"
+#include "python/PythonRunner.h"
 #include "screens/dashboard/widgets/QuoteGrid.h"
 #include "screens/dashboard/widgets/TileBilling.h"
 #include "services/fincept_data/FinceptDataService.h"
@@ -82,12 +84,11 @@ void da_set(ui::StatTile* t, const QString& value, const QString& tip = {}) {
 
 DataApiTile::DataApiTile(const QString& title, QWidget* parent, const QString& accent)
     : BaseWidget(title, parent, accent) {
-    // refresh / LOAD: a billed /data call ("market_data" credits) — "spend" unless the plan includes it.
-    set_agent_risk(tile_billing::agent_kind(QStringLiteral("market_data")));
+    const bool metered = policy::fincept_metered_services_enabled();
+    const char* risk = metered ? tile_billing::agent_kind(QStringLiteral("market_data")) : nullptr;
+    set_agent_risk(metered ? risk : nullptr);
     footer_ = new QLabel(this);
-    footer_->setProperty(fincept::core::agent::kAgentRiskProperty, "spend"); // its LOAD link sends the billed call
-    if (tile_billing::plan_includes(QStringLiteral("market_data")))
-        ui::EmptyState::mark_agent_risk(footer_, QString()); // included: the LOAD link is free
+    ui::EmptyState::mark_agent_risk(footer_, risk ? QString::fromLatin1(risk) : QString());
     footer_->setWordWrap(true);
     // Plain text, except the LOAD link of offer_load() on a tile whose /data part
     // is secondary (a source name or reason never turns into markup).
@@ -99,7 +100,8 @@ DataApiTile::DataApiTile(const QString& title, QWidget* parent, const QString& a
     // The plan table arrived / changed: a plan that includes /data at no credit
     // cost loads the offered request now, as a free tile would.
     connect(&billing::PlanAccess::instance(), &billing::PlanAccess::changed, this, [this]() {
-        const char* kind = tile_billing::agent_kind(QStringLiteral("market_data"));
+        const bool metered = policy::fincept_metered_services_enabled();
+        const char* kind = metered ? tile_billing::agent_kind(QStringLiteral("market_data")) : nullptr;
         set_agent_risk(kind); // agents: a load the plan includes is free
         ui::EmptyState::mark_agent_risk(footer_, kind ? QString::fromLatin1(kind) : QString());
         if (offering_ && isVisible() && tile_billing::plan_includes(QStringLiteral("market_data")))
@@ -200,13 +202,10 @@ bool DataApiTile::recall(const QString& path, fd::DataResult* out) {
 
 void DataApiTile::fetch_data(const QString& dataset, const QString& path, const fd::QueryParams& query, bool user,
                              OkFn on_ok, bool quiet) {
-    // A plan that includes /data at no credit cost (the server's table) loads by
-    // itself like a free tile; without a table every call stays manual.
-    if (!user && !tile_billing::plan_includes(QStringLiteral("market_data"))) {
-        // Billing rule: an automatic request is never sent. The remembered answer,
-        // else (for the tile's main request, nothing on screen yet) the LOAD offer.
+    if (!policy::fincept_metered_services_enabled()) {
         fd::DataResult kept;
-        if (recall(path, &kept)) {
+        const qint64 now = QDateTime::currentMSecsSinceEpoch();
+        if (!user && recall(path, &kept) && kept.age_seconds_at(now) <= kept.meta.max_age_seconds) {
             if (!quiet) {
                 hide_empty_state();
                 offering_ = false;
@@ -216,50 +215,126 @@ void DataApiTile::fetch_data(const QString& dataset, const QString& path, const 
             delivering_remembered_ = true;
             on_ok(kept);
             delivering_remembered_ = false;
-        } else if (!quiet && !has_data_) {
-            set_loading(false);
-            offer_load(dataset);
-        }
-        return;
-    }
-    if (!has_data_ && !errors_in_footer_ && !quiet) {
-        hide_empty_state(); // the LOAD offer gives way to the spinner
-        set_loading(true);
-    }
-    fd::FinceptDataService::instance().fetch(
-        dataset, path, query, this,
-        [this, on_ok, path, quiet](const fd::DataResult& r) {
-            if (!r.ok()) {
-                if (quiet)
-                    return; // the tile's main request carries the state
-                const QString why = r.error.kind == fd::ErrorKind::ServerLacksApi
-                                        ? fd::FinceptDataService::unavailable_text()
-                                        : fd::FinceptDataService::error_text(r.error);
-                footer_->setTextFormat(Qt::PlainText);
-                if (errors_in_footer_)
-                    footer_->setText(why);
-                else if (!has_data_)
-                    set_error(why);
-                else
-                    footer_->setText(tr("Last refresh failed — showing earlier data: %1").arg(why));
-                return;
-            }
-            remember(path, r);
+        } else {
             if (!quiet) {
                 hide_empty_state();
-                offering_ = false;
-                has_data_ = true;
-                set_loading(false);
+                set_loading(true);
             }
-            on_ok(r);
-        },
-        /*refresh=*/user);
+            QJsonObject query_json;
+            for (const auto& [key, value] : query)
+                query_json.insert(key, value);
+            const QJsonObject request{{QStringLiteral("dataset"), dataset},
+                                      {QStringLiteral("path"), path},
+                                      {QStringLiteral("query"), query_json}};
+            const QString payload =
+                QString::fromUtf8(QJsonDocument(request).toJson(QJsonDocument::Compact));
+            python::PythonRunner::RunOptions options;
+            options.timeout_ms = 120000;
+            options.credential_allowlist = QStringList{};
+            options.max_output_bytes = 2 * 1024 * 1024;
+            QPointer<DataApiTile> self(this);
+            python::PythonRunner::instance().run_with_options(
+                QStringLiteral("byo_dashboard_data.py"), {QStringLiteral("fetch"), payload}, options,
+                [self, path, quiet, on_ok = std::move(on_ok)](python::PythonResult answer) {
+                    if (!self)
+                        return;
+                    if (!answer.success) {
+                        if (!quiet) {
+                            self->set_loading(false);
+                            self->footer_->setTextFormat(Qt::PlainText);
+                            self->footer_->setText(self->tr("Public data unavailable: %1").arg(answer.error));
+                        }
+                        return;
+                    }
+                    QJsonParseError error;
+                    const QJsonDocument document = QJsonDocument::fromJson(answer.output.toUtf8(), &error);
+                    fd::DataResult result = fd::parse_envelope(document);
+                    result.received_ms = QDateTime::currentMSecsSinceEpoch();
+                    if (error.error != QJsonParseError::NoError || !result.ok()) {
+                        if (!quiet) {
+                            self->set_loading(false);
+                            self->footer_->setTextFormat(Qt::PlainText);
+                            self->footer_->setText(self->tr("The public data adapter returned an invalid answer."));
+                        }
+                        return;
+                    }
+                    self->remember(path, result);
+                    if (!quiet) {
+                        self->hide_empty_state();
+                        self->offering_ = false;
+                        self->has_data_ = true;
+                        self->set_loading(false);
+                    }
+                    on_ok(result);
+                },
+                {});
+        }
+    } else {
+        // A plan that includes /data at no credit cost (the server's table) loads by
+        // itself like a free tile; without a table every call stays manual.
+        if (!user && !tile_billing::plan_includes(QStringLiteral("market_data"))) {
+            // Billing rule: an automatic request is never sent. The remembered answer,
+            // else (for the tile's main request, nothing on screen yet) the LOAD offer.
+            fd::DataResult kept;
+            if (recall(path, &kept)) {
+                if (!quiet) {
+                    hide_empty_state();
+                    offering_ = false;
+                    has_data_ = true;
+                    set_loading(false);
+                }
+                delivering_remembered_ = true;
+                on_ok(kept);
+                delivering_remembered_ = false;
+            } else if (!quiet && !has_data_) {
+                set_loading(false);
+                offer_load(dataset);
+            }
+            return;
+        }
+        if (!has_data_ && !errors_in_footer_ && !quiet) {
+            hide_empty_state(); // the LOAD offer gives way to the spinner
+            set_loading(true);
+        }
+        fd::FinceptDataService::instance().fetch(
+            dataset, path, query, this,
+            [this, on_ok, path, quiet](const fd::DataResult& r) {
+                if (!r.ok()) {
+                    if (quiet)
+                        return; // the tile's main request carries the state
+                    const QString why = r.error.kind == fd::ErrorKind::ServerLacksApi
+                                            ? fd::FinceptDataService::unavailable_text()
+                                            : fd::FinceptDataService::error_text(r.error);
+                    footer_->setTextFormat(Qt::PlainText);
+                    if (errors_in_footer_)
+                        footer_->setText(why);
+                    else if (!has_data_)
+                        set_error(why);
+                    else
+                        footer_->setText(tr("Last refresh failed — showing earlier data: %1").arg(why));
+                    return;
+                }
+                remember(path, r);
+                if (!quiet) {
+                    hide_empty_state();
+                    offering_ = false;
+                    has_data_ = true;
+                    set_loading(false);
+                }
+                on_ok(r);
+            },
+            /*refresh=*/user);
+    }
 }
 
 void DataApiTile::set_footer(const QString& prefix, const fd::DataResult& r) {
     QString fresh = fd::FinceptDataService::freshness_text(r, QDateTime::currentMSecsSinceEpoch());
-    if (delivering_remembered_)
-        fresh += QStringLiteral(" · ") + tr("saved from the last load — refresh asks for newer data (billed)");
+    if (delivering_remembered_) {
+        fresh += QStringLiteral(" · ") +
+                 (policy::fincept_metered_services_enabled()
+                      ? tr("saved from the last load — refresh asks for newer data (billed)")
+                      : tr("saved from the last public load — refresh uses 0 Fincept credits"));
+    }
     footer_->setTextFormat(Qt::PlainText);
     footer_->setToolTip(QString());
     footer_->setText(prefix.isEmpty() ? fresh : prefix + QStringLiteral(" · ") + fresh);
@@ -630,7 +705,7 @@ CryptoOverviewWidget::CryptoOverviewWidget(QWidget* parent)
     connect(this, &BaseWidget::refresh_requested, this, [this]() { load(true); });
     set_load_offer(tr("Crypto market overview"),
                    tr("Total crypto market cap and volume, the 24-hour change, BTC / ETH dominance and the trending "
-                      "coins (CoinGecko)."),
+                      "coins (CoinPaprika)."),
                    tr("LOAD OVERVIEW"), ui::LoadingSkeleton::Shape::Cards);
     on_theme_changed();
 }
@@ -649,7 +724,7 @@ void CryptoOverviewWidget::load(bool refresh) {
                    const auto dom = d.value("market_cap_percentage").toObject();
                    const double btc = da_num(dom.value("btc"));
                    const double eth = da_num(dom.value("eth"));
-                   // CoinGecko publishes these totals in USD only (deliberately not converted).
+                   // CoinPaprika publishes these totals in USD only (deliberately not converted).
                    da_set(kpis_->tile("mcap"), da_fmt::money(mcap, QStringLiteral("USD"), da_fmt::Compact::FromSettings));
                    if (auto* t = kpis_->tile("chg")) {
                        t->set_value(da_fmt::pct(chg));
@@ -670,7 +745,7 @@ void CryptoOverviewWidget::load(bool refresh) {
                        slices.append({QStringLiteral("other"), tr("Others"), std::max(0.0, 100.0 - btc - eth), {}});
                    donut_->set_center_text(tr("DOMINANCE"));
                    donut_->set_slices(slices);
-                   set_footer(tr("CoinGecko global market"), r);
+                   set_footer(tr("CoinPaprika global market"), r);
                });
     // Secondary: the global block carries the state (LOAD offer, errors).
     fetch_data(

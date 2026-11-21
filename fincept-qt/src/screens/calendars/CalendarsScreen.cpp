@@ -3,6 +3,7 @@
 
 #include "core/agent/AgentRiskMarkers.h"
 #include "core/keys/KeyConfigManager.h"
+#include "core/policy/CommunityPolicy.h"
 #include "core/session/ScreenStateManager.h"
 #include "screens/calendars/CalendarPanel.h"
 #include "screens/common/CommandRows.h"
@@ -100,9 +101,9 @@ void CalendarsScreen::build_ui() {
     });
     vl->addWidget(tabs_, 1);
 
-    // Agents: the frame's Refresh key (F5 by default) reloads the current tab — a billed
-    // /data call unless the plan includes market data. The key is handled outside this
-    // screen, so it is named here for the focused widget's ancestor walk.
+    // Agents: the frame's Refresh key (F5 by default) reloads the current tab. It is
+    // marked as spend only in editions where the request can be billed; public
+    // community adapters keep the marker empty.
     auto sync_refresh_key = [this]() {
         const QString key =
             KeyConfigManager::instance().key(KeyAction::Refresh).toString(QKeySequence::PortableText);
@@ -123,8 +124,14 @@ void CalendarsScreen::build_ui() {
 void CalendarsScreen::retranslate() {
     title_label_->setText(tr("CALENDARS"));
     hint_label_->setText(tr("Double-click a symbol to open it in Equity Research"));
-    for (int i = 0; i < tabs_->count() && i < static_cast<int>(std::size(kSubTabs)); ++i)
-        tabs_->setTabText(i, tr(kSubTabs[i].title));
+    for (int i = 0; i < panels_.size(); ++i) {
+        for (const auto& spec : kSubTabs) {
+            if (panels_[i]->kind() == spec.kind) {
+                tabs_->setTabText(i, tr(spec.title));
+                break;
+            }
+        }
+    }
 }
 
 void CalendarsScreen::activate_current() {
@@ -200,6 +207,31 @@ namespace {
 QList<command::CommandItem> cal_command_rows() {
     namespace rows = command_rows;
     const QString where = CalendarsScreen::tr("Calendars");
+    if (!policy::fincept_metered_services_enabled()) {
+        return {
+            rows::section(QStringLiteral("calendars"), QStringLiteral("earnings"),
+                          CalendarsScreen::tr("Public earnings calendar"),
+                          {QStringLiteral("earnings"), QStringLiteral("eps"), QStringLiteral("results"),
+                           QStringLiteral("reporting dates"), QStringLiteral("nasdaq")},
+                          where, CalendarsScreen::tr("Nasdaq public calendar · 0 Fincept credits")),
+            rows::section(QStringLiteral("calendars"), QStringLiteral("ipos"),
+                          CalendarsScreen::tr("Public IPO calendar"),
+                          {QStringLiteral("ipo"), QStringLiteral("listings"), QStringLiteral("new issues"),
+                           QStringLiteral("initial public offering"), QStringLiteral("nasdaq")},
+                          where, CalendarsScreen::tr("Nasdaq public calendar · 0 Fincept credits")),
+            rows::section(QStringLiteral("calendars"), QStringLiteral("splits"),
+                          CalendarsScreen::tr("Public stock-splits calendar"),
+                          {QStringLiteral("splits"), QStringLiteral("stock split"),
+                           QStringLiteral("reverse split"), QStringLiteral("nasdaq")},
+                          where, CalendarsScreen::tr("Nasdaq public calendar · 0 Fincept credits")),
+            rows::section(QStringLiteral("calendars"), QStringLiteral("economic"),
+                          CalendarsScreen::tr("Public economic calendar"),
+                          {QStringLiteral("economic events"), QStringLiteral("macro events"),
+                           QStringLiteral("releases"), QStringLiteral("forex factory"), QStringLiteral("cpi"),
+                           QStringLiteral("nfp"), QStringLiteral("fomc")},
+                          where, CalendarsScreen::tr("Forex Factory public weekly export · 0 Fincept credits")),
+        };
+    }
     return {
         rows::section(QStringLiteral("calendars"), QStringLiteral("earnings"), CalendarsScreen::tr("Earnings calendar"),
                       {QStringLiteral("earnings"), QStringLiteral("eps"), QStringLiteral("results"),

@@ -1,5 +1,6 @@
 #include "screens/dashboard/widgets/MaritimeVesselsWidget.h"
 
+#include "core/policy/CommunityPolicy.h"
 #include "datahub/DataHub.h"
 #include "screens/dashboard/widgets/TileBilling.h"
 #include "services/maritime/MaritimeTypes.h"
@@ -35,7 +36,9 @@ QString maritime_vessel_topic(const QString& imo) {
 
 MaritimeVesselsWidget::MaritimeVesselsWidget(const QJsonObject& cfg, QWidget* parent)
     : BaseWidget(tr("MARITIME VESSELS"), parent, ui::colors::CYAN()) {
-    set_agent_risk(tile_billing::agent_kind(QStringLiteral("maritime"))); // refresh / LOAD: billed per vessel ("maritime" credits)
+    const bool metered = policy::fincept_metered_services_enabled();
+    set_agent_risk(metered ? tile_billing::agent_kind(QStringLiteral("maritime")) : nullptr);
+    setToolTip(metered ? QString() : tr("LOCAL POSITIONS · 0 Fincept credits"));
     auto* vl = content_layout();
     vl->setContentsMargins(0, 0, 0, 0);
     vl->setSpacing(0);
@@ -101,7 +104,8 @@ MaritimeVesselsWidget::MaritimeVesselsWidget(const QJsonObject& cfg, QWidget* pa
             window->setSingleShot(true);
             window->setInterval(4 * 60 * 1000);
             connect(window, &QTimer::timeout, this, [this]() {
-                if (hub_active_ && !tile_billing::plan_includes(QStringLiteral("maritime")))
+                if (policy::fincept_metered_services_enabled() && hub_active_ &&
+                    !tile_billing::plan_includes(QStringLiteral("maritime")))
                     hub_unsubscribe_all();
             });
         }
@@ -110,8 +114,10 @@ MaritimeVesselsWidget::MaritimeVesselsWidget(const QJsonObject& cfg, QWidget* pa
     // The plan table arrived / changed: a plan that includes maritime data loads
     // the offered positions now, as a free tile would.
     connect(&billing::PlanAccess::instance(), &billing::PlanAccess::changed, this, [this]() {
-        set_agent_risk(tile_billing::agent_kind(QStringLiteral("maritime"))); // agents: an included load is free
-        if (isVisible() && is_empty_state_shown() && tile_billing::plan_includes(QStringLiteral("maritime")))
+        const bool metered = policy::fincept_metered_services_enabled();
+        set_agent_risk(metered ? tile_billing::agent_kind(QStringLiteral("maritime")) : nullptr);
+        if (isVisible() && is_empty_state_shown() &&
+            (!metered || tile_billing::plan_includes(QStringLiteral("maritime"))))
             request_refresh();
     });
 
@@ -289,7 +295,8 @@ void MaritimeVesselsWidget::showEvent(QShowEvent* e) {
 }
 
 void MaritimeVesselsWidget::show_remembered_or_offer() {
-    if (imos_.isEmpty() || tile_billing::plan_includes(QStringLiteral("maritime"))) {
+    if (imos_.isEmpty() || !policy::fincept_metered_services_enabled() ||
+        tile_billing::plan_includes(QStringLiteral("maritime"))) {
         // No vessels: the "No vessels configured" hint (nothing is subscribed).
         // Included with the plan: kept fresh by the hub, as before.
         hub_resubscribe();

@@ -1,18 +1,22 @@
 #include "ui/widgets/ProAnalytics.h"
+#include "ui/widgets/ProAnalyticsAi.h"
+#include "ui/widgets/ProAnalyticsAiCache.h"
 
-#include "auth/AuthManager.h"
 #include "auth/AuthTypes.h"
 #include "core/agent/AgentRiskMarkers.h"
+#include "core/config/AppPaths.h"
 #include "core/logging/Logger.h"
-#include "network/http/HttpClient.h"
-#include "services/billing/PlanAccess.h"
+#include "core/policy/CommunityPolicy.h"
+#include "python/PythonRunner.h"
+#include "services/llm/LlmService.h"
+#include "services/llm/ModelRouter.h"
 #include "ui/theme/Theme.h"
 #include "ui/theme/ThemeManager.h"
 #include "ui/widgets/EnterprisePromo.h"
-#include "ui/widgets/PlanHint.h"
 #include "ui/widgets/ThemeHelpers.h"
 
 #include <QCoreApplication>
+#include <QDateTime>
 #include <QEvent>
 #include <QFrame>
 #include <QGridLayout>
@@ -28,8 +32,8 @@
 #include <QScrollArea>
 #include <QStackedWidget>
 #include <QTableWidget>
-#include <QUrl>
 #include <QVBoxLayout>
+#include <QtConcurrent>
 
 #include <utility>
 
@@ -38,7 +42,6 @@ namespace fincept::ui {
 namespace {
 
 constexpr const char* kProAnalyticsTag = "ProAnalytics";
-constexpr const char* kProAnalyticsCategory = "pro_analytics";
 constexpr int kProAnalyticsStatColumns = 4;
 constexpr int kProAnalyticsMaxHoldings = 15;
 
@@ -50,10 +53,6 @@ QString pro_analytics_tr(const char* text) {
 QString pro_analytics_tone(const QJsonValue& v) {
     const QString t = v.toString();
     return (t == QLatin1String("positive") || t == QLatin1String("negative")) ? t : QStringLiteral("neutral");
-}
-
-QString pro_analytics_segment(const QString& symbol) {
-    return QString::fromLatin1(QUrl::toPercentEncoding(symbol.trimmed().toUpper()));
 }
 
 /// One sheet for the panel, set before any child exists; the central re-style
@@ -77,6 +76,8 @@ QString pro_analytics_sheet() {
                    "QLabel#paTileHint{color:%4;font-size:" + fonts::px(-3) + "px;background:transparent;}"
                    "QLabel#paSection{color:%9;font-size:" + fonts::px(-2) + "px;font-weight:700;background:transparent;}"
                    "QLabel#paNote{color:%4;font-size:" + fonts::px(-2) + "px;background:transparent;}"
+                   "QLabel#paAiText{color:%2;font-size:" + fonts::px(-1) + "px;background:%7;border:1px solid %8;"
+                   "padding:10px;}"
                    "QTableWidget#paTable{background:%7;color:%2;border:1px solid %8;gridline-color:%8;font-size:" +
                    fonts::px(-1) + "px;}"
                    "QTableWidget#paTable QHeaderView::section{background:%1;color:%4;border:none;"
@@ -94,13 +95,55 @@ QString pro_analytics_button_sheet() {
         .arg(colors::AMBER(), colors::AMBER_DIM(), colors::ACCENT_BG());
 }
 
-/// A control that starts a report run: billed while the plan does not include
-/// Pro analytics, so outside agents must treat it as spending credits.
+/// These reports use local computation and public market data. Mark the route
+/// explicitly so automation never mistakes the button for a Fincept-credit run.
 void pro_analytics_mark_spend(QPushButton* btn) {
     if (!btn)
         return;
-    const bool billed = !fincept::billing::PlanAccess::instance().included(QLatin1String(kProAnalyticsCategory));
-    btn->setProperty(fincept::core::agent::kAgentRiskProperty, billed ? QVariant(QStringLiteral("spend")) : QVariant());
+    btn->setProperty(fincept::core::agent::kAgentRiskProperty, QVariant());
+    btn->setProperty("fincept_cost_route", QStringLiteral("local_public_data"));
+}
+
+/// AI explanation is explicit and may consume the user's provider quota, but
+/// never Fincept credits. Keep that distinction visible to agent automation.
+void pro_analytics_mark_byo(QPushButton* btn) {
+    if (!btn)
+        return;
+    btn->setProperty(fincept::core::agent::kAgentRiskProperty, QStringLiteral("spend"));
+    btn->setProperty("fincept_cost_route", QStringLiteral("byo_api"));
+}
+
+QString pro_analytics_kind_id(pro::Kind kind) {
+    switch (kind) {
+        case pro::Kind::OptionsPositioning:
+            return QStringLiteral("options_positioning");
+        case pro::Kind::TechnicalRating:
+            return QStringLiteral("technical_rating");
+        case pro::Kind::PortfolioRisk:
+            return QStringLiteral("portfolio_risk");
+        case pro::Kind::MarketPulse:
+            break;
+    }
+    return QStringLiteral("market_pulse");
+}
+
+QJsonObject pro_analytics_payload(const pro::Request& request) {
+    QJsonObject payload{{QStringLiteral("kind"), pro_analytics_kind_id(request.kind)}};
+    if (!request.symbol.trimmed().isEmpty())
+        payload.insert(QStringLiteral("symbol"), request.symbol.trimmed().toUpper());
+    if (!request.symbols.isEmpty()) {
+        QJsonArray symbols;
+        for (const QString& symbol : request.symbols)
+            symbols.append(symbol.trimmed().toUpper());
+        payload.insert(QStringLiteral("symbols"), symbols);
+    }
+    if (!request.weights.isEmpty()) {
+        QJsonArray weights;
+        for (double weight : request.weights)
+            weights.append(weight);
+        payload.insert(QStringLiteral("weights"), weights);
+    }
+    return payload;
 }
 
 /// One report window per kind, process-wide.
@@ -152,7 +195,7 @@ QString description(Kind kind) {
 }
 
 bool available() {
-    return fincept::billing::PlanAccess::instance().price(QLatin1String(kProAnalyticsCategory)) != nullptr;
+    return true;
 }
 
 void open(const Request& request, QWidget* origin) {
@@ -173,23 +216,11 @@ QPushButton* make_button(Kind kind, std::function<Request()> provider, QWidget* 
     btn->setCursor(Qt::PointingHandCursor);
     btn->setFocusPolicy(Qt::TabFocus);
     btn->setStyleSheet(pro_analytics_button_sheet());
-    btn->setText(QStringLiteral("PRO  ") + title(kind).toUpper());
-    btn->setAccessibleName(pro_analytics_tr("Open the Pro analytics report: %1").arg(title(kind)));
-    auto sync = [btn, kind]() {
-        const auto& access = fincept::billing::PlanAccess::instance();
-        const bool on = available();
-        if (btn->isHidden() == on) // only on a real change
-            btn->setVisible(on);
-        if (!on)
-            return;
-        btn->setToolTip(access.included(QLatin1String(kProAnalyticsCategory))
-                            ? pro_analytics_tr("%1 — included with your Pro plan.\n%2").arg(title(kind), description(kind))
-                            : pro_analytics_tr("%1 — a Pro analytics report: included with Pro, %2 on Free.\n%3")
-                                  .arg(title(kind), access.price(QLatin1String(kProAnalyticsCategory))->free_price,
-                                       description(kind)));
-    };
-    QObject::connect(&fincept::billing::PlanAccess::instance(), &fincept::billing::PlanAccess::changed, btn, sync);
-    sync();
+    btn->setText(QStringLiteral("LOCAL  ") + title(kind).toUpper());
+    btn->setAccessibleName(pro_analytics_tr("Open the local analytics report: %1").arg(title(kind)));
+    btn->setToolTip(pro_analytics_tr("%1 — local calculation with public market data; 0 Fincept credits.\n%2")
+                        .arg(title(kind), description(kind)));
+    pro_analytics_mark_spend(btn);
     QObject::connect(btn, &QPushButton::clicked, btn, [btn, kind, provider = std::move(provider)]() {
         Request request = provider ? provider() : Request{};
         request.kind = kind;
@@ -213,7 +244,7 @@ ProAnalyticsPanel::ProAnalyticsPanel(QWidget* parent) : QWidget(parent) {
     pages_ = new QStackedWidget(this);
     root->addWidget(pages_, 1);
 
-    // Intro: what the report is, what it costs, RUN.
+    // Intro: what the report is, its zero-credit route, RUN.
     auto* intro = new QWidget(pages_);
     auto* il = new QVBoxLayout(intro);
     il->setContentsMargins(24, 24, 24, 24);
@@ -229,8 +260,6 @@ ProAnalyticsPanel::ProAnalyticsPanel(QWidget* parent) : QWidget(parent) {
     intro_cost_->setObjectName(QStringLiteral("paIntroCost"));
     intro_cost_->setWordWrap(true);
     il->addWidget(intro_cost_);
-    auto* hint = new PlanHintLabel(QLatin1String(kProAnalyticsCategory), intro);
-    il->addWidget(hint);
     auto* irow = new QHBoxLayout;
     irow->setContentsMargins(0, 6, 0, 0);
     run_btn_ = enterprise::make_cta_button(QString(), QString(), enterprise::CtaStyle::Primary, intro);
@@ -270,6 +299,7 @@ ProAnalyticsPanel::ProAnalyticsPanel(QWidget* parent) : QWidget(parent) {
     frow->addWidget(retry_btn_);
     plans_btn_ = enterprise::make_cta_button(QString(), QString(), enterprise::CtaStyle::Primary, failed);
     plans_btn_->setObjectName(QStringLiteral("proAnalyticsPlans"));
+    plans_btn_->setVisible(policy::commercial_promotions_enabled());
     connect(plans_btn_, &QPushButton::clicked, this, [this]() { billing::open_plans(this); });
     frow->addWidget(plans_btn_);
     frow->addStretch();
@@ -284,12 +314,6 @@ ProAnalyticsPanel::ProAnalyticsPanel(QWidget* parent) : QWidget(parent) {
     result_scroll_->setFrameShape(QFrame::NoFrame);
     pages_->addWidget(result_scroll_);
 
-    // The price line and RUN text follow the plan (a purchase while the window is open).
-    connect(&fincept::billing::PlanAccess::instance(), &fincept::billing::PlanAccess::changed, this, [this]() {
-        sync_risk_markers();
-        if (pages_->currentIndex() == Intro)
-            show_intro();
-    });
     sync_risk_markers();
     retranslate();
 }
@@ -306,7 +330,7 @@ void ProAnalyticsPanel::changeEvent(QEvent* event) {
 }
 
 void ProAnalyticsPanel::retranslate() {
-    loading_label_->setText(tr("Computing the report on the Fincept server…"));
+    loading_label_->setText(tr("Computing locally from public market data…"));
     retry_btn_->setText(tr("RETRY"));
     retry_btn_->setAccessibleName(tr("Run the report again"));
     plans_btn_->setText(tr("VIEW PLANS"));
@@ -345,61 +369,24 @@ bool ProAnalyticsPanel::request_ready(QString* why) const {
     return true;
 }
 
-QString ProAnalyticsPanel::request_path() const {
-    switch (request_.kind) {
-        case pro::Kind::OptionsPositioning:
-            return QStringLiteral("/data/pro/options/%1/analytics").arg(pro_analytics_segment(request_.symbol));
-        case pro::Kind::TechnicalRating:
-            return QStringLiteral("/data/pro/technicals/%1/rating").arg(pro_analytics_segment(request_.symbol));
-        case pro::Kind::PortfolioRisk: {
-            QStringList symbols;
-            for (const QString& s : request_.symbols)
-                symbols << s.trimmed().toUpper();
-            QString path = QStringLiteral("/data/pro/portfolio/risk?symbols=%1")
-                               .arg(QString::fromLatin1(QUrl::toPercentEncoding(symbols.join(QLatin1Char(',')))));
-            if (request_.weights.size() == request_.symbols.size() && !request_.weights.isEmpty()) {
-                QStringList weights;
-                for (double w : request_.weights)
-                    weights << QString::number(w, 'g', 8);
-                path += QStringLiteral("&weights=%1")
-                            .arg(QString::fromLatin1(QUrl::toPercentEncoding(weights.join(QLatin1Char(',')))));
-            }
-            return path;
-        }
-        case pro::Kind::MarketPulse:
-            break;
-    }
-    return QStringLiteral("/data/pro/market/pulse");
-}
-
 void ProAnalyticsPanel::set_request(const pro::Request& request, bool autorun) {
     request_ = request;
     ++generation_; // an answer still on its way belongs to the previous subject
-    // Included with the plan: nothing to pay, so the report runs as the window
-    // opens. On Free it costs credits and waits for RUN.
-    if (autorun && request_ready(nullptr) &&
-        fincept::billing::PlanAccess::instance().included(QLatin1String(kProAnalyticsCategory)))
+    // Opening the feature is an explicit request and this route uses no
+    // Fincept credits, so a ready request can run immediately on every plan.
+    if (autorun && request_ready(nullptr))
         run();
     else
         show_intro();
 }
 
 void ProAnalyticsPanel::show_intro() {
-    const auto& access = fincept::billing::PlanAccess::instance();
-    const fincept::billing::PlanPrice* price = access.price(QLatin1String(kProAnalyticsCategory));
-    const bool included = access.included(QLatin1String(kProAnalyticsCategory));
     intro_title_->setText(pro::title(request_.kind));
     QString why;
     const bool ready = request_ready(&why);
     intro_text_->setText(ready ? pro::description(request_.kind) : pro::description(request_.kind) + QLatin1Char('\n') + why);
-    if (included)
-        intro_cost_->setText(tr("Included with your Pro plan — no credits used."));
-    else if (price)
-        intro_cost_->setText(tr("A Pro analytics report: %1 on Free, included with Pro. Computed on the Fincept "
-                                "server; a failed run is not charged.")
-                                 .arg(price->free_price));
-    else
-        intro_cost_->setText(tr("Computed on the Fincept server."));
+    intro_cost_->setText(tr("LOCAL PUBLIC DATA · 0 Fincept credits · no AI model call. "
+                            "Quotes can be delayed and depend on public-source availability."));
     run_btn_->setText(tr("RUN REPORT"));
     run_btn_->setEnabled(ready);
     pages_->setCurrentIndex(Intro);
@@ -407,7 +394,7 @@ void ProAnalyticsPanel::show_intro() {
 
 void ProAnalyticsPanel::show_error(const QString& message, bool out_of_credits) {
     error_label_->setText(message);
-    plans_btn_->setVisible(out_of_credits);
+    plans_btn_->setVisible(policy::commercial_promotions_enabled() && out_of_credits);
     retry_btn_->setVisible(!out_of_credits);
     pages_->setCurrentIndex(Failed);
 }
@@ -418,43 +405,41 @@ void ProAnalyticsPanel::run() {
         show_intro();
         return;
     }
-    if (!auth::AuthManager::instance().is_authenticated()) {
-        show_error(tr("Sign in to Fincept to run this report."), false);
-        return;
-    }
     const quint64 generation = ++generation_;
     pages_->setCurrentIndex(Loading);
-    LOG_DEBUG(kProAnalyticsTag, QString("Report requested (kind %1)").arg(static_cast<int>(request_.kind)));
-    fincept::HttpClient::instance().get(
-        request_path(),
-        [this, generation](fincept::Result<QJsonDocument> result) {
-            if (generation != generation_)
+    LOG_DEBUG(kProAnalyticsTag, QString("Local report requested (kind %1)").arg(static_cast<int>(request_.kind)));
+    const QString payload = QString::fromUtf8(QJsonDocument(pro_analytics_payload(request_)).toJson(QJsonDocument::Compact));
+    python::PythonRunner::RunOptions options;
+    options.timeout_ms = 120000;
+    options.credential_allowlist = QStringList{}; // deterministic analytics never receive user secrets
+    options.max_output_bytes = 2 * 1024 * 1024;
+    QPointer<ProAnalyticsPanel> self(this);
+    python::PythonRunner::instance().run_with_options(
+        QStringLiteral("byo_pro_analytics.py"), {QStringLiteral("report"), payload}, options,
+        [self, generation](python::PythonResult result) {
+            if (!self || generation != self->generation_)
                 return; // superseded by a newer subject or run
-            if (result.is_err()) {
-                const int status = fincept::HttpClient::status_from_error(result.error());
-                QString message = status > 0 ? fincept::HttpClient::message_from_error(result.error()) : QString();
-                if (status == 402) {
-                    message = fincept::billing::PlanAccess::instance().with_upgrade_note(
-                        message.isEmpty() ? tr("Not enough Fincept credits for this report. Nothing was charged.")
-                                          : tr("%1 Nothing was charged.").arg(message),
-                        QLatin1String(kProAnalyticsCategory));
-                } else if (message.isEmpty()) {
-                    message = status == 404   ? tr("The server has no data for this request.")
-                              : status == 0   ? tr("The report could not be loaded (network or timeout).")
-                                              : tr("The report could not be computed (HTTP %1).").arg(status);
-                }
-                show_error(message, status == 402);
+            if (!result.success) {
+                self->show_error(result.error.isEmpty() ? self->tr("The local report could not be computed.")
+                                                        : result.error,
+                                 false);
                 return;
             }
-            const QJsonObject body = result.value().object();
+            QJsonParseError parse_error;
+            const QJsonDocument document = QJsonDocument::fromJson(result.output.toUtf8(), &parse_error);
+            if (parse_error.error != QJsonParseError::NoError || !document.isObject()) {
+                self->show_error(self->tr("The local analytics adapter returned an invalid report."), false);
+                return;
+            }
+            const QJsonObject body = document.object();
             const QJsonObject data = body.value(QStringLiteral("data")).toObject();
             if (!data.value(QStringLiteral("report")).isObject()) {
-                show_error(tr("The server answered without a report."), false);
+                self->show_error(self->tr("The local analytics adapter answered without a report."), false);
                 return;
             }
-            show_report(data, body.value(QStringLiteral("meta")).toObject());
+            self->show_report(data, body.value(QStringLiteral("meta")).toObject());
         },
-        this);
+        {});
 }
 
 void ProAnalyticsPanel::show_report(const QJsonObject& data, const QJsonObject& meta) {
@@ -573,17 +558,140 @@ void ProAnalyticsPanel::show_report(const QJsonObject& data, const QJsonObject& 
         note->setWordWrap(true);
         vl->addWidget(note);
     }
+
+    // The deterministic report above is complete without AI. Explanation is a
+    // separate, explicit BYO request so opening or refreshing a report never
+    // consumes the user's provider quota.
+    vl->addSpacing(8);
+    auto* ai_title = new QLabel(tr("BYO AI EXPLANATION"), host);
+    ai_title->setObjectName(QStringLiteral("paSection"));
+    vl->addWidget(ai_title);
+    const ai_chat::ModelChoice ai_choice =
+        ai_chat::ModelRouter::instance().resolve(QString::fromLatin1(ai_chat::kFeatureProAnalyticsExplain));
+    auto* ai_status = new QLabel(
+        tr("Optional · sends this completed report to %1 only when clicked · 0 Fincept credits · your API provider "
+           "may bill usage")
+            .arg(ai_choice.label.isEmpty() ? tr("your active BYO provider") : ai_choice.label),
+        host);
+    ai_status->setObjectName(QStringLiteral("paMeta"));
+    ai_status->setWordWrap(true);
+    vl->addWidget(ai_status);
+    auto* ai_button = enterprise::make_cta_button(tr("EXPLAIN WITH BYO AI"), QString(),
+                                                   enterprise::CtaStyle::Outline, host);
+    ai_button->setObjectName(QStringLiteral("proAnalyticsExplain"));
+    ai_button->setAccessibleName(tr("Explain this report with the configured BYO AI provider"));
+    ai_button->setToolTip(
+        tr("Sends this report to your configured BYO provider. Uses 0 Fincept credits; provider charges may apply."));
+    pro_analytics_mark_byo(ai_button);
+    auto* ai_output = new QLabel(host);
+    ai_output->setObjectName(QStringLiteral("paAiText"));
+    ai_output->setTextFormat(Qt::PlainText);
+    ai_output->setWordWrap(true);
+    ai_output->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    ai_output->hide();
+    connect(ai_button, &QPushButton::clicked, this,
+            [this, report, meta, ai_button, ai_status, ai_output]() {
+                run_ai_explanation(report, meta, ai_button, ai_status, ai_output);
+            });
+    vl->addWidget(ai_button, 0, Qt::AlignLeft);
+    vl->addWidget(ai_output);
     vl->addStretch();
 
     result_scroll_->setWidget(host); // deletes the previous report
     pages_->setCurrentIndex(Result);
 }
 
+void ProAnalyticsPanel::run_ai_explanation(const QJsonObject& report, const QJsonObject& meta, QPushButton* button,
+                                           QLabel* status, QLabel* output) {
+    if (!button || !status || !output)
+        return;
+    const quint64 report_generation = generation_;
+    const QString prompt = pro_ai::explanation_prompt(pro::title(request_.kind), report, meta);
+    const ai_chat::ModelChoice choice =
+        ai_chat::ModelRouter::instance().resolve(QString::fromLatin1(ai_chat::kFeatureProAnalyticsExplain));
+    const QString cache_key = pro_ai::explanation_cache_key(prompt, choice.provider_id(), choice.model);
+    const QString cache_dir = AppPaths::cache() + QStringLiteral("/pro_analytics_ai");
+    const bool bypass_cache = button->property("proAnalyticsBypassCache").toBool();
+    if (!bypass_cache) {
+        const auto cached = pro_ai::load_explanation_cache(cache_dir, cache_key, QDateTime::currentMSecsSinceEpoch());
+        if (cached) {
+            QStringList bits;
+            bits << tr("Saved explanation reused")
+                 << (cached->route_label.isEmpty() ? tr("BYO AI") : cached->route_label)
+                 << tr("0 Fincept credits") << tr("no API call");
+            status->setText(bits.join(QStringLiteral("  ·  ")));
+            output->setText(cached->text);
+            output->show();
+            button->setText(tr("REFRESH WITH BYO AI"));
+            button->setProperty("proAnalyticsBypassCache", true);
+            return;
+        }
+    }
+    button->setEnabled(false);
+    button->setText(tr("ANALYZING…"));
+    status->setText(tr("Your configured BYO model is explaining the supplied report…"));
+    output->hide();
+    button->setProperty("proAnalyticsBypassCache", false);
+
+    QPointer<ProAnalyticsPanel> self(this);
+    QPointer<QPushButton> guarded_button(button);
+    QPointer<QLabel> guarded_status(status);
+    QPointer<QLabel> guarded_output(output);
+    (void)QtConcurrent::run([self, guarded_button, guarded_status, guarded_output, report_generation, prompt,
+                             cache_dir, cache_key]() {
+        ai_chat::ChatRoute route;
+        route.feature = QString::fromLatin1(ai_chat::kFeatureProAnalyticsExplain);
+        const ai_chat::LlmResponse response = ai_chat::LlmService::instance().chat(prompt, {}, false, route);
+        const auto explanation = response.success ? pro_ai::clean_explanation(response.content) : std::nullopt;
+        if (explanation) {
+            pro_ai::CachedExplanation entry;
+            entry.text = *explanation;
+            entry.route_label = response.route_label;
+            entry.billing_note = response.billing_note;
+            entry.created_at_ms = QDateTime::currentMSecsSinceEpoch();
+            if (!pro_ai::store_explanation_cache(cache_dir, cache_key, entry))
+                LOG_WARN(kProAnalyticsTag, QStringLiteral("Could not save the local BYO explanation cache"));
+        }
+        if (!self)
+            return;
+        QMetaObject::invokeMethod(
+            self,
+            [self, guarded_button, guarded_status, guarded_output, report_generation, response, explanation]() {
+                if (!self || report_generation != self->generation_ || !guarded_button || !guarded_status ||
+                    !guarded_output)
+                    return;
+                guarded_button->setEnabled(true);
+                guarded_button->setText(self->tr("EXPLAIN AGAIN WITH BYO AI"));
+                if (!response.success || !explanation) {
+                    const QString reason = response.error.trimmed().isEmpty()
+                                               ? self->tr("The configured provider returned no explanation.")
+                                               : response.error.trimmed();
+                    guarded_status->setText(
+                        self->tr("Could not explain this report: %1 Check Settings → LLM Configuration.").arg(reason));
+                    guarded_output->hide();
+                    return;
+                }
+                guarded_button->setProperty("proAnalyticsBypassCache", true);
+                QStringList route_bits;
+                route_bits << (response.route_label.isEmpty() ? self->tr("BYO AI") : response.route_label)
+                           << self->tr("0 Fincept credits");
+                if (!response.billing_note.isEmpty())
+                    route_bits << response.billing_note;
+                else
+                    route_bits << self->tr("your API provider may bill usage");
+                guarded_status->setText(route_bits.join(QStringLiteral("  ·  ")));
+                guarded_output->setText(*explanation);
+                guarded_output->show();
+            },
+            Qt::QueuedConnection);
+    });
+}
+
 // ── ProAnalyticsDialog ───────────────────────────────────────────────────────
 
 ProAnalyticsDialog::ProAnalyticsDialog(pro::Kind kind, QWidget* parent) : QDialog(parent), kind_(kind) {
     setObjectName(QStringLiteral("proAnalyticsDialog"));
-    setWindowTitle(tr("Pro analytics — %1").arg(pro::title(kind)));
+    setWindowTitle(tr("Local analytics — %1").arg(pro::title(kind)));
     setModal(false);
     resize(metrics::width(940), metrics::height(700));
     setStyleSheet(QString("QDialog#proAnalyticsDialog{background:%1;}"
@@ -640,8 +748,6 @@ ProAnalyticsDialog::ProAnalyticsDialog(pro::Kind kind, QWidget* parent) : QDialo
     refresh->setAccessibleName(tr("Run or refresh the report for the inputs above"));
     refresh_btn_ = refresh;
     pro_analytics_mark_spend(refresh_btn_);
-    connect(&fincept::billing::PlanAccess::instance(), &fincept::billing::PlanAccess::changed, this,
-            [this]() { pro_analytics_mark_spend(refresh_btn_); });
     connect(refresh, &QPushButton::clicked, this, [this]() {
         apply_inputs();
         panel_->run();

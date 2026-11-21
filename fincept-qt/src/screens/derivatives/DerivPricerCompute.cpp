@@ -5,6 +5,7 @@
 #include "screens/derivatives/DerivPricerPage.h"
 
 #include "core/logging/Logger.h"
+#include "core/policy/CommunityPolicy.h"
 #include "services/options/DerivativesPricing.h"
 #include "services/options/ExoticPricing.h"
 #include "services/options/OptionModels.h"
@@ -828,15 +829,29 @@ void DerivPricerPage::display_results(const QJsonObject& result, const QJsonObje
             auto* ql = new QHBoxLayout(qrow);
             ql->setContentsMargins(0, 0, 0, 0);
             const QString ep = ql_ep;
-            const auto cost = services::quantlib_cost(services::quantlib_endpoint_tier(ep), services::quantlib_paid_plan());
-            const QString cost_text = cost == services::QuantLibCost::NeedsPro    ? tr("needs a Pro plan")
-                                      : cost == services::QuantLibCost::OneCredit ? tr("1 credit")
-                                                                                  : tr("included in your plan");
-            auto* qb = make_button(qrow, tr("CROSS-CHECK IN QUANTLIB · %1").arg(cost_text.toUpper()), false);
-            qb->setProperty("fincept_agent_risk", "spend"); // agents: a QuantLib cross-check uses Fincept API credits
-            qb->setToolTip(tr("Optional: price the same option with the QuantLib cloud (%1) and show the difference. "
-                              "Your local result does not depend on it.%2")
-                               .arg(ep, ql_caveat.isEmpty() ? QString() : QLatin1Char(' ') + ql_caveat));
+            const bool metered = policy::fincept_metered_services_enabled();
+            QString button_text;
+            if (metered) {
+                const auto cost =
+                    services::quantlib_cost(services::quantlib_endpoint_tier(ep), services::quantlib_paid_plan());
+                const QString cost_text = cost == services::QuantLibCost::NeedsPro    ? tr("needs a Pro plan")
+                                          : cost == services::QuantLibCost::OneCredit ? tr("1 credit")
+                                                                                      : tr("included in your plan");
+                button_text = tr("CROSS-CHECK IN QUANTLIB · %1").arg(cost_text.toUpper());
+            } else {
+                button_text = tr("CROSS-CHECK LOCALLY · 0 Fincept credits");
+            }
+            auto* qb = make_button(qrow, button_text, false);
+            if (metered)
+                qb->setProperty("fincept_agent_risk", "spend");
+            qb->setToolTip(
+                metered
+                    ? tr("Optional: price the same option with the QuantLib cloud (%1) and show the difference. "
+                         "Your local result does not depend on it.%2")
+                          .arg(ep, ql_caveat.isEmpty() ? QString() : QLatin1Char(' ') + ql_caveat)
+                    : tr("Optional: price the same option with the bundled local QuantLib route (%1) and show the "
+                         "difference. No Fincept request or credit is used.%2")
+                          .arg(ep, ql_caveat.isEmpty() ? QString() : QLatin1Char(' ') + ql_caveat));
             auto* qout = new QLabel(qrow);
             qout->setObjectName(QStringLiteral("derivNote"));
             qout->setWordWrap(true);
@@ -1041,8 +1056,9 @@ void DerivPricerPage::run_quantlib_cross_check(QPushButton* button, QLabel* out)
         return;
     }
     const double local = last_result_.value(QStringLiteral("price")).toDouble();
+    const bool metered = policy::fincept_metered_services_enabled();
     button->setEnabled(false);
-    out->setText(tr("Asking QuantLib…"));
+    out->setText(metered ? tr("Asking QuantLib…") : tr("Running local QuantLib…"));
     QPointer<QPushButton> b(button);
     QPointer<QLabel> o(out);
     LOG_INFO("Derivatives", QStringLiteral("QuantLib cross-check requested route=%1").arg(endpoint));
@@ -1054,10 +1070,16 @@ void DerivPricerPage::run_quantlib_cross_check(QPushButton* button, QLabel* out)
                 return;
             if (!r.success) {
                 const auto f = services::classify_quantlib_failure(r);
-                o->setText(f.kind == services::QuantLibFailureKind::NeedsPro
-                               ? DerivPricerPage::tr("This cross-check needs a Pro plan - your local result is unaffected.")
-                               : DerivPricerPage::tr("QuantLib did not answer (%1) - your local result is unaffected.")
-                                     .arg(f.message));
+                if (!policy::fincept_metered_services_enabled())
+                    o->setText(DerivPricerPage::tr("Local QuantLib cross-check failed (%1); the primary local result "
+                                                   "is unaffected.")
+                                   .arg(f.message));
+                else
+                    o->setText(
+                        f.kind == services::QuantLibFailureKind::NeedsPro
+                            ? DerivPricerPage::tr("This cross-check needs a Pro plan - your local result is unaffected.")
+                            : DerivPricerPage::tr("QuantLib did not answer (%1) - your local result is unaffected.")
+                                  .arg(f.message));
                 return;
             }
             // Find the price in whatever shape the route answers.

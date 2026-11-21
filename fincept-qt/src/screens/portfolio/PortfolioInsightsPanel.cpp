@@ -5,7 +5,6 @@
 #include "core/logging/Logger.h"
 #include "screens/portfolio/PortfolioFormat.h"
 #include "services/agents/AgentService.h"
-#include "services/billing/PlanAccess.h"
 #include "services/llm/LlmService.h"
 #include "storage/repositories/SettingsRepository.h"
 #include "ui/formatting/FormatWidgets.h"
@@ -61,25 +60,12 @@ int insights_close_button_side() {
     return std::max(28, ui::fonts::font_px(6) + 8);
 }
 
-/// Cost line of the AI analysis preview. Fincept's own models are billed in credits
-/// (the server's plan table, price key "ai": included with the plan, or its price);
-/// another provider bills the user's own key — and without a table: the old wording.
+/// Cost line of every portfolio model run. The community model router admits
+/// only user-owned API providers, so this never describes Fincept billing.
 QString insights_ai_cost_note() {
     const char* ctx = "fincept::screens::PortfolioInsightsPanel";
-    const QString fallback = QCoreApplication::translate(ctx, "Uses your LLM provider — may use credits");
-    if (ai_chat::LlmService::instance().active_provider().compare(QLatin1String("fincept"), Qt::CaseInsensitive) != 0)
-        return fallback;
-    const auto& access = billing::PlanAccess::instance();
-    if (!access.has_table())
-        return fallback;
-    if (access.included(QStringLiteral("ai")))
-        return QCoreApplication::translate(ctx, "Fincept AI — included with your plan, no credits used");
-    if (const billing::PlanPrice* row = access.price(QStringLiteral("ai"))) {
-        const QString price = access.is_paid() ? row->pro_price : row->free_price;
-        if (!price.isEmpty())
-            return QCoreApplication::translate(ctx, "Fincept AI — %1 on your plan").arg(price);
-    }
-    return fallback;
+    return QCoreApplication::translate(
+        ctx, "BYO AI provider · 0 Fincept credits · your API provider may bill usage");
 }
 
 QString insights_type_label(const QString& type) {
@@ -285,10 +271,6 @@ PortfolioInsightsPanel::PortfolioInsightsPanel(QWidget* parent) : QWidget(parent
             agent_pane_->recheck_requirements();
         }
     });
-    // The server's plan table arrived / changed: the AI preview's cost line follows it.
-    connect(&billing::PlanAccess::instance(), &billing::PlanAccess::changed, this,
-            [this]() { configure_ai_preview(ai_type_); });
-
     // The close button's size follows the font and the result HTML carries theme
     // colours: both are redone once the new appearance has settled (never inside a
     // theme_changed handler).
@@ -488,6 +470,7 @@ QWidget* PortfolioInsightsPanel::build_ai_page() {
 
     ai_run_ = new QPushButton(tr("RUN FULL ANALYSIS"));
     ai_run_->setProperty("fincept_agent_risk", "spend"); // LLM call
+    ai_run_->setProperty("fincept_cost_route", "byo_api");
     ai_run_->setCursor(Qt::PointingHandCursor);
     ai_run_->setMinimumHeight(36);
     ai_run_->setStyleSheet(QString("QPushButton { background:%1; color:%2; border:none;"
@@ -509,6 +492,7 @@ QWidget* PortfolioInsightsPanel::build_ai_page() {
     // No list price to give set_cost_credits (the provider bills tokens): its RUN / RETRY /
     // RUN AGAIN buttons call the LLM — "spend" for agents operating the UI.
     ai_pane_->set_agent_risk(QStringLiteral("spend"));
+    ai_pane_->setProperty("fincept_cost_route", "byo_api");
     ai_pane_->set_content(build_result_view(ai_pane_->content_parent(), &ai_kpis_, &ai_content_));
     ai_pane_->skeleton()->set_shape(ui::LoadingSkeleton::Shape::Text);
     ai_pane_->set_requirements({ui::Requirement::llm()});
@@ -639,6 +623,7 @@ QWidget* PortfolioInsightsPanel::build_agent_page() {
 
     agent_run_ = new QPushButton(tr("RUN AGENT"));
     agent_run_->setProperty("fincept_agent_risk", "spend"); // agent run (model quota)
+    agent_run_->setProperty("fincept_cost_route", "byo_api");
     agent_run_->setCursor(Qt::PointingHandCursor);
     agent_run_->setMinimumHeight(36);
     agent_run_->setStyleSheet(QString("QPushButton { background:%1; color:%2; border:none;"
@@ -656,6 +641,7 @@ QWidget* PortfolioInsightsPanel::build_agent_page() {
 
     agent_pane_ = new ui::AutoLoadPane(ui::AutoLoadPane::Policy::Manual, ready);
     agent_pane_->set_agent_risk(QStringLiteral("spend")); // its re-run buttons run the agent's LLM
+    agent_pane_->setProperty("fincept_cost_route", "byo_api");
     agent_pane_->set_content(build_result_view(agent_pane_->content_parent(), &agent_kpis_, &agent_content_));
     agent_pane_->skeleton()->set_shape(ui::LoadingSkeleton::Shape::Text);
     agent_pane_->set_requirements({ui::Requirement::llm()});
@@ -765,7 +751,7 @@ void PortfolioInsightsPanel::configure_agent_preview() {
     if (!what.endsWith(QLatin1Char('.')))
         what += QLatin1Char('.');
     auto spec = ui::EmptyState::preview_spec(name, what + QLatin1Char(' ') + tr("Sends your holdings to the configured LLM."),
-                                             tr("RUN AGENT"), tr("Uses your LLM provider — may use credits"),
+                                             tr("RUN AGENT"), insights_ai_cost_note(),
                                              ui::EmptyState::Tone::Warning, ui::LoadingSkeleton::Shape::Text);
     const bool empty_book = summary_.holdings.isEmpty();
     if (empty_book) {

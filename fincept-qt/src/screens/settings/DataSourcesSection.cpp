@@ -4,9 +4,11 @@
 
 #include "core/events/EventBus.h"
 #include "core/logging/Logger.h"
+#include "core/metrics/LocalUsageMetrics.h"
 #include "screens/settings/SettingsRowHelpers.h"
 #include "screens/settings/SettingsStyles.h"
 #include "storage/repositories/DataSourceRepository.h"
+#include "storage/repositories/LlmConfigRepository.h"
 #include "ui/theme/Theme.h"
 #include "ui/widgets/EmptyState.h"
 
@@ -14,6 +16,7 @@
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QLocale>
 #include <QMap>
 #include <QMessageBox>
 #include <QPushButton>
@@ -23,6 +26,8 @@
 #include <QString>
 #include <QVBoxLayout>
 #include <QVector>
+
+#include <iterator>
 
 namespace fincept::screens {
 
@@ -202,6 +207,175 @@ QWidget* DataSourcesSection::build_content() {
     }
 
     vl->addSpacing(6);
+
+    // One visible source-of-truth for what can spend Fincept credits. These are
+    // built-in routes, so they remain visible even when the user has not added
+    // a custom connection in the table below.
+    {
+        auto* panel = make_panel(tr("ZERO-CREDIT ROUTES"));
+        auto* body = new QWidget(this);
+        body->setStyleSheet("background:transparent;");
+        auto* routes = new QVBoxLayout(body);
+        routes->setContentsMargins(12, 8, 12, 8);
+        routes->setSpacing(0);
+
+        struct RouteRow {
+            const char* feature;
+            const char* source;
+            const char* route;
+            const char* status;
+            bool blocked;
+        };
+        const RouteRow rows[] = {
+            {"AI CHAT · NEWS · REPORTS · ARENA", "DeepSeek (your key)", "BYO AI", "0 FINCEPT CR", false},
+            {"QUOTES · HISTORY · OPTIONS", "Yahoo Finance · Stooq · CBOE", "PUBLIC DATA", "0 FINCEPT CR", false},
+            {"MACRO · ECONOMICS", "FRED · World Bank · IMF", "PUBLIC DATA", "0 FINCEPT CR", false},
+            {"NEWS · GEOPOLITICAL DISCOVERY", "RSS / Atom · GDELT", "PUBLIC DATA", "0 FINCEPT CR", false},
+            {"RISK · PRICING · QUANT", "Local analytics · QuantLib (590 routes)", "LOCAL CPU", "0 FINCEPT CR", false},
+            {"METERED FINCEPT CALLS", "Market · maritime · macro · geopolitics · cloud AI", "CREDIT FIREWALL", "BLOCKED", true},
+        };
+
+        for (int index = 0; index < int(std::size(rows)); ++index) {
+            const auto& row = rows[index];
+            auto* line = new QWidget(body);
+            line->setMinimumHeight(34);
+            line->setStyleSheet(QString("background:%1;border-bottom:1px solid %2;")
+                                    .arg(index % 2 ? ui::colors::ROW_ALT() : ui::colors::BG_BASE(),
+                                         ui::colors::BORDER_DIM()));
+            auto* hl = new QHBoxLayout(line);
+            hl->setContentsMargins(8, 0, 8, 0);
+            hl->setSpacing(10);
+            auto label = [&](const QString& text, int stretch, const QString& color, bool bold = false) {
+                auto* value = new QLabel(text, line);
+                value->setWordWrap(true);
+                value->setStyleSheet(QString("color:%1;background:transparent;%2")
+                                         .arg(color, bold ? QStringLiteral("font-weight:700;") : QString()));
+                hl->addWidget(value, stretch);
+            };
+            label(tr(row.feature), 3, ui::colors::TEXT_PRIMARY(), true);
+            label(tr(row.source), 4, ui::colors::TEXT_SECONDARY());
+            label(tr(row.route), 2, ui::colors::CYAN(), true);
+            label(tr(row.status), 2, row.blocked ? ui::colors::NEGATIVE() : ui::colors::POSITIVE(), true);
+            routes->addWidget(line);
+        }
+
+        auto* note = new QLabel(
+            tr("Provider charges may still apply to your own DeepSeek account. The community credit firewall only "
+               "guarantees that these routes cannot consume Fincept credits."),
+            body);
+        note->setWordWrap(true);
+        note->setStyleSheet(QString("color:%1;background:transparent;padding-top:6px;")
+                                .arg(ui::colors::TEXT_TERTIARY()));
+        routes->addWidget(note);
+        static_cast<QVBoxLayout*>(panel->layout())->addWidget(body);
+        vl->addWidget(panel);
+        vl->addSpacing(6);
+    }
+
+    {
+        const auto health_usage = metrics::LocalUsageMetrics::snapshot();
+        auto* panel = make_panel(tr("PROVIDER HEALTH"));
+        auto* body = new QWidget(this);
+        auto* rows = new QVBoxLayout(body);
+        rows->setContentsMargins(12, 8, 12, 8);
+        rows->setSpacing(4);
+
+        QString ai_status = tr("AVAILABLE");
+        const auto active_provider = LlmConfigRepository::instance().get_active_provider();
+        if (active_provider.is_ok() && active_provider.value().provider.compare(
+                                           QStringLiteral("deepseek"), Qt::CaseInsensitive) == 0)
+            ai_status = active_provider.value().api_key.isEmpty() ? tr("ACTIVE · KEY REQUIRED") : tr("ACTIVE");
+
+        auto add_health = [&](const QString& source, const QString& path, const QString& status,
+                              const QString& color) {
+            auto* row = new QWidget(body);
+            auto* layout = new QHBoxLayout(row);
+            layout->setContentsMargins(8, 3, 8, 3);
+            auto* name = new QLabel(source, row);
+            name->setStyleSheet(QString("color:%1;font-weight:700;").arg(ui::colors::TEXT_PRIMARY()));
+            layout->addWidget(name, 2);
+            auto* route = new QLabel(path, row);
+            route->setStyleSheet(QString("color:%1;").arg(ui::colors::TEXT_SECONDARY()));
+            layout->addWidget(route, 4);
+            auto* badge = new QLabel(status, row);
+            badge->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+            badge->setStyleSheet(QString("color:%1;font-weight:700;").arg(color));
+            layout->addWidget(badge, 2);
+            rows->addWidget(row);
+        };
+
+        add_health(tr("DeepSeek"), tr("Own API key · no Fincept fallback"), ai_status, ui::colors::POSITIVE());
+        add_health(tr("Market data"), tr("Stooq → Yahoo Finance"), tr("AUTO FALLBACK"), ui::colors::CYAN());
+        add_health(tr("Macro data"), tr("World Bank · IMF · FRED"), tr("ADAPTER READY"), ui::colors::POSITIVE());
+        add_health(tr("News discovery"), tr("GDELT → RSS / Atom"), tr("AUTO FALLBACK"), ui::colors::CYAN());
+        add_health(tr("Fincept metered services"), tr("All paid routes"), tr("FIREWALL ON"),
+                   ui::colors::NEGATIVE());
+
+        const QString deepseek_last = health_usage.provider_last_success.value(QStringLiteral("deepseek"));
+        const QString public_last = health_usage.source_last_success.isEmpty()
+                                        ? QString()
+                                        : health_usage.source_last_success.constBegin().value();
+        auto* last = new QLabel(
+            tr("LAST SUCCESS · DeepSeek: %1 · Public/local: %2")
+                .arg(deepseek_last.isEmpty() ? tr("not recorded") : deepseek_last,
+                     public_last.isEmpty() ? tr("not recorded") : public_last),
+            body);
+        last->setWordWrap(true);
+        last->setStyleSheet(QString("color:%1;padding:4px 8px;").arg(ui::colors::TEXT_TERTIARY()));
+        rows->addWidget(last);
+
+        static_cast<QVBoxLayout*>(panel->layout())->addWidget(body);
+        vl->addWidget(panel);
+        vl->addSpacing(6);
+    }
+
+    {
+        const auto usage = metrics::LocalUsageMetrics::snapshot();
+        auto* panel = make_panel(tr("PERSISTENT USAGE"));
+        auto* body = new QWidget(this);
+        auto* layout = new QHBoxLayout(body);
+        layout->setContentsMargins(12, 10, 12, 10);
+        layout->setSpacing(18);
+        auto add_metric = [&](const QString& label, qint64 value, const QString& color) {
+            auto* text = new QLabel(tr("%1\n%L2").arg(label).arg(value), body);
+            text->setAlignment(Qt::AlignCenter);
+            text->setStyleSheet(QString("color:%1;font-weight:700;").arg(color));
+            layout->addWidget(text, 1);
+        };
+        add_metric(tr("BYO AI CALLS"), usage.llm_requests, ui::colors::CYAN());
+        add_metric(tr("DEEPSEEK TOKENS"), usage.provider_tokens.value(QStringLiteral("deepseek")),
+                   ui::colors::AMBER());
+        add_metric(tr("LOCAL QUANTLIB"), usage.local_quantlib_calls, ui::colors::POSITIVE());
+        add_metric(tr("PUBLIC DATA"), usage.public_data_calls, ui::colors::POSITIVE());
+        add_metric(tr("FINCEPT CREDITS"), usage.fincept_credits_used, ui::colors::POSITIVE());
+        static_cast<QVBoxLayout*>(panel->layout())->addWidget(body);
+        vl->addWidget(panel);
+        vl->addSpacing(6);
+    }
+
+    {
+        const auto usage = metrics::LocalUsageMetrics::snapshot();
+        const qint64 avoided = usage.monthly_successful_llm_requests + usage.monthly_local_quantlib_calls +
+                               usage.monthly_public_data_calls;
+        auto* panel = make_panel(tr("MONTHLY SAVINGS"));
+        auto* body = new QWidget(this);
+        auto* layout = new QHBoxLayout(body);
+        layout->setContentsMargins(12, 10, 12, 10);
+        auto add = [&](const QString& title, const QString& value, const QString& color) {
+            auto* label = new QLabel(title + QLatin1Char('\n') + value, body);
+            label->setAlignment(Qt::AlignCenter);
+            label->setStyleSheet(QString("color:%1;font-weight:700;").arg(color));
+            layout->addWidget(label, 1);
+        };
+        add(tr("PERIOD"), usage.monthly_period, ui::colors::TEXT_SECONDARY());
+        add(tr("METERED CALLS AVOIDED"), QLocale().toString(avoided), ui::colors::POSITIVE());
+        add(tr("DEEPSEEK TOKENS"),
+            QLocale().toString(usage.monthly_provider_tokens.value(QStringLiteral("deepseek"))), ui::colors::AMBER());
+        add(tr("FINCEPT CREDITS USED"), QStringLiteral("0"), ui::colors::POSITIVE());
+        static_cast<QVBoxLayout*>(panel->layout())->addWidget(body);
+        vl->addWidget(panel);
+        vl->addSpacing(6);
+    }
 
     // Connections table
     if (connections.isEmpty()) {

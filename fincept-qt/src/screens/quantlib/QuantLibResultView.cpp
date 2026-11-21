@@ -16,6 +16,7 @@
 #include "screens/quantlib/QuantLibResultView.h"
 
 #include "core/logging/Logger.h"
+#include "core/policy/CommunityPolicy.h"
 #include "ui/formatting/NumberFormat.h"
 #include "ui/theme/Theme.h"
 #include "ui/widgets/LoadingOverlay.h"
@@ -678,9 +679,13 @@ void QuantLibResultView::show_idle() {
     refreshing_ = false;
     endpoint_label_->clear();
     status_->clear();
-    show_empty(QStringLiteral("\u03A3"), tr("QuantLib suite"),
-               tr("Pick a module and an endpoint on the left. Calculations that are free on your plan run on their "
-                  "own with sample inputs; the others show what they return and what a run costs first."),
+    const QString message =
+        !policy::fincept_metered_services_enabled()
+            ? tr("Pick a module and an endpoint on the left. All 590 calculations run through the local "
+                 "deterministic engine at 0 Fincept credits, with no paid fallback.")
+            : tr("Pick a module and an endpoint on the left. Calculations that are free on your plan run on their "
+                 "own with sample inputs; the others show what they return and what a run costs first.");
+    show_empty(QStringLiteral("\u03A3"), tr("QuantLib suite"), message,
                {}, QString(), QString(), ui::EmptyState::Tone::Neutral, QString(), EmptyAction::None, QString(),
                EmptyAction::None);
 }
@@ -696,6 +701,14 @@ void QuantLibResultView::show_preview(const Preview& preview) {
     endpoint_label_->setText(preview.endpoint);
     status_->setText(preview.status);
     const QString run = preview.run_text.isEmpty() ? tr("RUN") : preview.run_text;
+    if (!policy::fincept_metered_services_enabled() && (preview.upgrade_primary || preview.plans_secondary)) {
+        show_empty(preview.glyph, tr("NO PAID FALLBACK"),
+                   tr("This endpoint is not available through the local QuantLib adapter yet."), preview.inputs,
+                   preview.inputs_heading,
+                   tr("The community credit firewall blocked the metered Fincept route. No credits were used."),
+                   ui::EmptyState::Tone::Neutral, QString(), EmptyAction::None, QString(), EmptyAction::None);
+        return;
+    }
     if (preview.upgrade_primary) {
         show_empty(preview.glyph, preview.title, preview.summary, preview.inputs, preview.inputs_heading, preview.note,
                    preview.note_tone, tr("UPGRADE TO PRO"), EmptyAction::Upgrade, run, EmptyAction::Run);
@@ -794,6 +807,15 @@ void QuantLibResultView::show_failure(const QString& endpoint, const services::Q
     as_of_ = QDateTime();
     endpoint_label_->setText(endpoint);
     status_->setText(failure.http_status > 0 ? tr("HTTP %1").arg(failure.http_status) : tr("Failed"));
+
+    if (!policy::fincept_metered_services_enabled() &&
+        (failure.kind == Kind::NeedsPro || failure.kind == Kind::OutOfCredits)) {
+        show_error_page(tr("NO PAID FALLBACK"), QStringLiteral("warn"),
+                        tr("This endpoint is not available through the local QuantLib adapter yet."),
+                        tr("The community credit firewall blocked the metered Fincept route. No credits were used."),
+                        QString(), false);
+        return;
+    }
 
     switch (failure.kind) {
         case Kind::NeedsPro:

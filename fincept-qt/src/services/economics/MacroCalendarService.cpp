@@ -4,9 +4,12 @@
 #include "services/billing/PlanAccess.h"
 #include "core/config/AppConfig.h"
 #include "core/logging/Logger.h"
+#include "core/metrics/LocalUsageMetrics.h"
+#include "core/policy/CommunityPolicy.h"
 #include "datahub/DataHub.h"
 #include "datahub/TopicPolicy.h"
 #include "network/http/HttpClient.h"
+#include "services/economics/MacroCalendarCommunityData.h"
 
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -25,6 +28,7 @@ constexpr const char* kMacroCalTopic = "econ:fincept:upcoming_events";
 // X-Session-Token) to same-host api.fincept.in requests — so no endpoint key
 // is baked into the binary.
 constexpr const char* kMacroCalPath = "/macro/upcoming-events?limit=200";
+constexpr const char* kPublicMacroCalUrl = "https://nfs.faireconomy.media/ff_calendar_thisweek.json";
 
 // A refusal that waiting does not fix (no credits, signed out, not allowed):
 // hours instead of the hub's 5-minute ladder cap, which re-asked ~12 times an
@@ -153,6 +157,35 @@ void MacroCalendarService::refresh(const QStringList& topics) {
     if (!topics.contains(topic))
         return;
 
+    if (!fincept::policy::fincept_metered_services_enabled()) {
+        QPointer<MacroCalendarService> self = this;
+        HttpClient::instance().get(
+            QString::fromLatin1(kPublicMacroCalUrl),
+            [self, topic](Result<QJsonDocument> result) {
+                if (!self)
+                    return;
+                auto& hub = fincept::datahub::DataHub::instance();
+                if (!result.is_ok()) {
+                    const QString reason = HttpClient::message_from_error(result.error());
+                    hub.publish_error(topic,
+                                      reason.isEmpty()
+                                          ? QStringLiteral("Public Forex Factory calendar feed is unavailable")
+                                          : QStringLiteral("Public calendar feed unavailable — %1").arg(reason));
+                    return;
+                }
+                const QJsonArray events = normalize_public_macro_calendar(result.value().array());
+                if (events.isEmpty()) {
+                    hub.publish_error(topic, QStringLiteral("Public calendar feed returned no usable events"));
+                    return;
+                }
+                metrics::LocalUsageMetrics::record_public_data(QStringLiteral("forex_factory"));
+                self->refusal_.clear();
+                hub.publish(topic, QVariant::fromValue(events));
+            },
+            this);
+        return;
+    }
+
     // Account-only data: never ask without a key. The dashboard topics are
     // pre-warmed while the login screen is up (main.cpp), which used to send
     // this request unauthenticated — a 401 that also counts toward the
@@ -199,17 +232,9 @@ void MacroCalendarService::refresh(const QStringList& topics) {
                     self->publish_refused(QStringLiteral("Sign in to Fincept to load the economic calendar."),
                                           auth::RefusalLatch::Kind::Access);
                 } else if (status == 402) {
-                    // The price this account's plan pays (the list price without a plan table;
-                    // a refusal while the plan claims "included" names the list price). On Free
-                    // the message also says what Pro changes for macro data (included).
-                    const double plan_cost = macro_cal_cost();
-                    const double cost = plan_cost > 0.0 ? plan_cost : kMacroCalCreditCost;
                     self->publish_refused(
-                        fincept::billing::PlanAccess::instance().with_upgrade_note(
-                            tr("Out of Fincept credits: the economic calendar needs %1 credit(s) per update. Top "
-                               "up or upgrade in Plans & Pricing, then press ⟳ — it stays paused until then.")
-                                .arg(QString::number(cost, 'g', 3)),
-                            QString::fromLatin1(kMacroCalPlanCategory)),
+                        tr("Blocked by the community credit firewall. No paid retry was made; use the public macro "
+                           "routes in Data Sources for zero-credit research."),
                         auth::RefusalLatch::Kind::Credits);
                 } else if (status == 403 && HttpClient::instance().is_ip_blocked()) {
                     hub.publish_error(topic, server.isEmpty() ? QStringLiteral("Fincept API refused (IP block)") : server,

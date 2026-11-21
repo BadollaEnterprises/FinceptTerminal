@@ -21,6 +21,7 @@ document, `{"error": ...}` on failure.
 
 | Path | What it does |
 |---|---|
+| `../byo_analytics.py` | Local-first portfolio risk, market pulse, technical ratings, options positioning and fixed-income metrics; `quantlib_routes` maps all 18 QuantLib areas to honest local substitutes, and `bundle` combines calculations in one model tool call without Fincept credits |
 | `options/` | `gex_calculator.py`, `iv_smile.py`, `iv_surface.py`, `straddle_simulator.py` — gamma exposure, IV smile and surface, short-straddle simulation on an option chain passed in as JSON |
 | `financial_analysis_cli.py`, `finanicalanalysis/` | Financial-statement analysis (income statement, balance sheet, cash flow, key metrics) |
 | `fixedIncome/cli.py` | Bond analytics |

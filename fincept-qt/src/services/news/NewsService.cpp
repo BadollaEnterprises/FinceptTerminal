@@ -11,9 +11,13 @@
 #include "services/news/NewsService.h"
 
 #include "core/logging/Logger.h"
+#include "core/metrics/LocalUsageMetrics.h"
 #include "datahub/DataHub.h"
 #include "datahub/DataHubMetaTypes.h"
 #include "network/http/HttpClient.h"
+#include "services/llm/LlmService.h"
+#include "services/llm/ModelRouter.h"
+#include "services/news/NewsByoAnalysis.h"
 #include "services/news/NewsFeedParse.h"
 #include "services/news/NewsSymbolDirectory.h"
 #include "storage/cache/CacheManager.h"
@@ -713,6 +717,7 @@ void NewsService::finish_fetch(const std::shared_ptr<FetchState>& state) {
     // every feed failing (full network loss) `all` is empty, and overwriting
     // the cache would wipe the last-known-good news.
     if (!all.isEmpty()) {
+        metrics::LocalUsageMetrics::record_public_data(QStringLiteral("rss"));
         store_cache_async(all);
         latest_articles_ = all;
         persist_articles_async(all);
@@ -772,7 +777,7 @@ void NewsService::load_recent_from_db(qint64 since_ts, int limit, ArticlesCallba
     });
 }
 
-// ── AI Analysis via Fincept API ─────────────────────────────────────────────
+// ── AI Analysis via the user's configured provider ─────────────────────────
 
 // Parse the `data` object of a /news/analyze response into a NewsAnalysis.
 // Shared by the live request path and the persisted-cache load path so both
@@ -855,47 +860,55 @@ std::optional<NewsAnalysis> NewsService::cached_analysis(const QString& url) {
 
 void NewsService::analyze_article(const QString& url, AnalysisCallback cb, const QString& headline,
                                   const QString& text) {
-    const QJsonObject body = analyze_request_body(url, headline, text);
+    const QString prompt = news_byo::analysis_prompt(url, headline, text);
+    QPointer<NewsService> self(this);
+    (void)QtConcurrent::run([self, url, headline, text, prompt, cb = std::move(cb)]() mutable {
+        ai_chat::ChatRoute route;
+        route.feature = QString::fromLatin1(ai_chat::kFeatureNewsAnalysis);
+        const ai_chat::LlmResponse response = ai_chat::LlmService::instance().chat(prompt, {}, false, route);
 
-    // context = `this` ensures the callback drops if NewsService ever stops
-    // being a singleton — today it always outlives the request.
-    // The server may spend up to 15 s fetching the article and up to 60 s in the
-    // model call before it sends a byte, so the client-wide 20 s transfer timeout
-    // would abort a request the server is still completing.
-    HttpClient::instance().post_with_timeout(
-        "/news/analyze", body, kAnalyzeTimeoutMs,
-        [url, cb](Result<QJsonDocument> result) {
-            if (result.is_err()) {
-                LOG_ERROR("NewsService", "Analysis failed: " + QString::fromStdString(result.error()));
-                NewsAnalysis failed;
-                failed.error = QString::fromStdString(result.error());
-                cb(false, failed);
-                return;
+        NewsAnalysis analysis;
+        bool ok = response.success;
+        QJsonObject data;
+        if (!ok) {
+            analysis.error = response.error.isEmpty()
+                                 ? QStringLiteral("The configured AI provider could not analyze this article.")
+                                 : response.error;
+        } else {
+            QString parse_error;
+            const auto parsed = news_byo::parse_model_data(response.content, &parse_error);
+            if (!parsed) {
+                ok = false;
+                analysis.error = parse_error;
+            } else {
+                data = *parsed;
+                QJsonObject content = data.value(QStringLiteral("content")).toObject();
+                if (content.value(QStringLiteral("headline")).toString().trimmed().isEmpty())
+                    content.insert(QStringLiteral("headline"), headline.trimmed());
+                if (!content.contains(QStringLiteral("word_count")))
+                    content.insert(QStringLiteral("word_count"), text.split(QRegularExpression(QStringLiteral("\\s+")),
+                                                                            Qt::SkipEmptyParts)
+                                                                         .size());
+                data.insert(QStringLiteral("content"), content);
+                analysis = parse_analysis_data(data);
+
+                const QString json = QString::fromUtf8(QJsonDocument(data).toJson(QJsonDocument::Compact));
+                auto wr = fincept::NewsArticleRepository::instance().save_analysis(url, json);
+                if (wr.is_err())
+                    LOG_WARN("NewsService", "Failed to persist BYO analysis: " + QString::fromStdString(wr.error()));
             }
+        }
 
-            auto obj = result.value().object();
-            if (!obj["success"].toBool(false)) {
-                LOG_ERROR("NewsService", "API returned failure: " + obj["message"].toString());
-                NewsAnalysis failed;
-                failed.error = obj["message"].toString();
-                cb(false, failed);
-                return;
-            }
-
-            auto data = obj["data"].toObject();
-            NewsAnalysis analysis = parse_analysis_data(data);
-
-            // Persist the raw `data` object keyed by URL so reopening the article
-            // re-shows this result without re-spending credits. Overwrites any
-            // prior cache (re-running ANALYZE refreshes it).
-            const QString json = QString::fromUtf8(QJsonDocument(data).toJson(QJsonDocument::Compact));
-            auto wr = fincept::NewsArticleRepository::instance().save_analysis(url, json);
-            if (wr.is_err())
-                LOG_WARN("NewsService", "Failed to persist analysis: " + QString::fromStdString(wr.error()));
-
-            cb(true, analysis);
-        },
-        this);
+        if (!self)
+            return;
+        QMetaObject::invokeMethod(
+            self,
+            [self, ok, analysis = std::move(analysis), cb = std::move(cb)]() mutable {
+                if (self)
+                    cb(ok, std::move(analysis));
+            },
+            Qt::QueuedConnection);
+    });
 }
 
 // ── AI Headline Summarization ────────────────────────────────────────────────

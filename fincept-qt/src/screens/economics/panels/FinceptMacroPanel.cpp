@@ -691,18 +691,8 @@ void FinceptMacroPanel::show_failure(const services::FinceptMacroResult& r) {
                            .arg(r.http_status));
             return;
         case Status::NoCredits: {
-            QString text = tr("Out of Fincept credits — this request costs about %1 credit(s).\n"
-                              "Recharge or upgrade your plan, then retry.")
-                               .arg(fmpd::credits_text(fmpd::fm_charged_cost(r.endpoint)));
-            // The server's own sentence (its cost / balance figures) when it sent
-            // one — the service falls back to a bare "HTTP 402" otherwise.
-            if (!r.error.isEmpty() && r.error != QStringLiteral("HTTP %1").arg(r.http_status))
-                text += QLatin1Char('\n') + tr("Server: %1").arg(r.error);
-            // On Free, say what Pro changes for this data (empty on Pro / older servers).
-            const QString pro_note = ui::plan::out_of_credits_note(QStringLiteral("macro"));
-            if (!pro_note.isEmpty())
-                text += QLatin1Char('\n') + pro_note;
-            show_error_with_action(text, tr("VIEW PLANS"), [this]() { ui::billing::open_plans(this); });
+            show_error(tr("Blocked by the community credit firewall. Use the zero-credit World Bank / IMF / FRED "
+                          "routes in Data Sources; this screen will not fall back to a paid Fincept call."));
             return;
         }
         case Status::Offline:

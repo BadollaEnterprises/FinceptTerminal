@@ -2,6 +2,7 @@
 
 #include "core/config/AppConfig.h"
 #include "core/logging/Logger.h"
+#include "core/policy/CommunityPolicy.h"
 #include "network/http/HttpClient.h"
 #include "services/billing/PlanAccess.h"
 #include "storage/cache/CacheManager.h"
@@ -132,6 +133,16 @@ void FinceptMacroService::fetch(const QString& request_id, const QString& endpoi
                 return;
             }
         }
+    }
+
+    if (!fincept::policy::fincept_metered_services_enabled()) {
+        FinceptMacroResult res;
+        res.status = FinceptMacroResult::Status::Error;
+        res.request_id = request_id;
+        res.endpoint = endpoint;
+        res.error = tr("Blocked by the community credit firewall; use cached or public local macro data.");
+        emit result_ready(res);
+        return;
     }
 
     QUrl url(AppConfig::instance().api_base_url() + QStringLiteral("/macro/") + endpoint);

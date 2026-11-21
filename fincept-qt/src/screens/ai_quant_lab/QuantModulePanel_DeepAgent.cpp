@@ -7,7 +7,6 @@
 #include "screens/ai_quant_lab/QuantModulePanel_GsHelpers.h"
 #include "screens/ai_quant_lab/QuantModulePanel_Styles.h"
 #include "services/ai_quant_lab/AIQuantLabService.h"
-#include "services/billing/PlanAccess.h"
 #include "ui/theme/Theme.h"
 #include "ui/widgets/AutoLoadPane.h"
 #include "ui/widgets/Requirements.h"
@@ -64,31 +63,6 @@ class HoldDisabledFilter final : public QObject {
     }
 };
 
-/// The cost line of an LLM run under the selected profile (`llm_cfg` = llm_config_from_combo()).
-/// With Fincept's hosted model and the server's plan table: what this account's plan charges for
-/// AI calls (category "ai"), after `duration`. Any other provider bills its own tokens, and without
-/// a plan table nothing is known about the plan: `fallback` (the line shown before plans existed).
-QString deep_llm_cost_note(const QJsonObject& llm_cfg, const QString& fallback, const QString& duration) {
-    const auto& access = fincept::billing::PlanAccess::instance();
-    const bool fincept_model = llm_cfg.value(QStringLiteral("llm_provider"))
-                                   .toString()
-                                   .compare(QLatin1String("fincept"), Qt::CaseInsensitive) == 0;
-    if (!fincept_model || !access.has_table())
-        return fallback;
-    if (access.included(QStringLiteral("ai")))
-        return QCoreApplication::translate("QuantModulePanel",
-                                           "%1 · Fincept's hosted model · included with your plan, no credits used")
-            .arg(duration);
-    if (const fincept::billing::PlanPrice* row = access.price(QStringLiteral("ai"))) {
-        const QString price = access.is_paid() ? row->pro_price : row->free_price;
-        if (!price.isEmpty())
-            return QCoreApplication::translate("QuantModulePanel",
-                                               "%1 · Fincept's hosted model, many calls per run · %2 on your plan")
-                .arg(duration, price);
-    }
-    return fallback;
-}
-
 } // namespace
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -128,7 +102,8 @@ QWidget* QuantModulePanel::build_deep_agent_panel() {
     da_spec.returns = tr("A written research report: the orchestrator delegates the task to specialist agents "
                          "(research, data analysis, risk, trading, portfolio) and combines their findings.");
     da_spec.run_text = tr("RUN DEEP ANALYSIS");
-    da_spec.cost_note = tr("Calls the selected LLM profile many times · a few minutes · uses its tokens");
+    da_spec.cost_note =
+        tr("Calls the selected BYO LLM profile many times · a few minutes · billed by that API provider");
     add_view_tab(tabs, da_spec, tr("Deep Analysis"), [this, llm_combo](QWidget* da_w, QVBoxLayout* da_vl) {
         da_vl->setContentsMargins(16, 16, 16, 16);
         da_vl->setSpacing(12);
@@ -285,28 +260,6 @@ QWidget* QuantModulePanel::build_deep_agent_panel() {
         });
     });
 
-    // The preview's cost line follows the selected profile and the account's plan (Fincept's hosted
-    // model: the plan's AI price; another provider bills its own tokens — the line above). The view
-    // stays manual even when the plan includes AI calls: a run is minutes of agent work.
-    {
-        const QString da_fallback = da_spec.cost_note;
-        auto sync_da_cost = [this, llm_combo, da_fallback]() {
-            auto it = views_.find(QStringLiteral("deep_analysis"));
-            if (it == views_.end())
-                return;
-            const QString note =
-                deep_llm_cost_note(llm_config_from_combo(llm_combo), da_fallback, tr("A few minutes"));
-            if (note == it->spec.cost_note)
-                return;
-            it->spec.cost_note = note;
-            if (pane_ && current_view_ == it->spec.key)
-                configure_preview(*it);
-        };
-        sync_da_cost();
-        connect(llm_combo, &QComboBox::currentIndexChanged, w, sync_da_cost);
-        connect(&fincept::billing::PlanAccess::instance(), &fincept::billing::PlanAccess::changed, w, sync_da_cost);
-    }
-
     // ── Tab 2: RD-Agent ─────────────────────────────────────────────────────
     // Autonomous research loops (tens of minutes to hours, LLM calls every iteration) running in
     // the background; their progress and results live in the tab's own Task Monitor, so the result
@@ -440,18 +393,14 @@ QWidget* QuantModulePanel::build_rd_agent_tab(QComboBox* llm_combo) {
     sbl->addWidget(mcp_check);
     vl->addWidget(status_bar);
 
-    // What a START costs, under each form; with no LLM profile, where to add one.
-    // The cost line follows the selected profile and the account's plan (deep_llm_cost_note).
-    auto add_cost_card = [this, llm_combo](QWidget* parent, QVBoxLayout* layout, const QString& title,
-                                           const QString& what) {
+    // What a START costs under the selected BYO profile; with no profile, where to add one.
+    auto add_cost_card = [this](QWidget* parent, QVBoxLayout* layout, const QString& title, const QString& what) {
         const ui::RequirementStatus llm = ui::check_requirements({ui::Requirement::llm()});
-        auto cost_spec = [this, llm_combo, title, what]() {
+        auto cost_spec = [title, what]() {
             return ui::EmptyState::preview_spec(
                 title, what, QString(),
-                deep_llm_cost_note(llm_config_from_combo(llm_combo),
-                                   tr("Runs in the background for tens of minutes to hours · calls the selected LLM "
-                                      "every iteration · follow it in Task Monitor"),
-                                   tr("Tens of minutes to hours in the background")),
+                tr("Runs in the background for tens of minutes to hours · calls the selected BYO LLM profile "
+                   "every iteration · billed by that API provider · follow it in Task Monitor"),
                 ui::EmptyState::Tone::Warning, ui::LoadingSkeleton::Shape::Table);
         };
         ui::EmptyState::Spec spec = llm.ok ? cost_spec() : ui::EmptyState::needs_setup_spec(llm);
@@ -460,11 +409,6 @@ QWidget* QuantModulePanel::build_rd_agent_tab(QComboBox* llm_combo) {
         card->set_alignment(Qt::AlignTop);
         if (!llm.ok) {
             connect(card, &ui::EmptyState::primary_clicked, this, [card, link = llm.link]() { ui::open_setup_link(link, card); });
-        } else {
-            // apply() of an unchanged spec does nothing.
-            auto refresh = [card, cost_spec]() { card->apply(cost_spec()); };
-            connect(llm_combo, &QComboBox::currentIndexChanged, card, refresh);
-            connect(&fincept::billing::PlanAccess::instance(), &fincept::billing::PlanAccess::changed, card, refresh);
         }
         layout->addWidget(card);
     };

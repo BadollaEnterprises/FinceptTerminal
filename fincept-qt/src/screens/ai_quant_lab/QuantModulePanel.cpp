@@ -6,6 +6,8 @@
 // QuantModulePanel_Results.cpp.
 #include "screens/ai_quant_lab/QuantModulePanel.h"
 
+#include "core/policy/CommunityPolicy.h"
+
 #include "core/logging/Logger.h"
 #include "screens/ai_quant_lab/QuantModulePanel_Common.h"
 #include "screens/ai_quant_lab/QuantModulePanel_GsHelpers.h"
@@ -752,6 +754,9 @@ QWidget* QuantModulePanel::build_llm_picker(QWidget* parent, QComboBox** out_com
     auto profiles_result = LlmProfileRepository::instance().list_profiles();
     if (profiles_result.is_ok()) {
         for (const auto& p : profiles_result.value()) {
+            if (!policy::fincept_metered_services_enabled() &&
+                p.provider.compare(QLatin1String("fincept"), Qt::CaseInsensitive) == 0)
+                continue;
             combo->addItem(QString("%1  [%2 / %3]").arg(p.name, p.provider, p.model_id), p.id);
         }
     }
