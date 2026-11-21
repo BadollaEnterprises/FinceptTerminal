@@ -89,6 +89,12 @@ def main() -> int:
         failures,
     )
     require(
+        cmake_text,
+        'if(MSVC AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")\n    message(STATUS "Precompiled headers disabled for ClangCL',
+        "ClangCL must not consume CMake unity PCH files with mismatched config macros",
+        failures,
+    )
+    require(
         text,
         '"${OPENSSL_ROOT_DIR}"/bin/libssl*.dll',
         "Windows packaging must copy OpenSSL DLLs from the selected vcpkg root",

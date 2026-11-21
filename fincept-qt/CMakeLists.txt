@@ -4127,9 +4127,15 @@ if(APPLE AND DEPLOY_QT)
     endif()
 endif()
 
-# Precompiled header — Qt + std headers parsed once, reused across all TUs
-# QDebug excluded — it adds overhead in Release and is only needed for debugging
-target_precompile_headers(FinceptTerminal PRIVATE
+# Precompiled header — Qt + std headers parsed once, reused across all TUs.
+# CMake's Visual Studio generator gives ClangCL's PCH creation and unity source
+# commands different CMAKE_UNITY_CONFIG_* macro sets. Clang rejects that PCH as
+# incompatible, so keep PCH enabled everywhere except this cross-compile path.
+if(MSVC AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    message(STATUS "Precompiled headers disabled for ClangCL (unity config macro mismatch)")
+else()
+    # QDebug excluded — it adds overhead in Release and is only needed for debugging.
+    target_precompile_headers(FinceptTerminal PRIVATE
     # ── Core Qt objects ───────────────────────────────────────────────────────
     <QObject>
     <QWidget>
@@ -4271,7 +4277,8 @@ target_precompile_headers(FinceptTerminal PRIVATE
     <tuple>
     <array>
     <span>
-)
+    )
+endif()
 
 # ── OpenSSL — needed for Google Sheets JWT signing ────────────────────────────
 # OPENSSL_ROOT_DIR can be set via:
