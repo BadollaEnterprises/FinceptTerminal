@@ -545,11 +545,11 @@ jobs:
               echo "::error::Visual Studio ARM64 CRT directory not found under ${VS_ROOT}/VC/Redist/MSVC"
               exit 1
             fi
-            for runtime_dll in "$CRT_DIR"/*.dll; do
-              [ -f "$runtime_dll" ] || continue
-              cp -f "$runtime_dll" dist/
-              echo "Copied ARM64 MSVC runtime $(basename "$runtime_dll")"
-            done
+            # The ARM64 redist directory can also contain x64 compatibility
+            # helpers (observed: vcruntime140_1.dll). Select by PE machine
+            # header so an x64 helper cannot contaminate the ARM64 artifact.
+            python3 ../.github/scripts/check_windows_pe_arch.py \
+              "$CRT_DIR" arm64 --copy-matching-to dist
           else
             for vcrt_dll in \
               vcruntime140.dll vcruntime140_1.dll vcruntime140_2.dll \

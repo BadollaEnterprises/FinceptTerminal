@@ -482,4 +482,6 @@ jobs:
         run: bash .github/scripts/check_version_drift.sh .
 
       - name: Cross-platform packaging contracts
-        run: python3 .github/scripts/check_packaging_contracts.py .
+        run: |
+          python3 .github/scripts/check_packaging_contracts.py .
+          python3 .github/scripts/test_check_windows_pe_arch.py

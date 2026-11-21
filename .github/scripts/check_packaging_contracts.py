@@ -91,6 +91,12 @@ def main() -> int:
     )
     require(
         text,
+        '"$CRT_DIR" arm64 --copy-matching-to dist',
+        "Windows ARM64 runtime staging must filter the CRT by PE architecture",
+        failures,
+    )
+    require(
+        text,
         'check_windows_pe_arch.py dist "${{ matrix.arch }}"',
         "Windows artifacts must pass a recursive PE architecture audit",
         failures,

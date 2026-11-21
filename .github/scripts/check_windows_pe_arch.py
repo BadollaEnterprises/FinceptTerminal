@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import shutil
 import struct
 from collections import Counter
 from pathlib import Path
@@ -32,13 +33,64 @@ def pe_machine(path: Path) -> str:
     return MACHINES.get(machine, f"0x{machine:04x}")
 
 
+def copy_matching_pe_files(
+    source: Path, destination: Path, expected: str
+) -> tuple[list[Path], list[tuple[Path, str]]]:
+    """Copy DLLs for ``expected`` and report foreign-architecture files.
+
+    Visual Studio's ARM64 CRT directory can also contain an x64 compatibility
+    runtime. Copying the directory wholesale produces a mixed-architecture
+    application bundle, so packaging selects by the PE header instead of by
+    path name alone. Invalid DLLs are a hard error rather than silently skipped.
+    """
+
+    copied: list[Path] = []
+    skipped: list[tuple[Path, str]] = []
+    destination.mkdir(parents=True, exist_ok=True)
+    for path in sorted(source.glob("*.dll")):
+        try:
+            machine = pe_machine(path)
+        except (OSError, ValueError, struct.error) as error:
+            raise ValueError(f"{path.name}: invalid PE ({error})") from error
+        if machine != expected:
+            skipped.append((path, machine))
+            continue
+        target = destination / path.name
+        shutil.copy2(path, target)
+        copied.append(target)
+    return copied, skipped
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("root", type=Path)
     parser.add_argument("expected", choices=("x64", "arm64"))
+    parser.add_argument(
+        "--copy-matching-to",
+        type=Path,
+        help="copy only matching DLLs to this directory instead of auditing a bundle",
+    )
     args = parser.parse_args()
 
     root = args.root.resolve()
+    if args.copy_matching_to is not None:
+        try:
+            copied, skipped = copy_matching_pe_files(
+                root, args.copy_matching_to.resolve(), args.expected
+            )
+        except ValueError as error:
+            print(f"PE COPY FAIL: {error}")
+            return 1
+        for path, machine in skipped:
+            print(f"Skipped {path.name}: {machine}, expected {args.expected}")
+        for path in copied:
+            print(f"Copied {args.expected} PE {path.name}")
+        if not copied:
+            print(f"PE COPY FAIL: no {args.expected} DLLs found under {root}")
+            return 1
+        print(f"PE copy filter: PASS ({len(copied)} {args.expected} DLLs)")
+        return 0
+
     candidates = sorted(
         path
         for path in root.rglob("*")
