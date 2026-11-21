@@ -836,6 +836,9 @@ jobs:
     if: "!cancelled() && needs.build.result == 'success'"
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Download macOS arm64
         uses: actions/download-artifact@v4
         with:
@@ -857,42 +860,24 @@ jobs:
 
       - name: Create Universal Binary
         run: |
-          # Locate the binary — may be inside a .app bundle or at the top level
-          find_bin() {
+          find_app() {
             local base="$1"
-            if [ -f "$base/FinceptTerminal" ]; then
-              echo "$base/FinceptTerminal"
-            elif [ -f "$base/FinceptTerminal.app/Contents/MacOS/FinceptTerminal" ]; then
-              echo "$base/FinceptTerminal.app/Contents/MacOS/FinceptTerminal"
+            if [ -d "$base/FinceptTerminal.app/Contents/MacOS" ]; then
+              echo "$base/FinceptTerminal.app"
             else
-              echo "::error::Cannot find FinceptTerminal binary under $base" >&2
-              find "$base" -type f | head -20 >&2
+              echo "::error::Cannot find FinceptTerminal.app under $base" >&2
+              find "$base" -maxdepth 3 -print | head -40 >&2
               exit 1
             fi
           }
-          ARM64_BIN=$(find_bin arm64)
-          X64_BIN=$(find_bin x64)
-          echo "arm64 binary: $ARM64_BIN"
-          echo "x64   binary: $X64_BIN"
-
-          # Verify the two binaries are actually different architectures before lipo
-          ARM64_ARCH=$(lipo -archs "$ARM64_BIN")
-          X64_ARCH=$(lipo -archs "$X64_BIN")
-          echo "arm64 artifact arch: $ARM64_ARCH"
-          echo "x64   artifact arch: $X64_ARCH"
-          if [ "$ARM64_ARCH" = "$X64_ARCH" ]; then
-            echo "::error::Both binaries report the same architecture ($ARM64_ARCH) — cannot create universal binary" >&2
-            exit 1
-          fi
-
+          ARM64_APP="$(find_app arm64)"
+          X64_APP="$(find_app x64)"
           mkdir -p dist
-          lipo -create "$ARM64_BIN" "$X64_BIN" -output dist/FinceptTerminal
-          chmod +x dist/FinceptTerminal
-          cp -r arm64/resources dist/resources 2>/dev/null || true
-          bash .github/scripts/sync_scripts.sh arm64/scripts dist/scripts
-          file dist/FinceptTerminal
-          lipo -info dist/FinceptTerminal
-          ls -lh dist/FinceptTerminal
+          .github/scripts/create_macos_universal_app.sh \
+            "$ARM64_APP" "$X64_APP" dist/FinceptTerminal.app
+          file dist/FinceptTerminal.app/Contents/MacOS/FinceptTerminal
+          lipo -info dist/FinceptTerminal.app/Contents/MacOS/FinceptTerminal
+          du -sh dist/FinceptTerminal.app
           # Tar to preserve execute permissions
           tar -czf dist.tar.gz -C dist .
 

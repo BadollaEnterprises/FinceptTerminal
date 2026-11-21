@@ -25,6 +25,7 @@ def main() -> int:
     macos_openssl_text = (
         root / ".github" / "scripts" / "build_macos_openssl.sh"
     ).read_text(encoding="utf-8")
+    universal_script = root / ".github" / "scripts" / "create_macos_universal_app.sh"
     failures: list[str] = []
 
     require(
@@ -111,6 +112,40 @@ def main() -> int:
         "macOS OpenSSL builder must accept the workflow's x64 architecture label",
         failures,
     )
+    require(
+        text,
+        "actions/checkout@v4\n\n      - name: Download macOS arm64",
+        "macOS Universal job must check out repository scripts before using them",
+        failures,
+    )
+    require(
+        text,
+        ".github/scripts/create_macos_universal_app.sh",
+        "macOS Universal job must merge the complete application bundle",
+        failures,
+    )
+    if not universal_script.is_file():
+        failures.append("macOS universal application merge script must exist")
+    else:
+        universal_text = universal_script.read_text(encoding="utf-8")
+        require(
+            universal_text,
+            'find "$arm_app" -type f',
+            "macOS universal merge must inspect every bundled file",
+            failures,
+        )
+        require(
+            universal_text,
+            'lipo -create "$arm_file" "$x64_file"',
+            "macOS universal merge must combine each matching Mach-O file",
+            failures,
+        )
+        require(
+            universal_text,
+            'codesign --verify --deep --strict',
+            "macOS universal bundle must pass strict signature verification",
+            failures,
+        )
 
     if failures:
         for failure in failures:
