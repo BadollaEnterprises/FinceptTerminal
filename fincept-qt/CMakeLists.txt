@@ -518,9 +518,10 @@ if(Qt6TextToSpeech_FOUND)
     set(HAS_TTS TRUE)
 endif()
 
-# Optional: WebEngineWidgets + WebChannel (KLineChart / JS-based charting)
-find_package(Qt6 ${_FINCEPT_QT_VER_ARGS} QUIET COMPONENTS WebEngineWidgets WebChannel)
-if(Qt6WebEngineWidgets_FOUND AND Qt6WebChannel_FOUND)
+# Optional: WebEngineWidgets + WebEngineCore + WebChannel (KLineChart / JS-based charting).
+# Core is named directly because the MCP UI test links it as an explicit target.
+find_package(Qt6 ${_FINCEPT_QT_VER_ARGS} QUIET COMPONENTS WebEngineCore WebEngineWidgets WebChannel)
+if(Qt6WebEngineCore_FOUND AND Qt6WebEngineWidgets_FOUND AND Qt6WebChannel_FOUND)
     set(HAS_WEBENGINE TRUE)
 endif()
 
@@ -1579,6 +1580,9 @@ set(SERVICE_SOURCES
     src/services/agent_tasks/CloudSseMapping.cpp
     src/services/agent_tasks/TaskRunStore.cpp
     src/services/agent_tasks/TaskRunService.cpp
+    src/services/agent_tasks/ByoChatExecutor.h
+    src/services/agent_tasks/ByoChatExecutor.cpp
+    src/services/agent_tasks/ByoChatEngine.cpp
     src/services/agent_tasks/CloudAgentClient.cpp
     src/services/agent_tasks/CloudTurnExecutor.cpp
     src/services/agent_tasks/CloudTurnDriver.cpp
@@ -1738,6 +1742,7 @@ set(UI_SOURCES
     src/ui/widgets/EnterprisePromo.cpp
     src/ui/widgets/PlanHint.cpp
     src/ui/widgets/ProAnalytics.cpp
+    src/ui/widgets/ProAnalyticsAiCache.cpp
     src/ui/widgets/UpdateDialog.cpp
     src/ui/tables/DataTable.cpp
     # Central number / currency / date formatter (locale, per-instrument
@@ -1972,6 +1977,7 @@ set(SCREEN_SOURCES
     src/services/report_builder/ReportChartCache.cpp
     src/services/report_builder/ReportAssets.cpp
     src/services/report_builder/ReportAiSession.cpp
+    src/services/report_builder/ReportAiDraftCache.cpp
     src/services/report_builder/ReportAiLlmBackend.cpp
     src/services/report_builder/ReportRegenerator.cpp
     src/services/report_builder/ReportScheduler.cpp
@@ -2047,6 +2053,7 @@ set(SCREEN_SOURCES
     src/screens/dashboard/widgets/ScanAlertsWidget.cpp
     src/screens/dashboard/widgets/AutomationRunsWidget.cpp
     src/screens/dashboard/widgets/MacroSeriesWidget.cpp
+    src/screens/dashboard/widgets/QuickAskAnswerCache.cpp
     src/screens/dashboard/widgets/AiQuickAskWidget.cpp
     src/screens/dashboard/widgets/OptionsSnapshotWidget.cpp
     src/screens/dashboard/widgets/FiiDiiFlowsWidget.cpp
@@ -2884,6 +2891,7 @@ set_source_files_properties(
     src/screens/dashboard/widgets/ScanAlertsWidget.cpp
     src/screens/dashboard/widgets/AutomationRunsWidget.cpp
     src/screens/dashboard/widgets/MacroSeriesWidget.cpp
+    src/screens/dashboard/widgets/QuickAskAnswerCache.cpp
     src/screens/dashboard/widgets/AiQuickAskWidget.cpp
     src/screens/dashboard/widgets/OptionsSnapshotWidget.cpp
     src/screens/dashboard/widgets/FiiDiiFlowsWidget.cpp
@@ -3640,6 +3648,8 @@ set_source_files_properties(
     src/services/agent_tasks/CloudSseMapping.cpp
     src/services/agent_tasks/TaskRunStore.cpp
     src/services/agent_tasks/TaskRunService.cpp
+    src/services/agent_tasks/ByoChatExecutor.cpp
+    src/services/agent_tasks/ByoChatEngine.cpp
     src/services/agent_tasks/CloudAgentClient.cpp
     src/services/agent_tasks/CloudTurnExecutor.cpp
     src/services/agent_tasks/CloudTurnDriver.cpp
@@ -3733,6 +3743,7 @@ set_source_files_properties(
     src/services/report_builder/ReportChartCache.cpp
     src/services/report_builder/ReportAssets.cpp
     src/services/report_builder/ReportAiSession.cpp
+    src/services/report_builder/ReportAiDraftCache.cpp
     src/services/report_builder/ReportAiLlmBackend.cpp
     src/services/report_builder/ReportRegenerator.cpp
     src/services/report_builder/ReportScheduler.cpp

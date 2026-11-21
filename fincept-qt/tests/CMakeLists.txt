@@ -105,6 +105,75 @@ endfunction()
 
 # ── Suites ───────────────────────────────────────────────────────────────────
 
+# Local-first community policy — header-only defaults that keep an
+# unconfigured build away from metered Fincept services and suppress automatic
+# commercial interstitials. Explicitly selected cloud services remain available.
+fincept_add_test(tst_community_policy
+    tst_community_policy.cpp
+    "${PROJECT_SOURCE_DIR}/src/services/llm/ModelRouter.cpp"
+    "${PROJECT_SOURCE_DIR}/src/services/harness/HarnessEligibility.cpp")
+
+# AI Chat effort labels must distinguish Fincept credit billing from additional
+# usage on a user-owned API provider. Header-only, Qt Core only.
+fincept_add_test(tst_ai_chat_effort_policy
+    tst_ai_chat_effort_policy.cpp)
+
+# AI Chat request history keeps the newest complete turns inside a shared
+# history + current-message budget, preventing long sessions from multiplying
+# BYO provider input tokens on every send.
+fincept_add_test(tst_llm_history_policy
+    tst_llm_history_policy.cpp)
+
+# User-visible BYO-AI cost guardrails share one validated persistence contract
+# with the request-history and multi-round tool-loop runtime limits.
+fincept_add_test(tst_llm_budget_settings
+    tst_llm_budget_settings.cpp)
+
+# Provider usage parsing must preserve cache-hit input tokens so BYO users can
+# verify that stable DeepSeek/OpenAI/Gemini prefixes are receiving cache rates.
+fincept_add_test(tst_llm_usage
+    tst_llm_usage.cpp)
+
+# A token-exhausted tool loop must not resend its entire transcript just to
+# obtain the final summary. The compact request also cannot contain orphaned
+# tool messages that OpenAI-compatible providers reject.
+fincept_add_test(tst_llm_summary_policy
+    tst_llm_summary_policy.cpp)
+
+# Chat Mode prompt optimisation is a BYO-model feature in the community build.
+# Keep the request contract and response cleanup pure so it cannot regress back
+# to the disabled hosted /chat/optimize-prompt route.
+fincept_add_test(tst_prompt_optimization
+    tst_prompt_optimization.cpp)
+
+# Device-local Chat Mode transcript persistence. Uses the real SQLite repository
+# against a temporary migrated database and verifies idempotent per-run messages.
+fincept_add_test(tst_chat_repository
+    tst_chat_repository.cpp
+    "${PROJECT_SOURCE_DIR}/src/storage/repositories/ChatRepository.cpp"
+    "${PROJECT_SOURCE_DIR}/src/storage/sqlite/Database.cpp"
+    "${PROJECT_SOURCE_DIR}/src/storage/sqlite/SqliteSupport.cpp"
+    "${PROJECT_SOURCE_DIR}/src/storage/sqlite/migrations/MigrationRunner.cpp"
+    "${PROJECT_SOURCE_DIR}/src/storage/sqlite/migrations/v002_llm_chat.cpp"
+    "${PROJECT_SOURCE_DIR}/src/storage/sqlite/migrations/v013_news_articles.cpp"
+    "${PROJECT_SOURCE_DIR}/src/core/logging/Logger.cpp")
+target_link_libraries(tst_chat_repository PRIVATE Qt6::Sql)
+
+# Device-local Chat Mode conversation continuity. The user's visible message is
+# kept clean while a bounded, role-labelled transcript is supplied to BYO AI.
+fincept_add_test(tst_local_chat_history
+    tst_local_chat_history.cpp)
+target_link_libraries(tst_local_chat_history PRIVATE Qt6::Sql)
+
+# Plain community Chat Mode turns use the configured BYO API directly, without
+# requiring the Python agent runtime. Multi-step tasks keep the local agent.
+fincept_add_test(tst_byo_chat_executor
+    tst_byo_chat_executor.cpp
+    "${PROJECT_SOURCE_DIR}/src/services/agent_tasks/IRunExecutor.h"
+    "${PROJECT_SOURCE_DIR}/src/services/agent_tasks/ByoChatExecutor.h"
+    "${PROJECT_SOURCE_DIR}/src/services/agent_tasks/ByoChatExecutor.cpp"
+    "${PROJECT_SOURCE_DIR}/src/services/agent_tasks/TaskRunTypes.cpp")
+
 # src/trading/brokers/BrokerModifyFields.h — header-only, zero app sources.
 fincept_add_test(tst_broker_modify_fields
     tst_broker_modify_fields.cpp)
@@ -299,6 +368,21 @@ fincept_add_test(tst_news_nlp
     "${PROJECT_SOURCE_DIR}/src/core/instrument/SymbolInput.cpp"
     "${PROJECT_SOURCE_DIR}/src/core/instrument/VenueSymbols.cpp"
     "${PROJECT_SOURCE_DIR}/src/core/market/MarketSessions.cpp")
+
+# Strict JSON adapter used when News ANALYZE runs through the user's own model.
+fincept_add_test(tst_news_byo_analysis
+    tst_news_byo_analysis.cpp)
+
+# src/ui/widgets/ProAnalyticsAi.h — pure prompt boundary for the explicit BYO
+# explanation layered on the four deterministic local/public analytics reports.
+fincept_add_test(tst_pro_analytics_ai
+    tst_pro_analytics_ai.cpp)
+
+# Persistent, bounded, route-aware cache for explicit BYO explanations. The
+# test uses a temporary directory and the real atomic file implementation.
+fincept_add_test(tst_pro_analytics_ai_cache
+    tst_pro_analytics_ai_cache.cpp
+    "${PROJECT_SOURCE_DIR}/src/ui/widgets/ProAnalyticsAiCache.cpp")
 
 # Relationship Map money / unit labels (quote currency, minor units, major-unit totals).
 fincept_add_test(tst_relmap_format
@@ -915,6 +999,18 @@ fincept_add_test(tst_report_ai_draft
     "${PROJECT_SOURCE_DIR}/src/services/report_builder/ReportAiSession.cpp"
     "${PROJECT_SOURCE_DIR}/src/core/logging/Logger.cpp")
 
+# Persistent, bounded cache for identical Report Builder AI prompts. Keys bind
+# the exact system/user prompt to the selected BYO provider and model.
+fincept_add_test(tst_report_ai_cache
+    tst_report_ai_cache.cpp
+    "${PROJECT_SOURCE_DIR}/src/services/report_builder/ReportAiDraftCache.cpp")
+
+# Dashboard Quick Ask reuses only an exact question on the exact BYO route;
+# fallback/error/cancelled responses never enter the local cache.
+fincept_add_test(tst_quick_ask_cache
+    tst_quick_ask_cache.cpp
+    "${PROJECT_SOURCE_DIR}/src/screens/dashboard/widgets/QuickAskAnswerCache.cpp")
+
 # The `report` MCP core tool's handlers over a fake backend: reads answer at once, every
 # write asks for approval with an exact description and changes nothing when refused,
 # arguments are validated, results capped. Widgets only for the approval request header.
@@ -961,9 +1057,12 @@ fincept_add_test(tst_mcp_ui_engine
     "${PROJECT_SOURCE_DIR}/src/mcp/ResultStore.cpp"
     "${PROJECT_SOURCE_DIR}/src/core/logging/Logger.cpp"
     "${PROJECT_SOURCE_DIR}/src/core/agent/AgentActionScope.cpp")
-# UiWeb.cpp drives QWebEngineView pages, so the engine suite needs WebEngine too.
-target_link_libraries(tst_mcp_ui_engine PRIVATE Qt6::Widgets Qt6::Charts Qt6::Concurrent
-    Qt6::WebEngineCore Qt6::WebEngineWidgets)
+# UiWeb.cpp drives QWebEngineView pages when the optional module is installed;
+# its guarded fallback remains testable on Qt installations without WebEngine.
+target_link_libraries(tst_mcp_ui_engine PRIVATE Qt6::Widgets Qt6::Charts Qt6::Concurrent)
+if(TARGET Qt6::WebEngineCore AND TARGET Qt6::WebEngineWidgets)
+    target_link_libraries(tst_mcp_ui_engine PRIVATE Qt6::WebEngineCore Qt6::WebEngineWidgets)
+endif()
 set_tests_properties(tst_mcp_ui_engine PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # Data Sources / Data Mapping v2: the tabular model, the connector envelope (fincept_connector.py
@@ -1188,6 +1287,17 @@ fincept_add_test(tst_paper_book_symbol
 fincept_add_test(tst_startup_prewarm
     tst_startup_prewarm.cpp)
 target_compile_definitions(tst_startup_prewarm PRIVATE FINCEPT_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+
+# src/services/maritime/MaritimeCommunityData.h — deterministic zero-credit
+# vessel positions and voyage tracks used when hosted maritime calls are blocked.
+fincept_add_test(tst_maritime_community_data
+    tst_maritime_community_data.cpp)
+target_link_libraries(tst_maritime_community_data PRIVATE Qt6::Gui)
+
+# src/services/economics/MacroCalendarCommunityData.h — pure normalization of
+# Forex Factory's public weekly feed into the dashboard calendar schema.
+fincept_add_test(tst_macro_calendar_community_data
+    tst_macro_calendar_community_data.cpp)
 
 # src/services/notifications/providers/DeliveryOutcome.{h,cpp} — pure (Qt Core): delivered /
 # failed(reason) from HTTP status, Content-Type and body for every notification provider (2xx is
