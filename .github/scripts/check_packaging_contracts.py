@@ -22,6 +22,9 @@ def main() -> int:
     text = workflow.read_text(encoding="utf-8")
     cmake_text = (root / "fincept-qt" / "CMakeLists.txt").read_text(encoding="utf-8")
     lint_text = (root / ".github" / "workflows" / "lint.yml").read_text(encoding="utf-8")
+    release_text = (root / ".github" / "workflows" / "release.yml").read_text(
+        encoding="utf-8"
+    )
     macos_openssl_text = (
         root / ".github" / "scripts" / "build_macos_openssl.sh"
     ).read_text(encoding="utf-8")
@@ -106,6 +109,16 @@ def main() -> int:
         "ZLIB_ROOT must follow the selected matrix architecture",
         failures,
     )
+    for workflow_name, workflow_text in (
+        ("matrix", text),
+        ("release", release_text),
+    ):
+        require(
+            workflow_text,
+            "for candidate in zlib.lib zs.lib libzs.lib; do",
+            f"Windows {workflow_name} packaging must recognize current vcpkg zlib archive names",
+            failures,
+        )
     require(
         macos_openssl_text,
         "x86_64|amd64|x64)",
