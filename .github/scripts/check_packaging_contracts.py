@@ -45,6 +45,18 @@ def main() -> int:
     )
     require(
         text,
+        'target_qt_modules: "qtcharts qtwebsockets qtmultimedia qtwebchannel qtpositioning qtserialport"',
+        "Windows ARM64 target Qt modules must omit unavailable Qt WebEngine",
+        failures,
+    )
+    require(
+        text,
+        'modules: ${{ matrix.target_qt_modules || env.QT_MODULES }}',
+        "target Qt installation must honor the architecture-specific module set",
+        failures,
+    )
+    require(
+        text,
         'WDQT="${QT_HOST_ROOT}/bin/windeployqt.exe"',
         "Windows ARM64 packaging must run windeployqt from the host Qt kit",
         failures,

@@ -35,6 +35,10 @@ jobs:
             artifact: FinceptTerminal-Windows-arm64
             exe: FinceptTerminal.exe
             qt_arch: win64_msvc2022_arm64_cross_compiled
+            # Qt 6.8.3 does not publish qtwebengine for this cross-compiled
+            # target. WebEngine is optional in CMake; the app uses its native
+            # Qt Charts fallback on ARM64 while other targets retain it.
+            target_qt_modules: "qtcharts qtwebsockets qtmultimedia qtwebchannel qtpositioning qtserialport"
             cmake_extra: "-A ARM64"
 
           # ---- Linux x64 ----
@@ -201,7 +205,7 @@ jobs:
         with:
           version: ${{ env.QT_VERSION }}
           arch: ${{ matrix.qt_arch }}
-          modules: ${{ env.QT_MODULES }}
+          modules: ${{ matrix.target_qt_modules || env.QT_MODULES }}
           cache: true
           cache-key-prefix: qt-${{ matrix.platform }}-${{ matrix.arch }}
 
