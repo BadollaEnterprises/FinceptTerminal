@@ -80,6 +80,12 @@ def main() -> int:
         failures,
     )
     require(
+        cmake_text,
+        'if(NOT MSVC AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")',
+        "ClangCL must not inherit Unix -Wall/-Werror flags in addition to MSVC warnings",
+        failures,
+    )
+    require(
         text,
         '"${OPENSSL_ROOT_DIR}"/bin/libssl*.dll',
         "Windows packaging must copy OpenSSL DLLs from the selected vcpkg root",

@@ -337,9 +337,12 @@ if(MSVC)
 endif()
 
 # ── GCC / Clang warning flags ────────────────────────────────────────────────
-# Mirror MSVC /W4 + /permissive- behavior on Unix compilers.
+# Mirror MSVC /W4 + /permissive- behavior on Unix compilers. ClangCL reports
+# CMAKE_CXX_COMPILER_ID=Clang but MSVC=TRUE; it must stay on the MSVC flag path
+# above because clang-cl's -Wall enables compatibility warnings such as
+# -Wc++98-compat and -Wclang-cl-pch rather than the Unix -Wall set.
 # -Werror only in CI so local iteration isn't blocked.
-if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+if(NOT MSVC AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     add_compile_options(-Wall -Wextra -Wpedantic)
     # `{.title = x, .ink = y}`: leaving the other fields to their defaults is the point of a
     # designated initializer. Clang 19+ (AppleClang 17) warns about every omitted field under
