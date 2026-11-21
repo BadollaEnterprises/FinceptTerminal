@@ -411,30 +411,24 @@ int run_arena_selftest() {
         check("registry: every option fully labelled", !blank);
         check("registry: unknown profile ref fails resolution",
               reg.resolve_credentials("profile", "no-such-id", "openai").is_err());
-        check("registry: keyless provider resolves without key",
-              reg.resolve_credentials("provider", "ollama", "ollama").is_ok());
+        check("registry: retired local backend stays blocked",
+              reg.resolve_credentials("provider", "ollama", "ollama").is_err());
+        check("registry: in-process test harness needs no API key",
+              reg.resolve_credentials("harness", "selftest", "harness:selftest").is_ok());
 
         // Browse layer (merge layer 4): every catalog provider with fallback
         // models is listed even with no llm_configs row, so the wizard can
         // offer all providers.
         const auto opts2 = reg.available_models();
         QSet<QString> providers_seen;
-        bool ollama_ready = false;
         for (const auto& o : opts2) {
             providers_seen.insert(o.provider.toLower());
-            if (o.provider.toLower() == "ollama" && o.ready)
-                ollama_ready = true;
         }
         check("registry: all known providers browsable",
               providers_seen.contains("openai") && providers_seen.contains("anthropic") &&
                   providers_seen.contains("gemini") && providers_seen.contains("deepseek") &&
                   providers_seen.contains("xai"));
-        // Ollama's fallback list is intentionally empty (models come from a
-        // live /api/tags fetch the registry doesn't do), so it may be absent in
-        // an unconfigured profile; whenever it IS listed it must be ready
-        // (keyless), from any layer.
-        check("registry: keyless ollama listed but has no fallback models or is ready",
-              !providers_seen.contains("ollama") || ollama_ready);
+        check("registry: retired local backend is not listed", !providers_seen.contains("ollama"));
     }
 
     // ── Section 7: prompts ──────────────────────────────────────────────────
@@ -628,14 +622,14 @@ int run_arena_selftest() {
         ecfg.instruments = {"BTC"};
         ecfg.capital_per_agent = 10000;
         ecfg.cadence_seconds = 3600; // timer never fires during the test
-        // Both agents ride the keyless "ollama" provider so resolve_credentials
-        // succeeds without any configured key; model_ids select the fake scripts.
+        // Both agents use the explicit in-process test harness. It is keyless by
+        // design, never leaves this diagnostic, and model_ids select fake scripts.
         ArenaAgentSpec g;
-        g.provider = "ollama";
+        g.provider = "harness:selftest";
         g.model_id = "gpt-test";
         g.display_name = "GPT";
-        g.source_kind = "provider";
-        g.source_ref = "ollama";
+        g.source_kind = "harness";
+        g.source_ref = "selftest";
         ArenaAgentSpec c = g;
         c.model_id = "claude-test";
         c.display_name = "Claude";
