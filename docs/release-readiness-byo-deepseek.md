@@ -21,6 +21,7 @@ third-party data or platform services can be replaced by an LLM.
 | Live unlocked UI walkthrough | Pass | The signed release was unlocked locally. AI Chat displayed `DeepSeek / deepseek-flash`, `0 credits`, and billing to the user's DeepSeek key; Settings displayed all five BYO guardrails; `AAPL DES` opened Overview and `MSFT financials` opened Financials. |
 | Cross-platform packaging contracts | Pass | The fast CI gate verifies architecture-specific Windows OpenSSL/zlib triplets, ARM64 runtime DLL discovery, Qt host-tool deployment, and release-workflow trigger coverage. |
 | Windows and Linux packages | Not host-verified | Windows ARM64 packaging is statically hardened, but no Windows or Linux build host was available for an end-to-end package run. |
+| Live public-data adapters | Pass on 2026-11-22 | AAPL technical rating, options positioning, analyst, ownership, and earnings adapters plus Market Pulse returned valid zero-credit public-data envelopes. The earnings result was valid but empty. |
 | Apple distribution | Not complete | Developer ID signing, hardened-runtime entitlements, notarization, and stapling require the owner's Apple distribution identity. |
 
 ## Verified BYO AI routes
@@ -78,8 +79,8 @@ used as a substitute for factual market feeds.
 
 1. Build and run the same test gates on Windows and Linux packaging hosts.
 2. Replace ad-hoc signing with Developer ID signing and complete notarization.
-3. Revalidate live external feeds immediately before distribution because their
-   availability, schemas, limits, and latency are outside this repository.
+3. Repeat the live public-feed smoke immediately before distribution because
+   upstream availability, schemas, limits, and latency remain outside this repository.
 
 ## Reproduction commands
 
