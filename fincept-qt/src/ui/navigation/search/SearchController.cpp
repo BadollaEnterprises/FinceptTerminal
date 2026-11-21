@@ -116,7 +116,7 @@ QString sc_view_action(const QString& view) {
         return QString::fromLatin1(act::kChart);
     if (view == QLatin1String("news"))
         return QString::fromLatin1(act::kNews);
-    if (view == QLatin1String("research"))
+    if (view == QLatin1String("research") || view.startsWith(QLatin1String("research:")))
         return QString::fromLatin1(act::kResearch);
     if (view == QLatin1String("options"))
         return QString::fromLatin1(act::kOptions);
@@ -341,6 +341,8 @@ void SearchController::plan_instruments() {
             case ph::Kind::SymbolView:
                 inst_text_ = p->symbols.value(0);
                 inst_action_ = sc_view_action(p->view);
+                if (p->view.startsWith(QLatin1String("research:")))
+                    inst_args_.insert(QStringLiteral("research_section"), p->view.mid(9));
                 break;
             case ph::Kind::Compare:
                 inst_text_ = p->symbols.value(0);
@@ -907,7 +909,8 @@ void SearchController::build_empty_state() {
             const char* what;
         };
         static const Suggestion kSuggestions[] = {
-            {"AAPL", QT_TRANSLATE_NOOP("CommandBar", "See a stock: quote, chart, news")},
+            {"AAPL financials", QT_TRANSLATE_NOOP("CommandBar", "Jump straight to a company's financials")},
+            {"NVDA filings", QT_TRANSLATE_NOOP("CommandBar", "Open a company's SEC filings")},
             {"backtest", QT_TRANSLATE_NOOP("CommandBar", "Test a trading idea on history")},
             {"dark theme", QT_TRANSLATE_NOOP("CommandBar", "Change how the terminal looks")},
             {"connect broker", QT_TRANSLATE_NOOP("CommandBar", "Trade with your own account")},

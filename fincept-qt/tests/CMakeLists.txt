@@ -493,6 +493,12 @@ fincept_add_test(tst_screen_state_policy
 fincept_add_test(tst_command_match
     tst_command_match.cpp)
 
+# src/core/command/CommandPhrase — the model-free natural-language grammar behind
+# symbol-first terminal navigation (for example "AAPL financials" or "CF NVDA").
+fincept_add_test(tst_command_phrase
+    tst_command_phrase.cpp
+    "${PROJECT_SOURCE_DIR}/src/core/command/CommandPhrase.cpp")
+
 # src/core/instrument — the symbol system's normaliser, venue / provider table and
 # ranking (Qt Core only). All three read tests/data/symbol_vectors.json (located with
 # QFINDTESTDATA next to the test sources; override with FINCEPT_SYMBOL_VECTORS), the

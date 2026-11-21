@@ -2,7 +2,8 @@
 // CommandPhrase — the small grammar of plain-language intents the search box
 // understands WITHOUT any model call. Pure (Qt Core, no I/O); tests/tst_command_phrase.cpp.
 //
-//   aapl chart · chart aapl · msft news · tsla research · spy options   -> SymbolView
+//   aapl chart · msft news · tsla research · spy options                 -> SymbolView
+//   aapl financials · CF nvda · meta analyst ratings                    -> SymbolView
 //   buy 10 msft · sell 5 tsla limit 250 · buy msft @ 410.5 · buy msft   -> Ticket (a PREFILL; nothing is sent)
 //   compare aapl msft · aapl vs msft                                     -> Compare
 //   eur usd · eurusd · eur/usd                                           -> FxPair
@@ -32,7 +33,7 @@ namespace fincept::command::phrase {
 enum class Kind {
     None,
     Scope,      ///< scope = "action" | "instrument" | "help"; text = the rest
-    SymbolView, ///< view = chart | news | research | options | trade | backtest | peers; symbols[0]
+    SymbolView, ///< view = chart | news | options | trade | backtest | peers | research:<tab>; symbols[0]
     Ticket,     ///< side = buy | sell; quantity (0 = none); symbols[0]; price (0 = none); order_type limit|market|""
     Compare,    ///< symbols (2+)
     FxPair,     ///< pair "EURUSD"; symbols[0] = "EURUSD=X" (Yahoo)

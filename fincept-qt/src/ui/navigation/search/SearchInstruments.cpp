@@ -212,6 +212,12 @@ QString sentence(const Instrument& inst, const QString& action, const QVariantMa
         const QString list = args.value(QStringLiteral("watchlist")).toString();
         return list.isEmpty() ? si_tr("Adds %1 to your watchlist").arg(code) : si_tr("Adds %1 to the %2 watchlist").arg(code, list);
     }
+    if (action == QLatin1String(act::kResearch)) {
+        const QString section = args.value(QStringLiteral("research_section")).toString();
+        return section.isEmpty() || section == QLatin1String("overview")
+                   ? si_tr("Opens %1 in Equity Research").arg(code)
+                   : si_tr("Opens %1 in Equity Research — %2").arg(code, section);
+    }
     if (action == QLatin1String(act::kOptions))
         return si_tr("Opens the %1 option chain in Derivatives").arg(code);
     if (action == QLatin1String(act::kBacktest)) {
@@ -241,10 +247,19 @@ QString run(const actions::Ctx& ctx_in, const Instrument& inst, const QString& a
         actions::open_symbol(ctx, route.screen_id, route.symbol, route.asset_class, exchange);
         return {};
     }
-    if (action.isEmpty() || action == QLatin1String(act::kOpen) || action == QLatin1String(act::kResearch)) {
+    if (action.isEmpty() || action == QLatin1String(act::kOpen)) {
         if (route.symbol.isEmpty())
             return si_tr("No market data for this listing");
         actions::open_symbol(ctx, route.screen_id, route.symbol, route.asset_class, exchange);
+        return {};
+    }
+    if (action == QLatin1String(act::kResearch)) {
+        if (route.symbol.isEmpty())
+            return si_tr("No market data for this listing");
+        actions::open_symbol(ctx, QStringLiteral("equity_research"), route.symbol, route.asset_class, exchange);
+        const QString section = args.value(QStringLiteral("research_section")).toString();
+        if (!section.isEmpty())
+            actions::open_screen(ctx, QStringLiteral("equity_research"), section);
         return {};
     }
     if (action == QLatin1String(act::kChart)) {
@@ -302,6 +317,7 @@ QString run(const actions::Ctx& ctx_in, const Instrument& inst, const QString& a
     }
     if (action == QLatin1String(act::kPeers)) {
         actions::open_symbol(ctx, QStringLiteral("equity_research"), inst.symbol, route.asset_class, exchange);
+        actions::open_screen(ctx, QStringLiteral("equity_research"), QStringLiteral("peers"));
         const QStringList peers = args.value(QStringLiteral("peers")).toStringList();
         if (!peers.isEmpty())
             EventBus::instance().publish(QStringLiteral("equity_research.set_peers"),

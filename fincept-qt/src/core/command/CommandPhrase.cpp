@@ -70,15 +70,51 @@ QString cph_view_of(const QString& lower) {
         {QStringLiteral("price"), QStringLiteral("chart")},
         {QStringLiteral("news"), QStringLiteral("news")},
         {QStringLiteral("headlines"), QStringLiteral("news")},
-        {QStringLiteral("research"), QStringLiteral("research")},
-        {QStringLiteral("fundamentals"), QStringLiteral("research")},
-        {QStringLiteral("financials"), QStringLiteral("research")},
-        {QStringLiteral("profile"), QStringLiteral("research")},
-        {QStringLiteral("analysis"), QStringLiteral("research")},
-        {QStringLiteral("overview"), QStringLiteral("research")},
+        {QStringLiteral("research"), QStringLiteral("research:overview")},
+        {QStringLiteral("fundamentals"), QStringLiteral("research:overview")},
+        {QStringLiteral("profile"), QStringLiteral("research:overview")},
+        {QStringLiteral("description"), QStringLiteral("research:overview")},
+        {QStringLiteral("des"), QStringLiteral("research:overview")},
+        {QStringLiteral("short interest"), QStringLiteral("research:overview")},
+        {QStringLiteral("si"), QStringLiteral("research:overview")},
+        {QStringLiteral("financials"), QStringLiteral("research:financials")},
+        {QStringLiteral("statements"), QStringLiteral("research:financials")},
+        {QStringLiteral("fa"), QStringLiteral("research:financials")},
+        {QStringLiteral("filings"), QStringLiteral("research:filings")},
+        {QStringLiteral("sec"), QStringLiteral("research:filings")},
+        {QStringLiteral("cf"), QStringLiteral("research:filings")},
+        {QStringLiteral("analysis"), QStringLiteral("research:analysis")},
+        {QStringLiteral("ratios"), QStringLiteral("research:analysis")},
+        {QStringLiteral("gr"), QStringLiteral("research:analysis")},
+        {QStringLiteral("technical"), QStringLiteral("research:technicals")},
+        {QStringLiteral("technicals"), QStringLiteral("research:technicals")},
+        {QStringLiteral("indicators"), QStringLiteral("research:technicals")},
+        {QStringLiteral("sentiment"), QStringLiteral("research:sentiment")},
+        {QStringLiteral("valuation"), QStringLiteral("research:valuation")},
+        {QStringLiteral("dcf"), QStringLiteral("research:valuation")},
+        {QStringLiteral("dividend"), QStringLiteral("research:dividends")},
+        {QStringLiteral("dividends"), QStringLiteral("research:dividends")},
+        {QStringLiteral("yield"), QStringLiteral("research:dividends")},
+        {QStringLiteral("dvd"), QStringLiteral("research:dividends")},
+        {QStringLiteral("earnings"), QStringLiteral("research:earnings")},
+        {QStringLiteral("estimates"), QStringLiteral("research:earnings")},
+        {QStringLiteral("eps"), QStringLiteral("research:earnings")},
+        {QStringLiteral("ern"), QStringLiteral("research:earnings")},
+        {QStringLiteral("em"), QStringLiteral("research:earnings")},
+        {QStringLiteral("analyst"), QStringLiteral("research:analyst")},
+        {QStringLiteral("analyst ratings"), QStringLiteral("research:analyst")},
+        {QStringLiteral("ratings"), QStringLiteral("research:analyst")},
+        {QStringLiteral("targets"), QStringLiteral("research:analyst")},
+        {QStringLiteral("anr"), QStringLiteral("research:analyst")},
+        {QStringLiteral("ownership"), QStringLiteral("research:ownership")},
+        {QStringLiteral("holders"), QStringLiteral("research:ownership")},
+        {QStringLiteral("institutional"), QStringLiteral("research:ownership")},
+        {QStringLiteral("hds"), QStringLiteral("research:ownership")},
         {QStringLiteral("options"), QStringLiteral("options")},
         {QStringLiteral("option"), QStringLiteral("options")},
         {QStringLiteral("chain"), QStringLiteral("options")},
+        {QStringLiteral("option chain"), QStringLiteral("options")},
+        {QStringLiteral("omon"), QStringLiteral("options")},
         {QStringLiteral("trade"), QStringLiteral("trade")},
         {QStringLiteral("ticket"), QStringLiteral("trade")},
         {QStringLiteral("order"), QStringLiteral("trade")},
@@ -579,10 +615,9 @@ QList<Phrase> parse(const QString& input, const Vocabulary& vocab) {
     p = Phrase{};
 
     // ── "<symbol> <view>" / "<view> <symbol>" ──
-    if (tokens.size() == 2 || (tokens.size() == 3 && lower[1] == QLatin1String("option") &&
-                               lower[2] == QLatin1String("chain"))) {
-        const QString v_last = tokens.size() == 3 ? QStringLiteral("options") : cph_view_of(lower[1]);
-        const QString v_first = tokens.size() == 2 ? cph_view_of(lower[0]) : QString();
+    if (tokens.size() == 2 || tokens.size() == 3) {
+        const QString v_last = cph_view_of(lower.mid(1).join(QLatin1Char(' ')));
+        const QString v_first = cph_view_of(lower.mid(0, lower.size() - 1).join(QLatin1Char(' ')));
         if (!v_last.isEmpty() && cph_symbol_token(tokens[0]) && cph_view_of(lower[0]).isEmpty()) {
             p.kind = Kind::SymbolView;
             p.view = v_last;
