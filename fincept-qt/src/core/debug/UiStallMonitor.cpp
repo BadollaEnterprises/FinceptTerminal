@@ -40,7 +40,9 @@ namespace {
 constexpr int kBeatIntervalMs = 20;
 constexpr int kPollIntervalMs = 50;
 constexpr int kDefaultThresholdMs = 250;
+#if defined(Q_OS_LINUX) || (defined(Q_OS_WIN) && defined(_M_X64))
 constexpr int kMaxFrames = 128;
+#endif
 
 std::atomic<qint64> g_last_beat_ms{0}; // monotonic ms of the GUI thread's last timer tick
 std::atomic<bool> g_running{false};
