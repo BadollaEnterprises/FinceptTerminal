@@ -8,6 +8,7 @@ class TestLlmSummaryPolicy : public QObject {
     Q_OBJECT
   private slots:
     void exhausted_summary_is_small_and_protocol_safe();
+    void native_provider_summary_prompt_is_bounded_and_keeps_recent_evidence();
 };
 
 void TestLlmSummaryPolicy::exhausted_summary_is_small_and_protocol_safe() {
@@ -46,6 +47,30 @@ void TestLlmSummaryPolicy::exhausted_summary_is_small_and_protocol_safe() {
         QVERIFY(!message.contains(QStringLiteral("tool_calls")));
         QVERIFY(!message.contains(QStringLiteral("tool_call_id")));
     }
+}
+
+void TestLlmSummaryPolicy::native_provider_summary_prompt_is_bounded_and_keeps_recent_evidence() {
+    QJsonArray messages{
+        QJsonObject{{QStringLiteral("role"), QStringLiteral("user")},
+                    {QStringLiteral("content"), QStringLiteral("OLD_") + QString(2400, QLatin1Char('x'))}},
+        QJsonObject{{QStringLiteral("role"), QStringLiteral("assistant")},
+                    {QStringLiteral("content"),
+                     QJsonArray{QJsonObject{{QStringLiteral("type"), QStringLiteral("tool_use")},
+                                            {QStringLiteral("name"), QStringLiteral("market_pulse")},
+                                            {QStringLiteral("input"), QJsonObject{}}}}}},
+        QJsonObject{{QStringLiteral("role"), QStringLiteral("user")},
+                    {QStringLiteral("content"),
+                     QJsonArray{QJsonObject{{QStringLiteral("type"), QStringLiteral("tool_result")},
+                                            {QStringLiteral("content"), QStringLiteral("LATEST_SIGNAL=42")}}}}},
+    };
+
+    const QString prompt = bounded_tool_summary_prompt(
+        messages, QStringLiteral("Summarise completed work; do not call tools."), /*max_utf8_bytes=*/700);
+
+    QVERIFY2(prompt.toUtf8().size() <= 700, qPrintable(prompt));
+    QVERIFY(prompt.contains(QStringLiteral("LATEST_SIGNAL=42")));
+    QVERIFY(prompt.count(QLatin1Char('x')) < 1000);
+    QVERIFY(prompt.startsWith(QStringLiteral("Summarise completed work")));
 }
 
 QTEST_GUILESS_MAIN(TestLlmSummaryPolicy)

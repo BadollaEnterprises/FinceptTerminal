@@ -19,17 +19,21 @@ struct LocalUsageSnapshot {
     qint64 successful_llm_requests = 0;
     qint64 prompt_tokens = 0;
     qint64 completion_tokens = 0;
+    qint64 cached_prompt_tokens = 0;
     qint64 local_quantlib_calls = 0;
     qint64 public_data_calls = 0;
     qint64 fincept_credits_used = 0;
     QHash<QString, qint64> provider_tokens;
+    QHash<QString, qint64> provider_cached_prompt_tokens;
     QHash<QString, qint64> source_calls;
     QString monthly_period;
     qint64 monthly_llm_requests = 0;
     qint64 monthly_successful_llm_requests = 0;
+    qint64 monthly_cached_prompt_tokens = 0;
     qint64 monthly_local_quantlib_calls = 0;
     qint64 monthly_public_data_calls = 0;
     QHash<QString, qint64> monthly_provider_tokens;
+    QHash<QString, qint64> monthly_provider_cached_prompt_tokens;
     QHash<QString, QString> provider_last_success;
     QHash<QString, QString> source_last_success;
 };
@@ -45,12 +49,14 @@ class LocalUsageMetrics {
         roll_month_locked();
     }
 
-    static void record_llm(QString provider, qint64 prompt_tokens, qint64 completion_tokens, bool success) {
+    static void record_llm(QString provider, qint64 prompt_tokens, qint64 completion_tokens, bool success,
+                           qint64 cached_prompt_tokens = 0) {
         provider = provider.trimmed().toLower();
         if (provider.isEmpty())
             provider = QStringLiteral("unknown");
         const qint64 input = qMax<qint64>(0, prompt_tokens);
         const qint64 output = qMax<qint64>(0, completion_tokens);
+        const qint64 cached = qBound<qint64>(0, cached_prompt_tokens, input);
         QMutexLocker lock(&mutex());
         auto& value = data();
         roll_month_locked();
@@ -58,10 +64,14 @@ class LocalUsageMetrics {
         value.successful_llm_requests += success ? 1 : 0;
         value.prompt_tokens += input;
         value.completion_tokens += output;
+        value.cached_prompt_tokens += cached;
         value.provider_tokens[provider] += input + output;
+        value.provider_cached_prompt_tokens[provider] += cached;
         ++value.monthly_llm_requests;
         value.monthly_successful_llm_requests += success ? 1 : 0;
+        value.monthly_cached_prompt_tokens += cached;
         value.monthly_provider_tokens[provider] += input + output;
+        value.monthly_provider_cached_prompt_tokens[provider] += cached;
         if (success)
             value.provider_last_success[provider] = now_iso();
         save_locked();
@@ -168,9 +178,11 @@ class LocalUsageMetrics {
         value.monthly_period = month;
         value.monthly_llm_requests = 0;
         value.monthly_successful_llm_requests = 0;
+        value.monthly_cached_prompt_tokens = 0;
         value.monthly_local_quantlib_calls = 0;
         value.monthly_public_data_calls = 0;
         value.monthly_provider_tokens.clear();
+        value.monthly_provider_cached_prompt_tokens.clear();
     }
 
     static LocalUsageSnapshot load_locked() {
@@ -183,20 +195,27 @@ class LocalUsageMetrics {
         value.successful_llm_requests = qint64(root.value(QStringLiteral("successful_llm_requests")).toDouble());
         value.prompt_tokens = qint64(root.value(QStringLiteral("prompt_tokens")).toDouble());
         value.completion_tokens = qint64(root.value(QStringLiteral("completion_tokens")).toDouble());
+        value.cached_prompt_tokens = qint64(root.value(QStringLiteral("cached_prompt_tokens")).toDouble());
         value.local_quantlib_calls = qint64(root.value(QStringLiteral("local_quantlib_calls")).toDouble());
         value.public_data_calls = qint64(root.value(QStringLiteral("public_data_calls")).toDouble());
         value.provider_tokens = read_integer_map(root.value(QStringLiteral("provider_tokens")).toObject());
+        value.provider_cached_prompt_tokens =
+            read_integer_map(root.value(QStringLiteral("provider_cached_prompt_tokens")).toObject());
         value.source_calls = read_integer_map(root.value(QStringLiteral("source_calls")).toObject());
         value.monthly_period = root.value(QStringLiteral("monthly_period")).toString();
         value.monthly_llm_requests = qint64(root.value(QStringLiteral("monthly_llm_requests")).toDouble());
         value.monthly_successful_llm_requests =
             qint64(root.value(QStringLiteral("monthly_successful_llm_requests")).toDouble());
+        value.monthly_cached_prompt_tokens =
+            qint64(root.value(QStringLiteral("monthly_cached_prompt_tokens")).toDouble());
         value.monthly_local_quantlib_calls =
             qint64(root.value(QStringLiteral("monthly_local_quantlib_calls")).toDouble());
         value.monthly_public_data_calls =
             qint64(root.value(QStringLiteral("monthly_public_data_calls")).toDouble());
         value.monthly_provider_tokens =
             read_integer_map(root.value(QStringLiteral("monthly_provider_tokens")).toObject());
+        value.monthly_provider_cached_prompt_tokens =
+            read_integer_map(root.value(QStringLiteral("monthly_provider_cached_prompt_tokens")).toObject());
         value.provider_last_success =
             read_string_map(root.value(QStringLiteral("provider_last_success")).toObject());
         value.source_last_success = read_string_map(root.value(QStringLiteral("source_last_success")).toObject());
@@ -208,23 +227,30 @@ class LocalUsageMetrics {
             return;
         QDir().mkpath(QFileInfo(storage_path()).absolutePath());
         const auto& value = data();
-        QJsonObject root{{QStringLiteral("version"), 1},
+        QJsonObject root{{QStringLiteral("version"), 2},
                          {QStringLiteral("llm_requests"), double(value.llm_requests)},
                          {QStringLiteral("successful_llm_requests"), double(value.successful_llm_requests)},
                          {QStringLiteral("prompt_tokens"), double(value.prompt_tokens)},
                          {QStringLiteral("completion_tokens"), double(value.completion_tokens)},
+                         {QStringLiteral("cached_prompt_tokens"), double(value.cached_prompt_tokens)},
                          {QStringLiteral("local_quantlib_calls"), double(value.local_quantlib_calls)},
                          {QStringLiteral("public_data_calls"), double(value.public_data_calls)},
                          {QStringLiteral("provider_tokens"), integer_map(value.provider_tokens)},
+                         {QStringLiteral("provider_cached_prompt_tokens"),
+                          integer_map(value.provider_cached_prompt_tokens)},
                          {QStringLiteral("source_calls"), integer_map(value.source_calls)},
                          {QStringLiteral("monthly_period"), value.monthly_period},
                          {QStringLiteral("monthly_llm_requests"), double(value.monthly_llm_requests)},
                          {QStringLiteral("monthly_successful_llm_requests"),
                           double(value.monthly_successful_llm_requests)},
+                         {QStringLiteral("monthly_cached_prompt_tokens"),
+                          double(value.monthly_cached_prompt_tokens)},
                          {QStringLiteral("monthly_local_quantlib_calls"),
                           double(value.monthly_local_quantlib_calls)},
                          {QStringLiteral("monthly_public_data_calls"), double(value.monthly_public_data_calls)},
                          {QStringLiteral("monthly_provider_tokens"), integer_map(value.monthly_provider_tokens)},
+                         {QStringLiteral("monthly_provider_cached_prompt_tokens"),
+                          integer_map(value.monthly_provider_cached_prompt_tokens)},
                          {QStringLiteral("provider_last_success"), string_map(value.provider_last_success)},
                          {QStringLiteral("source_last_success"), string_map(value.source_last_success)}};
         QSaveFile file(storage_path());

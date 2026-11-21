@@ -345,6 +345,7 @@ QWidget* DataSourcesSection::build_content() {
         add_metric(tr("BYO AI CALLS"), usage.llm_requests, ui::colors::CYAN());
         add_metric(tr("DEEPSEEK TOKENS"), usage.provider_tokens.value(QStringLiteral("deepseek")),
                    ui::colors::AMBER());
+        add_metric(tr("CACHED INPUT"), usage.cached_prompt_tokens, ui::colors::CYAN());
         add_metric(tr("LOCAL QUANTLIB"), usage.local_quantlib_calls, ui::colors::POSITIVE());
         add_metric(tr("PUBLIC DATA"), usage.public_data_calls, ui::colors::POSITIVE());
         add_metric(tr("FINCEPT CREDITS"), usage.fincept_credits_used, ui::colors::POSITIVE());
@@ -371,6 +372,7 @@ QWidget* DataSourcesSection::build_content() {
         add(tr("METERED CALLS AVOIDED"), QLocale().toString(avoided), ui::colors::POSITIVE());
         add(tr("DEEPSEEK TOKENS"),
             QLocale().toString(usage.monthly_provider_tokens.value(QStringLiteral("deepseek"))), ui::colors::AMBER());
+        add(tr("CACHED INPUT"), QLocale().toString(usage.monthly_cached_prompt_tokens), ui::colors::CYAN());
         add(tr("FINCEPT CREDITS USED"), QStringLiteral("0"), ui::colors::POSITIVE());
         static_cast<QVBoxLayout*>(panel->layout())->addWidget(body);
         vl->addWidget(panel);

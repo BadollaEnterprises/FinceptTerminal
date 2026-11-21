@@ -18,6 +18,7 @@
 #include "services/llm/LlmContentExtractors.h"
 #include "services/llm/LlmErrors.h"
 #include "services/llm/LlmRequestPolicy.h"
+#include "services/llm/LlmSummaryPolicy.h"
 #include "services/llm/LlmUsage.h"
 #include "services/llm/ModelCatalog.h"
 #include "services/llm/ModelRouter.h"
@@ -66,7 +67,8 @@ static bool llm_svc_provider_allowed(const QString& provider) {
 // cost. Never the prompt or the answer.
 static void llm_svc_log_request_finished(const LlmResponse& resp, const QString& feature, bool stream,
                                          qint64 duration_ms) {
-    metrics::LocalUsageMetrics::record_llm(resp.provider, resp.prompt_tokens, resp.completion_tokens, resp.success);
+    metrics::LocalUsageMetrics::record_llm(resp.provider, resp.prompt_tokens, resp.completion_tokens, resp.success,
+                                           resp.cached_prompt_tokens);
     if (!Logger::instance().should_log(LogLevel::Info, kLlmSvcTag))
         return;
     QList<LogField> fields{{"provider", resp.provider},
@@ -892,6 +894,10 @@ LlmResponse LlmService::do_request(const QString& user_message, const std::vecto
             const int kMaxRounds = active_max_tool_rounds();
             // Rounds cap the token spend; the deadline caps the wait. See ToolLoopBudget.
             detail::ToolLoopBudget ant_budget(kMaxRounds);
+            LlmResponse ant_usage;
+            parse_usage(ant_usage, rj, provider_);
+            ant_budget.note_prompt_tokens(ant_usage.prompt_tokens);
+            ant_budget.note_completion_tokens(ant_usage.completion_tokens);
             for (int round = 0; !ant_budget.exhausted(); ++round) {
                 if (detail::cancel_requested()) {
                     resp.cancelled = true;
@@ -921,6 +927,11 @@ LlmResponse LlmService::do_request(const QString& user_message, const std::vecto
                 }
                 const QJsonObject frj = fu_doc.object();
                 const QJsonArray fcontent = frj["content"].toArray();
+                LlmResponse round_usage;
+                parse_usage(round_usage, frj, provider_);
+                add_provider_usage(ant_usage, round_usage);
+                ant_budget.note_prompt_tokens(round_usage.prompt_tokens);
+                ant_budget.note_completion_tokens(round_usage.completion_tokens);
 
                 if (frj["stop_reason"].toString() != "tool_use") {
                     resp.content = extract_anthropic_content_text(fcontent); // final answer
@@ -972,11 +983,43 @@ LlmResponse LlmService::do_request(const QString& user_message, const std::vecto
                 loop_msgs.append(QJsonObject{{"role", "user"}, {"content", more_results}});
             }
             if (resp.content.isEmpty() && resp.error.isEmpty()) {
-                // Name the budget that ran out. "exceeded maximum rounds" was
-                // wrong the moment a second budget existed, and it told the user
-                // nothing actionable either way.
-                resp.error = "Anthropic tool loop ended without an answer — " + ant_budget.exhaustion_note();
+                if (ant_budget.provider_token_budget_exhausted()) {
+                    const QString instruction =
+                        QStringLiteral("The provider token budget is spent (%1). Give a concise final answer from "
+                                       "the completed tool evidence. Do not call tools.")
+                            .arg(ant_budget.exhaustion_note());
+                    const QString prompt = bounded_tool_summary_prompt(
+                        loop_msgs, instruction, detail::tool_loop_summary_context_max_bytes());
+                    QJsonObject summary_body{{QStringLiteral("model"), model_},
+                                             {QStringLiteral("messages"),
+                                              QJsonArray{QJsonObject{{QStringLiteral("role"),
+                                                                     QStringLiteral("user")},
+                                                                    {QStringLiteral("content"), prompt}}}},
+                                             {QStringLiteral("max_tokens"),
+                                              std::min(resolved_max_tokens(),
+                                                       detail::tool_loop_summary_max_tokens())}};
+                    auto summary_http = blocking_post(url, summary_body, hdr);
+                    if (summary_http.success) {
+                        const QJsonDocument summary_doc = QJsonDocument::fromJson(summary_http.body);
+                        if (!summary_doc.isNull()) {
+                            const QJsonObject summary_json = summary_doc.object();
+                            resp.content = extract_anthropic_content_text(summary_json["content"].toArray());
+                            LlmResponse summary_usage;
+                            parse_usage(summary_usage, summary_json, provider_);
+                            add_provider_usage(ant_usage, summary_usage);
+                        }
+                    }
+                    if (resp.content.isEmpty())
+                        resp.error = "Anthropic tool loop ended without an answer — " +
+                                     ant_budget.exhaustion_note();
+                } else {
+                    // Name the budget that ran out. "exceeded maximum rounds" was
+                    // wrong the moment a second budget existed, and it told the user
+                    // nothing actionable either way.
+                    resp.error = "Anthropic tool loop ended without an answer — " + ant_budget.exhaustion_note();
+                }
             }
+            add_provider_usage(resp, ant_usage);
         } else {
             resp.content = extract_anthropic_content_text(content);
         }
@@ -1004,6 +1047,10 @@ LlmResponse LlmService::do_request(const QString& user_message, const std::vecto
                 // set each round, until a text answer or the round cap.
                 const int kMaxRounds = active_max_tool_rounds();
                 detail::ToolLoopBudget gem_budget(kMaxRounds);
+                LlmResponse gem_usage;
+                parse_usage(gem_usage, rj, provider_);
+                gem_budget.note_prompt_tokens(gem_usage.prompt_tokens);
+                gem_budget.note_completion_tokens(gem_usage.completion_tokens);
 
                 // Constant conversation prefix: prior history + the user turn.
                 QJsonArray fu_contents;
@@ -1113,7 +1160,13 @@ LlmResponse LlmService::do_request(const QString& user_message, const std::vecto
                         resp.error = "Gemini tool follow-up parse error";
                         return resp;
                     }
-                    const QJsonArray fu_cands = fu_doc.object()["candidates"].toArray();
+                    const QJsonObject fu_json = fu_doc.object();
+                    LlmResponse round_usage;
+                    parse_usage(round_usage, fu_json, provider_);
+                    add_provider_usage(gem_usage, round_usage);
+                    gem_budget.note_prompt_tokens(round_usage.prompt_tokens);
+                    gem_budget.note_completion_tokens(round_usage.completion_tokens);
+                    const QJsonArray fu_cands = fu_json["candidates"].toArray();
                     const QJsonArray resp_parts = fu_cands.isEmpty()
                                                       ? QJsonArray{}
                                                       : fu_cands[0].toObject()["content"].toObject()["parts"].toArray();
@@ -1130,6 +1183,45 @@ LlmResponse LlmService::do_request(const QString& user_message, const std::vecto
                         break;
                     }
                     model_parts = resp_parts; // next round executes these
+                }
+
+                if (resp.content.isEmpty()) {
+                    if (gem_budget.provider_token_budget_exhausted()) {
+                        const QString instruction =
+                            QStringLiteral("The provider token budget is spent (%1). Give a concise final answer "
+                                           "from the completed tool evidence. Do not call tools.")
+                                .arg(gem_budget.exhaustion_note());
+                        const QString prompt = bounded_tool_summary_prompt(
+                            fu_contents, instruction, detail::tool_loop_summary_context_max_bytes());
+                        QJsonObject summary_body{
+                            {QStringLiteral("contents"),
+                             QJsonArray{QJsonObject{
+                                 {QStringLiteral("role"), QStringLiteral("user")},
+                                 {QStringLiteral("parts"),
+                                  QJsonArray{QJsonObject{{QStringLiteral("text"), prompt}}}}}}},
+                            {QStringLiteral("generationConfig"),
+                             QJsonObject{{QStringLiteral("maxOutputTokens"),
+                                          std::min(resolved_max_tokens(),
+                                                   detail::tool_loop_summary_max_tokens())}}}};
+                        auto summary_http = blocking_post(url, summary_body, hdr);
+                        if (summary_http.success) {
+                            const QJsonDocument summary_doc = QJsonDocument::fromJson(summary_http.body);
+                            if (!summary_doc.isNull()) {
+                                const QJsonObject summary_json = summary_doc.object();
+                                const QJsonArray summary_candidates = summary_json["candidates"].toArray();
+                                if (!summary_candidates.isEmpty()) {
+                                    resp.content = extract_gemini_parts_text(
+                                        summary_candidates[0]
+                                            .toObject()["content"]
+                                            .toObject()["parts"]
+                                            .toArray());
+                                }
+                                LlmResponse summary_usage;
+                                parse_usage(summary_usage, summary_json, provider_);
+                                add_provider_usage(gem_usage, summary_usage);
+                            }
+                        }
+                    }
                 }
 
                 if (resp.content.isEmpty()) {
@@ -1160,6 +1252,7 @@ LlmResponse LlmService::do_request(const QString& user_message, const std::vecto
                     }
                     resp.content = fallback;
                 }
+                add_provider_usage(resp, gem_usage);
             } else {
                 resp.content = extract_gemini_parts_text(parts);
             }
@@ -1250,15 +1343,22 @@ LlmResponse LlmService::do_request(const QString& user_message, const std::vecto
     // execute the tools, then ask the LLM to summarize the results.
     if (!resp.content.isEmpty()) {
         LOG_DEBUG(kLlmSvcTag, logf("Checking response for text-based tool calls", {{"chars", resp.content.size()}}));
+        LlmResponse accumulated_usage = resp;
+        if (accumulated_usage.prompt_tokens == 0 && accumulated_usage.completion_tokens == 0 &&
+            accumulated_usage.total_tokens == 0)
+            parse_usage(accumulated_usage, rj, provider_);
         auto text_tool_result = try_extract_and_execute_text_tool_calls(resp.content, user_message, url, hdr);
         if (text_tool_result.has_value()) {
             resp = text_tool_result.value();
-            if (resp.success || resp.cancelled)
+            if (resp.success || resp.cancelled) {
+                add_provider_usage(resp, accumulated_usage);
                 return resp;
+            }
         }
     }
 
-    parse_usage(resp, rj, provider_);
+    if (resp.prompt_tokens == 0 && resp.completion_tokens == 0 && resp.total_tokens == 0)
+        parse_usage(resp, rj, provider_);
     resp.success = true;
     return resp;
 }

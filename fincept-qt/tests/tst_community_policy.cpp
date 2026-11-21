@@ -92,7 +92,7 @@ class CommunityPolicyTest : public QObject {
     void local_usage_metrics_track_provider_tokens_and_local_calls() {
         using fincept::metrics::LocalUsageMetrics;
         LocalUsageMetrics::reset_for_test();
-        LocalUsageMetrics::record_llm(QStringLiteral("deepseek"), 120, 30, true);
+        LocalUsageMetrics::record_llm(QStringLiteral("deepseek"), 120, 30, true, 90);
         LocalUsageMetrics::record_llm(QStringLiteral("deepseek"), 20, 10, false);
         LocalUsageMetrics::record_local_quantlib();
         LocalUsageMetrics::record_public_data(QStringLiteral("gdelt"));
@@ -102,9 +102,11 @@ class CommunityPolicyTest : public QObject {
         QCOMPARE(snapshot.successful_llm_requests, 1);
         QCOMPARE(snapshot.prompt_tokens, 140);
         QCOMPARE(snapshot.completion_tokens, 40);
+        QCOMPARE(snapshot.cached_prompt_tokens, 90);
         QCOMPARE(snapshot.local_quantlib_calls, 1);
         QCOMPARE(snapshot.public_data_calls, 1);
         QCOMPARE(snapshot.provider_tokens.value(QStringLiteral("deepseek")), 180);
+        QCOMPARE(snapshot.provider_cached_prompt_tokens.value(QStringLiteral("deepseek")), 90);
         QCOMPARE(snapshot.fincept_credits_used, 0);
     }
 
@@ -114,7 +116,7 @@ class CommunityPolicyTest : public QObject {
         QVERIFY(temp.isValid());
         LocalUsageMetrics::set_storage_path(temp.filePath(QStringLiteral("usage.json")));
         LocalUsageMetrics::reset_for_test();
-        LocalUsageMetrics::record_llm(QStringLiteral("deepseek"), 100, 25, true);
+        LocalUsageMetrics::record_llm(QStringLiteral("deepseek"), 100, 25, true, 80);
         LocalUsageMetrics::record_local_quantlib();
         LocalUsageMetrics::record_public_data(QStringLiteral("rss"));
 
@@ -122,6 +124,10 @@ class CommunityPolicyTest : public QObject {
         const auto restored = LocalUsageMetrics::snapshot();
         QCOMPARE(restored.monthly_llm_requests, 1);
         QCOMPARE(restored.monthly_provider_tokens.value(QStringLiteral("deepseek")), 125);
+        QCOMPARE(restored.cached_prompt_tokens, 80);
+        QCOMPARE(restored.monthly_cached_prompt_tokens, 80);
+        QCOMPARE(restored.provider_cached_prompt_tokens.value(QStringLiteral("deepseek")), 80);
+        QCOMPARE(restored.monthly_provider_cached_prompt_tokens.value(QStringLiteral("deepseek")), 80);
         QCOMPARE(restored.monthly_local_quantlib_calls, 1);
         QCOMPARE(restored.monthly_public_data_calls, 1);
         QVERIFY(!restored.provider_last_success.value(QStringLiteral("deepseek")).isEmpty());

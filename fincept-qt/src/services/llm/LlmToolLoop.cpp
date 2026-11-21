@@ -483,12 +483,21 @@ std::optional<LlmResponse> LlmService::try_extract_and_execute_text_tool_calls(c
 
     // Build follow-up request asking the LLM to summarize the tool results
     LlmResponse resp;
-    QString follow_prompt = "The user asked: \"" + user_message +
-                            "\"\n\n"
-                            "I executed the requested tool(s) and obtained these results:\n" +
-                            tool_results +
-                            "\n\nPlease provide a clear, concise summary of this data in natural language. "
-                            "Do NOT emit any tool calls or XML markup in your response.";
+    const QString summary_instruction =
+        QStringLiteral("Provide a clear, concise answer to the user's request using the tool evidence below. "
+                       "Do not emit tool calls or XML markup.");
+    const QJsonArray summary_evidence{
+        QJsonObject{{QStringLiteral("role"), QStringLiteral("user")},
+                    {QStringLiteral("content"), user_message}},
+        QJsonObject{{QStringLiteral("role"), QStringLiteral("assistant")},
+                    {QStringLiteral("content"), content}},
+        QJsonObject{{QStringLiteral("role"), QStringLiteral("tool")},
+                    {QStringLiteral("content"), tool_results}},
+    };
+    const QString follow_prompt =
+        bounded_tool_summary_prompt(summary_evidence, summary_instruction,
+                                    detail::tool_loop_summary_context_max_bytes());
+    const int summary_limit = std::min(resolved_max_tokens(), detail::tool_loop_summary_max_tokens());
 
     QJsonObject follow_body;
     if (provider_ == "anthropic") {
@@ -496,7 +505,7 @@ std::optional<LlmResponse> LlmService::try_extract_and_execute_text_tool_calls(c
         msgs.append(QJsonObject{{"role", "user"}, {"content", follow_prompt}});
         follow_body["model"] = model_;
         follow_body["messages"] = msgs;
-        follow_body["max_tokens"] = resolved_max_tokens();
+        follow_body["max_tokens"] = summary_limit;
         // Temperature intentionally omitted — Anthropic default.
         if (!system_prompt_.isEmpty())
             follow_body["system"] = system_prompt_;
@@ -508,7 +517,7 @@ std::optional<LlmResponse> LlmService::try_extract_and_execute_text_tool_calls(c
         // of an answer.
         follow_body["contents"] =
             QJsonArray{QJsonObject{{"role", "user"}, {"parts", QJsonArray{QJsonObject{{"text", follow_prompt}}}}}};
-        follow_body["generationConfig"] = QJsonObject{{"maxOutputTokens", resolved_max_tokens()}};
+        follow_body["generationConfig"] = QJsonObject{{"maxOutputTokens", summary_limit}};
         if (!system_prompt_.isEmpty())
             follow_body["systemInstruction"] = QJsonObject{{"parts", QJsonArray{QJsonObject{{"text", system_prompt_}}}}};
     } else {
@@ -522,6 +531,10 @@ std::optional<LlmResponse> LlmService::try_extract_and_execute_text_tool_calls(c
         follow_body["messages"] = msgs;
         // Temperature intentionally omitted — provider default.
         apply_openai_token_limit(follow_body);
+        if (follow_body.contains(QStringLiteral("max_completion_tokens")))
+            follow_body[QStringLiteral("max_completion_tokens")] = summary_limit;
+        else
+            follow_body[QStringLiteral("max_tokens")] = summary_limit;
         if (provider_ == QLatin1String("deepseek"))
             apply_deepseek_thinking(follow_body, detail::t_reasoning_effort);
     }
