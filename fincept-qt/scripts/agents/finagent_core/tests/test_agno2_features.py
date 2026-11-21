@@ -84,8 +84,8 @@ def test_embedder_takes_id_not_model():
     from finagent_core.registries import EmbedderRegistry
     emb = EmbedderRegistry.create_embedder("openai", model="text-embedding-3-large", api_key="k")
     assert emb.id == "text-embedding-3-large"
-    oll = EmbedderRegistry.create_embedder("ollama")
-    assert oll.id == "nomic-embed-text" and oll.host == "http://localhost:11434" and oll.dimensions == 768
+    with pytest.raises(ValueError, match="Unknown embedder"):
+        EmbedderRegistry.create_embedder("ollama")
 
 
 def test_embedder_key_found_by_provider_name():

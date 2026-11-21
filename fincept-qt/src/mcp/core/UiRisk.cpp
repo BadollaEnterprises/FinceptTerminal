@@ -98,8 +98,14 @@ Risk classify_words(const QString& words) {
         R"(\b(delete|remove|erase|wipe|purge|drop|uninstall|revoke|regenerate|discard|reset)\b|\bclear (all|history|data|cache|everything)\b|danger|destructive)"));
     static const QRegularExpression benign(QStringLiteral(
         R"(\b(reset|clear|remove|delete)\b.{0,14}\b(zoom|view|filters?|search|selection|chart|columns?|indicators?|stud(y|ies)|overlays?|form|fields?|input|text|sort|highlights?|query)\b)"));
-    static const QRegularExpression spend(
-        QStringLiteral(R"(\b(credits?|spend|purchase|pay|payment|checkout|subscribe|upgrade|top[ -]?up|recharge)\b)"));
+    static const QRegularExpression spend_action(
+        QStringLiteral(R"(\b(spend(?:s|ing)?|purchase|pay|payment|checkout|subscribe|upgrade|top[ -]?up|recharge)\b)"));
+    // A read-only model selector may truthfully say "0 credits". The old bare
+    // `credits?` keyword treated that disclosure as a billable action and put
+    // an approval dialog in front of merely opening the selector. Require an
+    // actual usage verb or a positive numeric credit amount.
+    static const QRegularExpression credit_charge(QStringLiteral(
+        R"(\b(use[sd]?|using|costs?|charge[sd]?|charging|consume[sd]?|consuming)\b.{0,24}\bcredits?\b|\b(?:[1-9]\d*(?:\.\d+)?|0\.\d*[1-9]\d*)\s+(?:fincept\s+)?credits?\b)"));
     // Starting an AI agent / harness run spends model quota.
     static const QRegularExpression agent_run(QStringLiteral(
         R"(\b(start|launch|run|execute)\b.{0,16}\b(agents?|harness(es)?|plans?|workflows?)\b)"));
@@ -109,7 +115,7 @@ Risk classify_words(const QString& words) {
         return make(true, why_money(), QStringLiteral("order"));
     if (destroy.match(words).hasMatch() && !benign.match(words).hasMatch())
         return make(false, QStringLiteral("deletes or resets data"), QStringLiteral("destructive"));
-    if (spend.match(words).hasMatch())
+    if (spend_action.match(words).hasMatch() || credit_charge.match(words).hasMatch())
         // Refused in a PAPER run, and never covered by a blanket grant.
         return make(true, QStringLiteral("spends money or credits"), QStringLiteral("spend"));
     if (agent_run.match(words).hasMatch())

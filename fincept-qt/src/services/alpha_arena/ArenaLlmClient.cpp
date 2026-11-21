@@ -3,6 +3,7 @@
 #include "auth/AuthManager.h"
 #include "services/alpha_arena/HarnessArenaClient.h"
 #include "core/config/AppConfig.h"
+#include "core/policy/CommunityPolicy.h"
 #include "services/llm/LlmErrors.h"
 #include "services/llm/ModelCatalog.h"
 #include "services/llm/ProviderCatalog.h"
@@ -120,15 +121,27 @@ ArenaLlmResult ArenaLlmClient::parse_response(const QString& provider, const QBy
 }
 
 void ArenaLlmClient::complete(const ArenaLlmRequest& req, std::function<void(ArenaLlmResult)> cb) {
+    const QString p = req.provider.trimmed().toLower();
+    if (fincept::policy::is_deprecated_llm_provider(p)) {
+        ArenaLlmResult r;
+        r.error = "this retired AI backend is disabled; configure DeepSeek in LLM settings";
+        cb(r);
+        return;
+    }
     // An agent-harness competitor ("harness:<id>"): a harness process, not HTTP.
-    if (ProviderCatalog::is_harness(req.provider)) {
+    if (ProviderCatalog::is_harness(p)) {
         auto* harness = findChild<HarnessArenaClient*>(QString(), Qt::FindDirectChildrenOnly);
         if (!harness)
             harness = new HarnessArenaClient(this);
         harness->complete(req, std::move(cb));
         return;
     }
-    const QString p = req.provider.toLower();
+    if (p == "fincept" && !fincept::policy::fincept_metered_services_enabled()) {
+        ArenaLlmResult r;
+        r.error = "blocked by the community credit firewall; select a user-funded API provider";
+        cb(r);
+        return;
+    }
     QString url = ProviderCatalog::chat_endpoint(p, req.base_url, req.model_id);
     if (p == "fincept")
         url = fincept::AppConfig::instance().api_base_url() + "/research/chat";

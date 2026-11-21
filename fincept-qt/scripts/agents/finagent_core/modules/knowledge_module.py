@@ -25,6 +25,7 @@ import logging
 import re
 
 from finagent_core.run_errors import AgentFeatureUnavailable
+from finagent_core.provider_policy import normalize_embedder_config
 
 logger = logging.getLogger(__name__)
 
@@ -106,7 +107,7 @@ class KnowledgeModule:
 
         Args:
             name: Knowledge base name
-            embedder_provider: Embedding provider ('openai', 'ollama', ...)
+            embedder_provider: Embedding provider ('openai', 'sentence_transformer', ...)
             embedder_model: Specific embedding model
             vectordb_type: Vector database type ('local' = built-in store)
             vectordb_config: Vector database configuration
@@ -125,6 +126,7 @@ class KnowledgeModule:
                 (p for p in _KEYED_EMBEDDERS if EmbedderRegistry.resolve_api_key(p, self.api_keys)),
                 "openai",
             )
+        embedder_provider, embedder_model = normalize_embedder_config(embedder_provider, embedder_model)
         self.embedder_provider = embedder_provider
         self.embedder_model = embedder_model
         self.vectordb_type = (vectordb_type or DEFAULT_VECTORDB).lower()
@@ -155,8 +157,9 @@ class KnowledgeModule:
 
         problem = EmbedderRegistry.missing_requirement(self.embedder_provider, self.api_keys)
         if problem:
-            hint = "" if self.embedder_provider == "ollama" else \
-                " Add the key in Settings, or choose the 'ollama' embedder (runs locally)."
+            hint = (" Install the local Sentence Transformers dependency."
+                    if self.embedder_provider == "sentence_transformer"
+                    else " Add the key in Settings, or choose the local Sentence Transformers embedder.")
             raise self._fail(problem + "." + hint)
         try:
             self._embedder = EmbedderRegistry.create_embedder(

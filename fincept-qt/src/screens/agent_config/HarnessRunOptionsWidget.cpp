@@ -2,6 +2,7 @@
 
 #include "screens/agent_config/HarnessRunOptionsWidget.h"
 
+#include "core/policy/CommunityPolicy.h"
 #include "core/process/HostExec.h"
 #include "screens/agent_config/AgentRunCommon.h"
 #include "screens/agent_config/AgentPromptTemplates.h"
@@ -346,10 +347,11 @@ void HarnessRunOptionsWidget::rebuild_harness_combo() {
         return;
     const QSignalBlocker block(harness_combo_);
     harness_model_->clear();
-    const QStringList installed = registry.installed_ids();
+    QStringList installed = registry.installed_ids();
+    installed.removeIf([](const QString& id) { return !policy::is_ai_backend_selectable(id); });
     QStringList others;
     for (const QString& id : registry.ids()) {
-        if (!installed.contains(id))
+        if (policy::is_ai_backend_selectable(id) && !installed.contains(id))
             others << id;
     }
     auto add = [this, &registry](const QString& id, bool is_installed) {
@@ -376,7 +378,7 @@ void HarnessRunOptionsWidget::rebuild_harness_combo() {
         for (const QString& id : others)
             add(id, false);
     }
-    if (!unknown_harness_.isEmpty()) {
+    if (!unknown_harness_.isEmpty() && policy::is_ai_backend_selectable(unknown_harness_)) {
         auto* item = new QStandardItem(registry.display_name(unknown_harness_));
         item->setData(unknown_harness_, Qt::UserRole);
         harness_model_->appendRow(item);

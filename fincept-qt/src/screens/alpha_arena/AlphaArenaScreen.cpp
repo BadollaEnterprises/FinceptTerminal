@@ -237,7 +237,7 @@ QWidget* AlphaArenaScreen::build_empty_state() {
                    "the market, decides and trades its own account; the leaderboard ranks them by equity.");
     s.details = {{tr("Market data"), tr("Real Hyperliquid prices")},
                  {tr("Money"), tr("Paper — simulated fills, no real funds")},
-                 {tr("Models"), tr("Any provider with an API key, an agent harness, or free with local Ollama")},
+                 {tr("Models"), tr("Your configured API providers and eligible agent harnesses")},
                  {tr("Cost"), tr("One model call per competitor per round (default every 3 minutes)")}};
     s.details_heading = tr("HOW IT RUNS");
     s.primary = tr("+  NEW COMPETITION");
@@ -254,24 +254,22 @@ void AlphaArenaScreen::refresh_start_page() {
     if (!start_state_)
         return;
     // Which competitors could be picked right now (the wizard's own registry).
-    // Keyless providers (Fincept LLM uses credits, local Ollama) are always
-    // listed; say so when nothing with the user's own key is ready.
+    // The registry has already removed retired and metered fallback routes. Treat
+    // every ready entry here as an intentional BYO model or connected harness.
     QStringList ready;
-    bool keyed = false;
+    bool ready_byo = false;
     for (const auto& o : fincept::arena::ArenaModelRegistry::instance().available_models()) {
         if (!o.ready)
             continue;
+        ready_byo = true;
         const QString name = fincept::ai_chat::ProviderCatalog::display_name(o.provider);
         if (!ready.contains(name))
             ready << name;
-        const QString p = o.provider.toLower();
-        keyed = keyed || (p != QLatin1String("fincept") && p != QLatin1String("ollama"));
     }
     QString note;
     ui::EmptyState::Tone tone = ui::EmptyState::Tone::Info;
-    if (!keyed) {
-        note = tr("No provider key yet — Fincept LLM (uses credits) and local Ollama work without one; add keys in "
-                  "Settings > LLM Configuration");
+    if (!ready_byo) {
+        note = tr("No BYO model is ready — add your DeepSeek API key in Settings > LLM Configuration.");
         tone = ui::EmptyState::Tone::Warning;
     } else {
         note = tr("Ready: %1").arg(ready.join(QStringLiteral(", ")));

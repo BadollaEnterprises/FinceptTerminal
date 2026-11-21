@@ -3,6 +3,7 @@
 #include "auth/AuthManager.h"
 #include "services/alpha_arena/ArenaModelReadiness.h"
 #include "core/logging/Logger.h"
+#include "core/policy/CommunityPolicy.h"
 #include "services/harness/HarnessEligibility.h"
 #include "services/harness/HarnessRegistry.h"
 #include "services/harness/IHarnessAdapter.h"
@@ -103,6 +104,9 @@ QVector<ArenaModelOption> ArenaModelRegistry::available_models() const {
     QSet<QString> seen;
     QSet<QString> providers_present; // providers that contributed in layers 1-3
     auto add = [&](ArenaModelOption o) {
+        const QString provider = o.provider.toLower();
+        if (!fincept::policy::is_ai_backend_selectable(provider) || provider == QLatin1String("fincept"))
+            return;
         const QString key = o.provider.toLower() + "/" + o.model_id;
         if (o.model_id.isEmpty() || seen.contains(key))
             return;
@@ -174,9 +178,10 @@ QVector<ArenaModelOption> ArenaModelRegistry::available_models() const {
     // 4. Catalog browse layer — every known provider is selectable in the
     //    wizard even without an llm_configs row yet. Skipped for providers that
     //    already contributed above (their rows carry real key/model state).
-    //    ready only for keyless providers (ollama/fincept); ollama's fallback
-    //    list is intentionally empty (live /api/tags), so it may add nothing.
+    //    Fincept stays unavailable because this build never spends hosted credits.
     for (const QString& p : ProviderCatalog::known_providers()) {
+        if (!policy::is_ai_backend_selectable(p) || p == QLatin1String("fincept"))
+            continue;
         if (providers_present.contains(p.toLower()))
             continue;
         const bool ready = !ProviderCatalog::requires_api_key(p);
@@ -197,6 +202,8 @@ QVector<ArenaModelOption> ArenaModelRegistry::available_models() const {
     //    display_name stays the plain name: it becomes the agent's name.
     for (const auto& row : arena_harness_layer_detail::arena_harness_rows()) {
         const ai_chat::RouterHarness& h = row.state;
+        if (!policy::is_ai_backend_selectable(QStringLiteral("harness:") + h.id))
+            continue;
         const QString vendor = h.vendor.isEmpty() ? h.display_name : h.vendor;
         for (const QString& mid : row.models) {
             ArenaModelOption o;
@@ -222,6 +229,13 @@ QVector<ArenaModelOption> ArenaModelRegistry::available_models() const {
 
 Result<ArenaCredentials> ArenaModelRegistry::resolve_credentials(const QString& source_kind, const QString& source_ref,
                                                                  const QString& provider) const {
+    const QString normalized_provider = provider.trimmed().toLower();
+    if (fincept::policy::is_deprecated_llm_provider(normalized_provider))
+        return Result<ArenaCredentials>::err("retired AI backend; configure DeepSeek instead");
+    if (normalized_provider == QLatin1String("fincept") &&
+        !fincept::policy::fincept_metered_services_enabled())
+        return Result<ArenaCredentials>::err("blocked by the community credit firewall");
+
     ArenaCredentials cred;
     // A harness authenticates with the user's own CLI setup: no key, no endpoint.
     // Whether it may answer right now is re-checked by the harness call itself.

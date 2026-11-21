@@ -3,6 +3,8 @@
 
 #include "services/alpha_arena/ArenaStore.h"
 
+#include "core/policy/CommunityPolicy.h"
+
 #include <QDateTime>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -69,6 +71,8 @@ AgentRow map_agent(QSqlQuery& q) {
     a.provider = q.value(2).toString();
     a.model_id = q.value(3).toString();
     a.display_name = q.value(4).toString();
+    if (fincept::policy::is_deprecated_llm_provider(a.provider))
+        a.display_name = QStringLiteral("Legacy AI (disabled)");
     a.color_hex = q.value(5).toString();
     a.source_kind = q.value(6).toString();
     a.source_ref = q.value(7).toString();

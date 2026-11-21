@@ -2,6 +2,7 @@
 
 #include "screens/settings/AgentConnectSection.h"
 
+#include "core/policy/CommunityPolicy.h"
 #include "core/process/HostExec.h"
 #include "mcp/McpProvider.h"
 #include "mcp/core/CoreTools.h"
@@ -756,6 +757,8 @@ void AgentConnectSection::rebuild_client_list() {
     client_combo_->clear();
     client_keys_.clear();
     for (const QString& id : registry.ids()) {
+        if (!policy::is_ai_backend_selectable(QStringLiteral("harness:") + id))
+            continue;
         const std::optional<harness::McpRegistration> reg = ac_registration(id);
         if (!reg || (reg->manual_args.isEmpty() && reg->config_snippet.isEmpty() && !reg->add))
             continue;
@@ -895,8 +898,8 @@ void AgentConnectSection::retranslate() {
                               "list, one read-only call — and reports pass or fail per client. Calls no AI model."));
     check_table_->setAccessibleName(tr("Connection check results"));
     if (!check_running_ && !check_done_)
-        check_hint_->setText(tr("Checks that Claude Code, Codex, Gemini CLI, Qwen Code, Cursor, Copilot, Grok, VS Code and "
-                                "stdio clients can connect, before you set one up. It first confirms that this edition of "
+        check_hint_->setText(tr("Checks that supported local coding-agent CLIs, editor integrations and "
+                                "stdio clients can connect before you set one up. It first confirms that this edition of "
                                 "the terminal is the one answering, so the access token is never sent elsewhere."));
     retranslate_check_headers();
 

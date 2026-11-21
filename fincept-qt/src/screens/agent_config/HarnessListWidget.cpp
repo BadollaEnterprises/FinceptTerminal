@@ -2,6 +2,7 @@
 
 #include "screens/agent_config/HarnessListWidget.h"
 
+#include "core/policy/CommunityPolicy.h"
 #include "core/process/HostExec.h"
 #include "screens/agent_config/AgentRunCommon.h"
 #include "services/coding_agents/CodingAgentTypes.h"
@@ -99,6 +100,7 @@ using namespace harness_list_detail;
 
 HarnessTableModel::HarnessTableModel(QObject* parent) : QAbstractTableModel(parent) {
     ids_ = harness::HarnessRegistry::instance().ids();
+    ids_.removeIf([](const QString& id) { return !policy::is_ai_backend_selectable(id); });
 }
 
 int HarnessTableModel::rowCount(const QModelIndex& parent) const {
@@ -533,7 +535,10 @@ void HarnessListWidget::fit_table() {
 
 void HarnessListWidget::refresh_summary() {
     auto& registry = harness::HarnessRegistry::instance();
-    const QStringList installed = registry.installed_ids();
+    QStringList available = registry.ids();
+    available.removeIf([](const QString& id) { return !policy::is_ai_backend_selectable(id); });
+    QStringList installed = registry.installed_ids();
+    installed.removeIf([](const QString& id) { return !policy::is_ai_backend_selectable(id); });
     int signed_in = 0;
     for (const QString& id : installed) {
         if (registry.status(id).auth.state == harness::AuthState::SignedIn)
@@ -541,7 +546,7 @@ void HarnessListWidget::refresh_summary() {
     }
     QString text = installed.isEmpty()
                        ? tr("No harness installed yet — pick one below for its install guide.")
-                       : tr("%1 of %2 installed · %3 signed in").arg(installed.size()).arg(registry.ids().size()).arg(signed_in);
+                       : tr("%1 of %2 installed · %3 signed in").arg(installed.size()).arg(available.size()).arg(signed_in);
     const QString def = registry.default_harness();
     if (!def.isEmpty())
         text += QStringLiteral(" · ") + tr("default: %1").arg(registry.display_name(def));

@@ -15,6 +15,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 import logging
 
+from finagent_core.provider_policy import normalize_byo_model_config, resolve_byo_model_config
+
 logger = logging.getLogger(__name__)
 
 # System prompt given to the LLM router — lists all intents and asks for a JSON decision
@@ -314,6 +316,7 @@ class SuperAgent:
     ):
         self.api_keys = api_keys or {}
         self.classifier = IntentClassifier()  # keyword fallback
+        model_config = normalize_byo_model_config(model_config, self.api_keys)
         self.llm_router = LLMRouter(model_config=model_config, api_keys=self.api_keys)
         self.routes: Dict[QueryIntent, RouteConfig] = {}
         self.fallback_agent_id = "core_agent"
@@ -405,27 +408,8 @@ class SuperAgent:
             self.classifier.keywords.setdefault(route.intent, []).extend(route.keywords)
 
     def _resolve_model_config_from_keys(self, api_keys: Dict[str, Any]) -> Dict[str, Any]:
-        """Derive provider + base_url from available api_keys instead of hardcoding openai."""
-        keys = api_keys or {}
-        preferred = ["fincept", "ollama", "anthropic", "google", "groq",
-                     "deepseek", "openai", "openrouter"]
-        for provider in preferred:
-            if keys.get(provider) or keys.get(f"{provider.upper()}_API_KEY"):
-                config = {"provider": provider}
-                # Pick up custom base_url if shipped (e.g. MiniMax behind anthropic provider)
-                base_url = keys.get(f"{provider}_base_url") or keys.get(f"{provider.upper()}_BASE_URL")
-                if base_url:
-                    config["base_url"] = base_url
-                return config
-        for k, v in keys.items():
-            if k.endswith("_API_KEY") and v:
-                provider = k[:-8].lower()
-                config = {"provider": provider}
-                base_url = keys.get(f"{provider}_base_url") or keys.get(f"{provider.upper()}_BASE_URL")
-                if base_url:
-                    config["base_url"] = base_url
-                return config
-        return {"provider": "openai"}
+        """Resolve a zero-credit provider, with user-owned DeepSeek first."""
+        return resolve_byo_model_config(api_keys)
 
     def route(self, query: str) -> RoutingResult:
         """
@@ -506,9 +490,14 @@ class SuperAgent:
         from finagent_core.core_agent import CoreAgent
         from finagent_core.agent_loader import get_loader
 
-        # Pass user model config to LLM router so it can use the same provider
+        # Migrate saved Fincept/Ollama/Codex routes before either the router or
+        # the selected agent can inspect them. This keeps secondary routing on
+        # the same user-owned provider boundary as ordinary agent execution.
+        normalized_user_model = None
         if user_config and user_config.get("model"):
-            self.llm_router.model_config = user_config["model"]
+            normalized_user_model = normalize_byo_model_config(
+                user_config["model"], self.api_keys)
+            self.llm_router.model_config = normalized_user_model
 
         # Route query (LLM-based) unless the caller already did
         if routing is None:
@@ -516,8 +505,8 @@ class SuperAgent:
         logger.info(f"Routed to {routing.agent_id} with confidence {routing.confidence:.2f}")
 
         # Build config - use user's model config if provided, otherwise resolve from api_keys
-        if user_config and user_config.get("model"):
-            model_config = user_config["model"]
+        if normalized_user_model:
+            model_config = normalized_user_model
         else:
             model_config = self._resolve_model_config_from_keys(getattr(self, "api_keys", {}))
 

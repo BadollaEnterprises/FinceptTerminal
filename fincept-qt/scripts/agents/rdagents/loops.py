@@ -27,6 +27,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from finagent_core.provider_policy import DEPRECATED_PROVIDERS
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -83,7 +85,7 @@ def loop_class(kind: str) -> Any:
 # ---------------------------------------------------------------------------
 
 # Providers that run locally and need no API key (a base_url is enough).
-_KEYLESS_PROVIDERS = {"ollama", "lmstudio", "lm_studio", "local", "vllm", "llamacpp"}
+_KEYLESS_PROVIDERS = {"lmstudio", "lm_studio", "local", "vllm", "llamacpp"}
 
 
 def _env_ci(name: str) -> str | None:
@@ -164,6 +166,8 @@ def preflight(kind: str, llm_config: dict[str, Any] | None = None,
         provider = str(llm_config.get("llm_provider") or "").lower()
         if not provider:
             missing.append("an LLM: no provider is configured for AI Quant Lab (Settings > LLM Config)")
+        elif provider in DEPRECATED_PROVIDERS:
+            missing.append(f"LLM provider '{provider}' is disabled; configure a DeepSeek profile")
         elif not llm_config.get("llm_api_key") and not (
                 provider in _KEYLESS_PROVIDERS and llm_config.get("llm_base_url")):
             missing.append(f"an API key for the LLM provider '{provider}' (Settings > LLM Config)")

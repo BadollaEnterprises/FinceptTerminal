@@ -11,6 +11,8 @@ import logging
 import json
 import os
 
+from finagent_core.provider_policy import normalize_byo_model_config, resolve_byo_model_config
+
 logger = logging.getLogger(__name__)
 
 
@@ -358,17 +360,8 @@ class CoreAgent:
     # ============================================================
 
     def _resolve_model_config(self) -> Dict[str, Any]:
-        """Derive provider from api_keys passed at runtime instead of hardcoding openai."""
-        keys = self.api_keys or {}
-        preferred = ["fincept", "ollama", "anthropic", "google", "groq",
-                     "deepseek", "openai", "openrouter"]
-        for provider in preferred:
-            if keys.get(provider) or keys.get(f"{provider.upper()}_API_KEY"):
-                return {"provider": provider}
-        for k, v in keys.items():
-            if k.endswith("_API_KEY") and v:
-                return {"provider": k[:-8].lower()}
-        return {"provider": "openai"}
+        """Resolve a zero-credit provider, with user-owned DeepSeek first."""
+        return resolve_byo_model_config(self.api_keys)
 
     def run_stock_analysis(self, symbol: str, config: Dict[str, Any] = None) -> Dict[str, Any]:
         """Run stock analysis workflow."""
@@ -690,6 +683,7 @@ class CoreAgent:
     def _create_model(self, model_config: Dict[str, Any]) -> Any:
         """Create a model instance from config (used for team coordinator)."""
         from finagent_core.registries import ModelsRegistry
+        model_config = normalize_byo_model_config(model_config, self.api_keys)
         provider = model_config.get("provider") or self._resolve_model_config()["provider"]
         return ModelsRegistry.create_model(
             provider=provider,
@@ -724,7 +718,7 @@ class CoreAgent:
         # =================================================================
         # 1. Create Model
         # =================================================================
-        model_config = config.get("model", {})
+        model_config = normalize_byo_model_config(config.get("model", {}), self.api_keys)
         provider = model_config.get("provider", "")
         if not provider:
             fallback = self._resolve_model_config()
@@ -735,7 +729,7 @@ class CoreAgent:
                 "Configure an LLM provider in Settings > LLM Config."
             )
 
-        # Pass any extra model-level kwargs (e.g. max_tool_rounds for FinceptChat).
+        # Pass any extra model-level kwargs supported by the selected provider.
         # Explicitly exclude all known non-constructor fields so metadata never
         # leaks into provider constructors as unexpected kwargs.
         _MODEL_RESERVED_KEYS = {
@@ -898,11 +892,17 @@ class CoreAgent:
 
                 # Create reasoning model if specified
                 if reasoning_config.get("model"):
+                    reasoning_model_config = normalize_byo_model_config(
+                        reasoning_config["model"], self.api_keys)
                     reasoning_model = ModelsRegistry.create_model(
-                        provider=reasoning_config["model"].get("provider", model_config.get("provider", "openai")),
-                        model_id=reasoning_config["model"].get("model_id"),
+                        provider=reasoning_model_config.get(
+                            "provider", model_config.get("provider", "deepseek")),
+                        model_id=reasoning_model_config.get("model_id"),
+                        api_key=reasoning_model_config.get("api_key") or None,
                         api_keys=self.api_keys,
-                        temperature=0.3,  # Lower temperature for reasoning
+                        temperature=reasoning_model_config.get("temperature", 0.3),
+                        max_tokens=reasoning_model_config.get("max_tokens"),
+                        base_url=reasoning_model_config.get("base_url") or None,
                     )
                     agent_kwargs["reasoning_model"] = reasoning_model
 

@@ -1357,6 +1357,17 @@ class TestMcpUiEngine : public QObject {
 
     // ── Markers: kinds, inheritance, keys, cells, dialogs ───────────────────
 
+    void zero_credit_disclosure_is_not_misclassified_as_a_spend() {
+        const auto local_model =
+            eng::classify_words(QStringLiteral("model: deepseek-flash · reply <= 4k · 0 credits · billed to your api key"));
+        QVERIFY(!local_model.risky);
+
+        const auto billed = eng::classify_words(QStringLiteral("analyze · uses 12 credits"));
+        QVERIFY(billed.risky);
+        QCOMPARE(billed.kind, QStringLiteral("spend"));
+        QVERIFY(eng::classify_words(QStringLiteral("upgrade to pro")).risky);
+    }
+
     void marker_kinds_and_container_inheritance() {
         QVERIFY(eng::risk_for_kind(QStringLiteral("code")).risky);
         QVERIFY(eng::risk_for_kind(QStringLiteral("CODE")).why.contains(QStringLiteral("runs code")));

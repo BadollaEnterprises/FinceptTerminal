@@ -35,6 +35,8 @@ sys.path.insert(0, str(_HERE))
 # Also add scripts/agents/ so deepagents imports work if needed
 sys.path.insert(0, str(_HERE.parent))
 
+from finagent_core.provider_policy import DEPRECATED_PROVIDERS
+
 logging.basicConfig(
     stream=sys.stderr,
     level=logging.INFO,
@@ -43,6 +45,14 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 _KINDS = ("factor_mining", "model_optimization", "quant_research")
+
+
+def _provider_policy_error(config: dict[str, Any]) -> str | None:
+    provider = str(config.get("llm_provider") or "").strip().lower()
+    if provider in DEPRECATED_PROVIDERS:
+        return (f"LLM provider '{provider}' is disabled. Configure your DeepSeek API key and "
+                "select a DeepSeek profile for AI Quant Lab.")
+    return None
 
 
 def _out(obj: Any) -> None:
@@ -137,6 +147,8 @@ def cmd_run_task(params: dict[str, Any]) -> None:
     workspace_path = Path(workspace).resolve()
 
     llm_config = params.get("config") or {}
+    if policy_error := _provider_policy_error(llm_config):
+        fail(policy_error)
     try:
         _prepare_process_env(workspace_path)
         # Must precede the rdagent import: rdagent's LLM settings (CHAT_MODEL ...)

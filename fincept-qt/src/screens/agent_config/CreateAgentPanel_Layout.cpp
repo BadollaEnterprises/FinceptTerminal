@@ -445,7 +445,7 @@ QWidget* CreateAgentPanel::build_form_panel() {
         knowledge_embedder_lbl_ = field_lbl(tr("Embedder"));
         kr2->addWidget(knowledge_embedder_lbl_);
         knowledge_embedder_combo_ = new QComboBox;
-        knowledge_embedder_combo_->addItems({"openai", "ollama", "sentence-transformers"});
+        knowledge_embedder_combo_->addItems({"openai", "sentence-transformers"});
         knowledge_embedder_combo_->setStyleSheet(combo_style());
         kr2->addWidget(knowledge_embedder_combo_, 1);
         sl->addLayout(kr2);

@@ -2,6 +2,7 @@
 
 #include "screens/agent_config/AgentRunPanel.h"
 
+#include "core/policy/CommunityPolicy.h"
 #include "screens/agent_config/AgentRunCommon.h"
 #include "screens/agent_config/AgentRunFilesView.h"
 #include "screens/agent_config/AgentTranscriptView.h"
@@ -462,7 +463,8 @@ void AgentRunPanel::set_view_tab(int tab) {
 void AgentRunPanel::refresh_empty_state() {
     auto& svc = ca::CodingAgentService::instance();
     auto& registry = harness::HarnessRegistry::instance();
-    const QStringList installed = registry.installed_ids();
+    QStringList installed = registry.installed_ids();
+    installed.removeIf([](const QString& id) { return !policy::is_ai_backend_selectable(id); });
     if (!svc.run_ids().isEmpty()) {
         empty_title_->setText(tr("NO RUN SELECTED"));
         empty_text_->setText(tr("Pick a run in the RUNS list, or open the latest one. Runs keep going in the "

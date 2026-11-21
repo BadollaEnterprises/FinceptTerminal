@@ -145,7 +145,13 @@ void CreateAgentPanel::load_agent_into_form(const AgentConfig& cfg) {
     int vi = knowledge_vectordb_combo_->findText(kc["vector_db"].toString());
     if (vi >= 0)
         knowledge_vectordb_combo_->setCurrentIndex(vi);
-    int ei = knowledge_embedder_combo_->findText(kc["embedder"].toString());
+    QString embedder = kc["embedder"].toString().trimmed();
+    // Ollama was offered by older builds. Keep saved agents usable without
+    // reconnecting that retired backend: the bundled local embedder is the
+    // closest zero-credit replacement and needs no API key.
+    if (embedder.compare(QLatin1String("ollama"), Qt::CaseInsensitive) == 0)
+        embedder = QStringLiteral("sentence-transformers");
+    int ei = knowledge_embedder_combo_->findText(embedder);
     if (ei >= 0)
         knowledge_embedder_combo_->setCurrentIndex(ei);
 

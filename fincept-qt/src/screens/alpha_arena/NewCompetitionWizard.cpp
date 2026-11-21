@@ -122,9 +122,8 @@ void NewCompetitionWizard::build_step1() {
     v->addWidget(model_warning_);
     model_hint_ = new QLabel(tr("Pick a provider on the left, then check its models — selections "
                                 "from several providers combine. A greyed entry says what it needs (hover for "
-                                "details): an API key in Settings > LLM Configuration, or for an agent harness "
-                                "an API-key sign-in or your OK (click the row). Ollama and Fincept work without "
-                                "a key."));
+                                "details): an API key in Settings > LLM Configuration, or for an optional agent "
+                                "harness an API-key sign-in and your approval."));
     model_hint_->setWordWrap(true);
     model_hint_->setStyleSheet(QString("color:%1;").arg(TEXT_TERTIARY()));
     v->addWidget(model_hint_);

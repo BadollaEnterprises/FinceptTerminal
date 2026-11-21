@@ -3,7 +3,7 @@ cli.py — C++ entry point for Fincept Deep Agents.
 
 Single responsibility:
   - Receive a command + JSON params from C++ (AIQuantLabService::run_deep_agent)
-  - Dispatch to agent.py (tool-calling LLMs) or orchestrator.py (fallback)
+  - Dispatch supported user-owned tool-calling models to agent.py
   - Return one JSON object on stdout; all logs go to stderr
 
 Usage:
@@ -45,8 +45,8 @@ if str(_HERE) not in sys.path:
 
 logger = logging.getLogger(__name__)
 
-from models import create_model, extract_text, supports_tool_calling
-from subagents import get_subagents_for_type, list_agent_types, list_subagent_names, AGENT_SUBAGENTS
+from models import create_model, extract_text, provider_policy_error, supports_tool_calling
+from subagents import list_agent_types, list_subagent_names, AGENT_SUBAGENTS
 
 # ---------------------------------------------------------------------------
 # Availability check (import deepagents lazily so CLI starts fast)
@@ -106,6 +106,10 @@ def cmd_execute_task(params: dict[str, Any]) -> dict[str, Any]:
 
     context_data = params.get("context", {})
 
+    policy_error = provider_policy_error(config)
+    if policy_error:
+        return _error(policy_error)
+
     if supports_tool_calling(config):
         return _execute_with_deepagents(
             task=task,
@@ -115,11 +119,10 @@ def cmd_execute_task(params: dict[str, Any]) -> dict[str, Any]:
             context_data=context_data,
         )
 
-    return _execute_with_orchestrator(
-        task=task,
-        agent_type=agent_type,
-        config=config,
-        thread_id=thread_id,
+    shown = str(config.get("llm_provider") or "none")
+    return _error(
+        f"LLM provider '{shown}' does not support the tools required by AI Quant Lab. "
+        "Select a user-owned tool-calling provider such as DeepSeek."
     )
 
 
@@ -160,22 +163,6 @@ def _execute_with_deepagents(
         # Never silently fall through — log and report
         logger.error("deepagents execution failed: %s\n%s", exc, traceback.format_exc())
         return _error(str(exc))
-
-
-def _execute_with_orchestrator(
-    task: str,
-    agent_type: str,
-    config: dict[str, Any],
-    thread_id: str,
-) -> dict[str, Any]:
-    """Execute via FinceptOrchestrator (non-tool-calling LLM fallback)."""
-    from orchestrator import FinceptOrchestrator
-    subagent_names = [s["name"] for s in get_subagents_for_type(agent_type)]
-    # The provider decides whether llm_api_key may be sent to api.fincept.in at all.
-    orch = FinceptOrchestrator(api_key=config.get("llm_api_key"), provider=config.get("llm_provider", ""))
-    result = orch.execute(task, agent_type, subagent_names)
-    result["thread_id"] = thread_id
-    return result
 
 
 def _format_result(raw: dict[str, Any], thread_id: str) -> dict[str, Any]:

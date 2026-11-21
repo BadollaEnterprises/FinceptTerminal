@@ -14,6 +14,8 @@ from datetime import date
 from typing import Any, Dict, Iterator, List, Optional, Callable, Union
 import logging
 
+from finagent_core.provider_policy import normalize_byo_model_config, resolve_byo_provider
+
 logger = logging.getLogger(__name__)
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -23,22 +25,14 @@ def _today() -> str:
 
 
 def _resolve_provider(api_keys: Dict[str, str]) -> str:
-    """Pick first configured provider from api_keys."""
-    preferred = ["fincept", "ollama", "anthropic", "google", "groq",
-                 "deepseek", "openai", "openrouter"]
-    for p in preferred:
-        if api_keys.get(p) or api_keys.get(f"{p.upper()}_API_KEY"):
-            return p
-    for k, v in api_keys.items():
-        if k.endswith("_API_KEY") and v:
-            return k[:-8].lower()
-    return "openai"
+    """Pick a zero-credit provider, with user-owned DeepSeek first."""
+    return resolve_byo_provider(api_keys)
 
 
 def _make_model(api_keys: Dict[str, str], model_config: Optional[Dict] = None):
     """Create an agno Model from api_keys + optional model_config dict."""
     from finagent_core.registries import ModelsRegistry
-    cfg = model_config or {}
+    cfg = normalize_byo_model_config(model_config, api_keys)
     provider = cfg.get("provider") or _resolve_provider(api_keys)
     return ModelsRegistry.create_model(
         provider=provider,

@@ -8,6 +8,7 @@
 
 #include "core/events/EventBus.h"
 #include "core/logging/Logger.h"
+#include "core/policy/CommunityPolicy.h"
 #include "core/session/ScreenStateManager.h"
 #include "mcp/server/McpHttpServer.h"
 #include "screens/agent_config/AgentPromptTemplates.h"
@@ -26,6 +27,7 @@
 #include "services/agents/AgentService.h"
 #include "services/coding_agents/CodingAgentService.h"
 #include "services/harness/HarnessRegistry.h"
+#include "services/llm/ProviderCatalog.h"
 #include "ui/theme/Theme.h"
 #include "ui/widgets/EmptyState.h"
 #include "ui/widgets/ScreenCommandBar.h"
@@ -306,7 +308,8 @@ void AgentConfigScreen::update_status() {
                 if (m.isEmpty())
                     m = mo.value(QStringLiteral("model")).toString();
             }
-            model = a.provider.isEmpty() ? m : (m.isEmpty() ? a.provider : a.provider + QStringLiteral(" · ") + m);
+            const QString provider = ai_chat::ProviderCatalog::display_name(a.provider);
+            model = a.provider.isEmpty() ? m : (m.isEmpty() ? provider : provider + QStringLiteral(" · ") + m);
             break;
         }
     }
@@ -336,11 +339,13 @@ void AgentConfigScreen::update_status() {
                           srv.is_running() ? SB::Tone::Ok : SB::Tone::Dim);
     auto& registry = harness::HarnessRegistry::instance();
     int ready = 0;
+    QStringList available = registry.ids();
+    available.removeIf([](const QString& id) { return !policy::is_ai_backend_selectable(id); });
     for (const QString& hid : registry.installed_ids())
-        if (awb_harness_state(hid).tone == AwbHarnessTone::Ready)
+        if (policy::is_ai_backend_selectable(hid) && awb_harness_state(hid).tone == AwbHarnessTone::Ready)
             ++ready;
     status_bar_->set_item(QStringLiteral("harnesses"),
-                          tr("%1/%2 CODING AGENTS READY").arg(ready).arg(registry.ids().size()),
+                          tr("%1/%2 CODING AGENTS READY").arg(ready).arg(available.size()),
                           ready > 0 ? SB::Tone::Ok : SB::Tone::Dim);
 }
 

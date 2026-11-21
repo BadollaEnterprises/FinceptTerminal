@@ -2,6 +2,7 @@
 
 #include "screens/agent_config/AgentRail.h"
 
+#include "core/policy/CommunityPolicy.h"
 #include "screens/agent_config/AgentRunCommon.h"
 #include "screens/agent_config/AgentRunListLogic.h"
 #include "services/agent_tasks/TaskRunService.h"
@@ -9,6 +10,7 @@
 #include "services/coding_agents/CodingAgentService.h"
 #include "services/harness/HarnessRegistry.h"
 #include "services/harness/IHarnessAdapter.h"
+#include "services/llm/ProviderCatalog.h"
 #include "storage/repositories/AgentConfigRepository.h"
 #include "ui/theme/Theme.h"
 #include "ui/theme/ThemeManager.h"
@@ -364,7 +366,8 @@ void AgentRail::rebuild() {
                 parent = rail_item(cat.toUpper(), QStringLiteral("category"), QStringLiteral("c:") + cat);
                 categories.insert(cat, parent);
             }
-            auto* it = rail_item(a.name, QStringLiteral("agent"), a.id, a.provider.toUpper(), kDim);
+            auto* it = rail_item(a.name, QStringLiteral("agent"), a.id,
+                                 ai_chat::ProviderCatalog::display_name(a.provider), kDim);
             it->setToolTip(a.description);
             parent->appendRow(it);
         }
@@ -400,11 +403,14 @@ void AgentRail::rebuild() {
         if (r->status == ca::RunStatus::Running)
             running_by_harness[r->harness] += 1;
     }
-    const QStringList installed = registry.installed_ids();
+    QStringList available = registry.ids();
+    available.removeIf([](const QString& id) { return !policy::is_ai_backend_selectable(id); });
+    QStringList installed = registry.installed_ids();
+    installed.removeIf([](const QString& id) { return !policy::is_ai_backend_selectable(id); });
     auto* harness_group = rail_item(tr("CODING AGENTS"), QStringLiteral("group"), QStringLiteral("g:harnesses"),
-                                    tr("%1/%2").arg(installed.size()).arg(registry.ids().size()), kDim);
+                                    tr("%1/%2").arg(installed.size()).arg(available.size()), kDim);
     root->appendRow(harness_group);
-    for (const QString& id : registry.ids()) {
+    for (const QString& id : available) {
         const AwbHarnessState state = awb_harness_state(id);
         QString chip = state.word;
         int tone = harness_tone(state.tone);

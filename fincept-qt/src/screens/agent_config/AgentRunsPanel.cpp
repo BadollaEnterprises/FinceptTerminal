@@ -236,7 +236,7 @@ QVariant AgentRunsTableModel::data(const QModelIndex& index, int role) const {
         if (col == ColEngine) {
             switch (r.engine) {
                 case ar::Engine::Harness:
-                    return tr("Coding-agent harness run (Claude Code, Codex …) — transcript in the inspector");
+                    return tr("Coding-agent harness run — transcript in the inspector");
                 case ar::Engine::Agentic:
                     return tr("Local agentic task — plan, steps, budget and replies in the inspector");
                 case ar::Engine::Chat:
@@ -815,7 +815,7 @@ void AgentRunsPanel::retranslate() {
     libraries_btn_->setToolTip(tr("Skills, archival memory and reflexions the agentic runner keeps"));
     for (QPushButton* b : {schedule_task_btn_, task_schedules_btn_, libraries_btn_})
         b->setVisible(agentic_enabled_);
-    hint_lbl_->setText(tr("Every engine in one list: HARNESS runs (Claude Code, Codex …), AGENTIC tasks and CHAT Mode "
+    hint_lbl_->setText(tr("Every engine in one list: HARNESS runs, AGENTIC tasks and CHAT Mode "
                           "runs. Select a run to see it in the inspector; Enter or double-click moves the focus there. "
                           "Deleting a harness run removes its transcript; the working folder stays on disk."));
     model_->retranslate_headers();

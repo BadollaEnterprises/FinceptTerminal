@@ -2,6 +2,7 @@
 #include "screens/agent_config/SystemViewPanel.h"
 
 #include "core/logging/Logger.h"
+#include "core/policy/CommunityPolicy.h"
 #include "services/agents/AgentService.h"
 #include "storage/repositories/LlmConfigRepository.h"
 #include "ui/theme/Theme.h"
@@ -290,7 +291,15 @@ void SystemViewPanel::populate_llm_list() {
         return;
     }
 
-    const auto& list = providers.value();
+    QVector<LlmConfig> list;
+    for (const auto& provider : providers.value()) {
+        const QString id = provider.provider.trimmed().toLower();
+        if (policy::is_deprecated_llm_provider(id))
+            continue;
+        if (id == QLatin1String("fincept") && !policy::fincept_metered_services_enabled())
+            continue;
+        list.append(provider);
+    }
     llms_count_->setText(QString::number(list.size()));
 
     if (list.isEmpty()) {

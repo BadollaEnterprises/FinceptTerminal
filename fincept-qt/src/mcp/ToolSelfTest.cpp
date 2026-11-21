@@ -231,6 +231,48 @@ int run_tool_selftest() {
               {{0, 2}, {2, 4}, {4, 5}});
         check(QStringLiteral("a barrier runs alone"), {false, false, true, false, false}, 4, {{0, 2}, {2, 3}, {3, 5}});
         check(QStringLiteral("consecutive barriers stay serial"), {true, true}, 4, {{0, 1}, {1, 2}});
+
+        // Provider-reported input tokens are a separate spend budget from the
+        // round/time limits: a few very large rounds must stop even when round
+        // capacity remains.
+        ai_chat::detail::ToolLoopBudget token_budget(/*max_rounds=*/10, /*prompt_token_limit=*/32000);
+        token_budget.note_prompt_tokens(18000);
+        if (token_budget.exhausted())
+            errs << QStringLiteral("the prompt-token budget stopped below its limit");
+        token_budget.note_prompt_tokens(15000);
+        if (!token_budget.exhausted())
+            errs << QStringLiteral("the prompt-token budget did not stop above its limit");
+        if (!token_budget.prompt_tokens_exhausted())
+            errs << QStringLiteral("the budget did not identify prompt tokens as the stop reason");
+        if (!token_budget.exhaustion_note().contains(QStringLiteral("33,000")) ||
+            !token_budget.exhaustion_note().contains(QStringLiteral("32,000")))
+            errs << QStringLiteral("the token-budget explanation omitted used/limit counts: %1")
+                        .arg(token_budget.exhaustion_note());
+
+        // Output is billed too. A reasoning model can otherwise spend the
+        // per-request completion allowance again on every tool round even
+        // while the input side remains below its ceiling.
+        ai_chat::detail::ToolLoopBudget output_budget(/*max_rounds=*/10, /*prompt_token_limit=*/32000,
+                                                      /*completion_token_limit=*/12000);
+        output_budget.note_prompt_tokens(5000);
+        output_budget.note_completion_tokens(7000);
+        if (output_budget.exhausted())
+            errs << QStringLiteral("the completion-token budget stopped below its limit");
+        output_budget.note_completion_tokens(5500);
+        if (!output_budget.exhausted())
+            errs << QStringLiteral("the completion-token budget did not stop above its limit");
+        if (!output_budget.completion_tokens_exhausted() || !output_budget.provider_token_budget_exhausted())
+            errs << QStringLiteral("the budget did not identify completion tokens as the stop reason");
+        if (output_budget.allows_summary_tool_calls())
+            errs << QStringLiteral("a completion-token stop still allowed a summary tool-call follow-up");
+        if (token_budget.allows_summary_tool_calls())
+            errs << QStringLiteral("a prompt-token stop still allowed a summary tool-call follow-up");
+        if (!output_budget.exhaustion_note().contains(QStringLiteral("12,500")) ||
+            !output_budget.exhaustion_note().contains(QStringLiteral("12,000")))
+            errs << QStringLiteral("the completion-budget explanation omitted used/limit counts: %1")
+                        .arg(output_budget.exhaustion_note());
+        if (ai_chat::detail::tool_loop_summary_max_tokens() != 1024)
+            errs << QStringLiteral("the exhausted-loop summary allowance is not the safe 1,024-token default");
         // UI-changing tools must be barriers: two ui_act calls racing would
         // interleave their steps on the GUI thread.
         const QString prefix = QString::fromLatin1(INTERNAL_SERVER_ID) + QStringLiteral("__");
@@ -250,7 +292,41 @@ int run_tool_selftest() {
 
     // ── [5] Python script policy ─────────────────────────────────────────────
     {
-        out(QStringLiteral("\n[5] PYTHON SCRIPT POLICY"));
+        out(QStringLiteral("\n[5] AGGREGATE TOOL-RESULT BUDGET"));
+        QStringList errs;
+        const std::vector<QString> names = {QStringLiteral("quotes"), QStringLiteral("news"),
+                                            QStringLiteral("fundamentals"), QStringLiteral("technicals")};
+        std::vector<ToolResult> results;
+        for (int i = 0; i < static_cast<int>(names.size()); ++i) {
+            QJsonObject data{{QStringLiteral("source"), names[static_cast<std::size_t>(i)]},
+                             {QStringLiteral("rows"), QString(12000, QLatin1Char('A' + i))}};
+            results.push_back(ToolResult::ok(QStringLiteral("large parallel result"), data));
+        }
+
+        constexpr int kRoundBudget = 6000;
+        const std::vector<QString> encoded =
+            ai_chat::detail::encode_tool_results_for_llm(names, results, kRoundBudget, 3000);
+        int total_bytes = 0;
+        for (const QString& text : encoded) {
+            total_bytes += text.toUtf8().size();
+            const QJsonObject envelope = QJsonDocument::fromJson(text.toUtf8()).object();
+            if (!envelope.value(QStringLiteral("truncated")).toBool() ||
+                envelope.value(QStringLiteral("result_id")).toString().isEmpty())
+                errs << QStringLiteral("an oversized parallel result lost its overflow reference");
+        }
+        if (encoded.size() != results.size())
+            errs << QStringLiteral("the encoder did not return one message per tool call");
+        if (total_bytes > kRoundBudget)
+            errs << QStringLiteral("parallel results used %1 bytes, over the %2-byte round budget")
+                        .arg(total_bytes)
+                        .arg(kRoundBudget);
+        report_list(QStringLiteral("aggregate result-budget failures"), errs, true);
+        critical += static_cast<int>(errs.size());
+    }
+
+    // ── [6] Python script policy ──
+    {
+        out(QStringLiteral("\n[6] PYTHON SCRIPT POLICY"));
         QStringList errs;
         using core::python_scripts::classify;
         using core::python_scripts::normalize_script_key;

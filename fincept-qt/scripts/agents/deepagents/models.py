@@ -40,6 +40,17 @@ _OPENAI_COMPAT = {
     "azure":      None,  # base_url must be supplied by caller
 }
 
+_DEPRECATED_PROVIDERS = {"fincept", "ollama", "codex", "harness:codex"}
+
+
+def provider_policy_error(config: dict[str, Any]) -> str | None:
+    """Return a user-facing error for routes this product must never execute."""
+    provider = str(config.get("llm_provider") or "").lower().strip()
+    if provider in _DEPRECATED_PROVIDERS:
+        return (f"LLM provider '{provider}' is disabled. Configure your DeepSeek API key and "
+                "select a DeepSeek profile for AI Quant Lab.")
+    return None
+
 
 def create_model(config: dict[str, Any]):
     """

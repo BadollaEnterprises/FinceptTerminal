@@ -15,6 +15,8 @@ import sys
 import os
 import re as _re
 
+from finagent_core.provider_policy import resolve_byo_provider
+
 # Strip all emoji and non-BMP characters from text before emitting.
 # This avoids cp1252 encoding errors on Windows and keeps terminal output clean.
 _EMOJI_RE = _re.compile(
@@ -78,17 +80,8 @@ class StreamingCoreAgent:
         self.stream_callback(chunk_type, content, metadata)
 
     def _resolve_provider_from_keys(self) -> str:
-        """Derive provider from api_keys instead of defaulting to openai."""
-        keys = self.api_keys or {}
-        preferred = ["fincept", "ollama", "anthropic", "google", "groq",
-                     "deepseek", "openai", "openrouter"]
-        for provider in preferred:
-            if keys.get(provider) or keys.get(f"{provider.upper()}_API_KEY"):
-                return provider
-        for k, v in keys.items():
-            if k.endswith("_API_KEY") and v:
-                return k[:-8].lower()
-        return "openai"
+        """Resolve a zero-credit provider, with user-owned DeepSeek first."""
+        return resolve_byo_provider(self.api_keys)
 
     def run_streaming(
         self,
@@ -114,8 +107,8 @@ class StreamingCoreAgent:
         provider = model_config.get("provider") or self._resolve_provider_from_keys()
 
         # Providers that support native streaming
-        streaming_providers = ["openai", "anthropic", "groq", "together", "fireworks", "ollama",
-                               "fincept", "google", "deepseek", "openrouter"]
+        streaming_providers = ["openai", "anthropic", "groq", "together", "fireworks",
+                               "google", "deepseek", "openrouter"]
 
         if provider in streaming_providers:
             # Use native streaming
