@@ -36,7 +36,7 @@ case "$architecture" in
     architecture="arm64"
     configure_target="darwin64-arm64-cc"
     ;;
-  x86_64|amd64)
+  x86_64|amd64|x64)
     architecture="x86_64"
     configure_target="darwin64-x86_64-cc"
     ;;

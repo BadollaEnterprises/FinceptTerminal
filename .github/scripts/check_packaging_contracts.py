@@ -22,6 +22,9 @@ def main() -> int:
     text = workflow.read_text(encoding="utf-8")
     cmake_text = (root / "fincept-qt" / "CMakeLists.txt").read_text(encoding="utf-8")
     lint_text = (root / ".github" / "workflows" / "lint.yml").read_text(encoding="utf-8")
+    macos_openssl_text = (
+        root / ".github" / "scripts" / "build_macos_openssl.sh"
+    ).read_text(encoding="utf-8")
     failures: list[str] = []
 
     require(
@@ -100,6 +103,12 @@ def main() -> int:
         text,
         'ZLIB_DIR="$VCPKG_ROOT/installed/$ZLIB_TRIPLET"',
         "ZLIB_ROOT must follow the selected matrix architecture",
+        failures,
+    )
+    require(
+        macos_openssl_text,
+        "x86_64|amd64|x64)",
+        "macOS OpenSSL builder must accept the workflow's x64 architecture label",
         failures,
     )
 
