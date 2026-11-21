@@ -18,7 +18,8 @@ int run_deepseek_live_smoke() {
     service.reload_config();
 
     for (const auto& item : deepseek_live_smoke_plan()) {
-        const QJsonObject cfg = service.resolved_config_json(ChatRoute{.feature = item.feature});
+        const ChatRoute route{item.feature, QString(), QString()};
+        const QJsonObject cfg = service.resolved_config_json(route);
         if (cfg.value(QStringLiteral("provider")).toString().compare(QLatin1String("deepseek"),
                                                                     Qt::CaseInsensitive) != 0 ||
             cfg.value(QStringLiteral("api_key")).toString().trimmed().isEmpty()) {
@@ -46,8 +47,8 @@ int run_deepseek_live_smoke() {
     qint64 observed_cached = 0;
     for (const auto& item : deepseek_live_smoke_plan()) {
         const int probes_before = probe_calls.load(std::memory_order_relaxed);
-        const LlmResponse response = service.chat(item.prompt, {}, item.use_tools,
-                                                  ChatRoute{.feature = item.feature});
+        const ChatRoute route{item.feature, QString(), QString()};
+        const LlmResponse response = service.chat(item.prompt, {}, item.use_tools, route);
         const QString marker = QStringLiteral("DEEPSEEK_") + item.id.toUpper() + QStringLiteral("_OK");
         const bool provider_ok = response.provider.compare(QLatin1String("deepseek"), Qt::CaseInsensitive) == 0;
         const bool tool_ok = !item.use_tools || probe_calls.load(std::memory_order_relaxed) > probes_before;
