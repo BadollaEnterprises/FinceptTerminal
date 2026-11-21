@@ -5,6 +5,17 @@
 using fincept::ChatMessage;
 using fincept::chat_mode::compose_local_chat_prompt;
 
+namespace {
+
+ChatMessage chat_message(const QString& role, const QString& content) {
+    ChatMessage message;
+    message.role = role;
+    message.content = content;
+    return message;
+}
+
+} // namespace
+
 class TestLocalChatHistory : public QObject {
     Q_OBJECT
 
@@ -21,10 +32,10 @@ void TestLocalChatHistory::first_turn_stays_clean() {
 
 void TestLocalChatHistory::prior_turns_are_labeled_for_the_local_agent() {
     QVector<ChatMessage> history;
-    history.append(ChatMessage{.role = QStringLiteral("user"), .content = QStringLiteral("Compare TCS and INFY")});
-    history.append(ChatMessage{.role = QStringLiteral("assistant"),
-                               .content = QStringLiteral("TCS has the steadier margin profile.")});
-    history.append(ChatMessage{.role = QStringLiteral("system"), .content = QStringLiteral("Do not carry this over")});
+    history.append(chat_message(QStringLiteral("user"), QStringLiteral("Compare TCS and INFY")));
+    history.append(chat_message(QStringLiteral("assistant"),
+                                QStringLiteral("TCS has the steadier margin profile.")));
+    history.append(chat_message(QStringLiteral("system"), QStringLiteral("Do not carry this over")));
 
     const QString prompt = compose_local_chat_prompt(history, QStringLiteral("What about valuation?"));
     QVERIFY(prompt.contains(QStringLiteral("<conversation_history>")));
@@ -36,9 +47,8 @@ void TestLocalChatHistory::prior_turns_are_labeled_for_the_local_agent() {
 
 void TestLocalChatHistory::recent_turns_win_when_history_is_bounded() {
     QVector<ChatMessage> history;
-    history.append(ChatMessage{.role = QStringLiteral("user"), .content = QStringLiteral("OLDEST-") + QString(120, 'a')});
-    history.append(ChatMessage{.role = QStringLiteral("assistant"),
-                               .content = QStringLiteral("RECENT-") + QString(80, 'b')});
+    history.append(chat_message(QStringLiteral("user"), QStringLiteral("OLDEST-") + QString(120, 'a')));
+    history.append(chat_message(QStringLiteral("assistant"), QStringLiteral("RECENT-") + QString(80, 'b')));
 
     const QString prompt = compose_local_chat_prompt(history, QStringLiteral("Continue"), 360, 140);
     QVERIFY(prompt.size() <= 360);

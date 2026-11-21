@@ -87,10 +87,12 @@ void TestByoChatExecutor::streams_and_finishes_with_zero_fincept_credits() {
     QCOMPARE(engine->started_prompt, QStringLiteral("What changed since yesterday?"));
     engine->chunk(QStringLiteral("Partial "));
     engine->chunk(QStringLiteral("answer"));
-    engine->finish(ByoChatResult{.success = true,
-                                .content = QStringLiteral("Partial answer"),
-                                .prompt_tokens = 40,
-                                .completion_tokens = 12});
+    ByoChatResult result;
+    result.success = true;
+    result.content = QStringLiteral("Partial answer");
+    result.prompt_tokens = 40;
+    result.completion_tokens = 12;
+    engine->finish(result);
 
     QCOMPARE(chunks, QVector<QString>({QStringLiteral("Partial "), QStringLiteral("answer")}));
     QCOMPARE(status, RunStatus::Completed);
@@ -133,7 +135,10 @@ void TestByoChatExecutor::cancellation_reaches_the_active_request() {
     executor.start(chat_run(), {});
     executor.cancel(QStringLiteral("run-1"));
     QCOMPARE(engine->cancelled_id, QStringLiteral("run-1"));
-    engine->finish(ByoChatResult{.cancelled = true, .content = QStringLiteral("Partial")});
+    ByoChatResult result;
+    result.cancelled = true;
+    result.content = QStringLiteral("Partial");
+    engine->finish(result);
     QCOMPARE(status, RunStatus::Cancelled);
 }
 

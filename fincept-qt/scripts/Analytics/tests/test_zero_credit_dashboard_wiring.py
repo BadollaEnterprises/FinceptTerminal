@@ -884,9 +884,9 @@ class ZeroCreditDashboardWiringTest(unittest.TestCase):
     def test_maritime_community_results_never_restore_paid_refresh_wording(self):
         handlers = (ROOT / "src/screens/maritime/MaritimeScreen_Handlers.cpp").read_text(encoding="utf-8")
         result = handlers[handlers.index("void MaritimeScreen::apply_vessels_page") :]
-        self.assertIn("const bool metered = policy::fincept_metered_services_enabled()", result[:1600])
+        self.assertIn("constexpr bool metered = policy::fincept_metered_services_enabled()", result[:1600])
         paid_cache = result.index('set_status(tr("AS OF %1 · ⟳ REFRESH = 8 CR")')
-        guard = result.rfind("if (metered", 0, paid_cache)
+        guard = result.rfind("if constexpr (!metered)", 0, paid_cache)
         self.assertGreater(guard, paid_cache - 800)
         self.assertIn("LOCAL SAMPLE · 0 FINCEPT CREDITS", result[:12000])
 
