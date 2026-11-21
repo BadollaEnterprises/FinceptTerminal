@@ -412,8 +412,12 @@ jobs:
           # Always an x64 host tool. For ARM64 cross-compiled builds
           # QT_ROOT_DIR points to the ARM64 kit; windeployqt lives in x64.
           # ----------------------------------------------------------------
+          WDQT_RUNTIME_ARG="--compiler-runtime"
           if [ "${{ matrix.arch }}" = "arm64" ]; then
             WDQT="${QT_HOST_ROOT}/bin/windeployqt.exe"
+            # Host windeployqt would otherwise stage x64 MSVC runtimes into
+            # the ARM64 bundle. The target CRT is copied explicitly below.
+            WDQT_RUNTIME_ARG="--no-compiler-runtime"
           else
             WDQT="${QT_ROOT_DIR}/bin/windeployqt.exe"
           fi
@@ -423,13 +427,47 @@ jobs:
             "$WDQT" \
               --release \
               --no-translations \
-              --compiler-runtime \
+              "${WDQT_RUNTIME_ARG}" \
               --include-soft-plugins \
               --force \
               dist/${{ matrix.exe }}
           else
             echo "::error::windeployqt not found at ${WDQT} — refusing to publish an incomplete Qt bundle"
             exit 1
+          fi
+
+          # ARM64 cross-builds must use the x64 windeployqt host executable,
+          # but that tool copies binaries from its own x64 Qt installation.
+          # Replace every deployed PE file with the matching file from the
+          # target ARM64 Qt kit. Files with no target counterpart are optional
+          # host-only plugins/runtimes and are removed; explicit target sweeps
+          # below then add the supported module/plugin set.
+          if [ "${{ matrix.arch }}" = "arm64" ]; then
+            while IFS= read -r -d '' deployed_file; do
+              relative_path="${deployed_file#dist/}"
+              case "$relative_path" in
+                "${{ matrix.exe }}"|qgeoview.dll) continue ;;
+              esac
+
+              replacement=""
+              for candidate in \
+                "${QT_ROOT_DIR}/plugins/${relative_path}" \
+                "${QT_ROOT_DIR}/bin/$(basename "$relative_path")" \
+                "${QT_ROOT_DIR}/${relative_path}"; do
+                if [ -f "$candidate" ]; then
+                  replacement="$candidate"
+                  break
+                fi
+              done
+
+              if [ -n "$replacement" ]; then
+                cp -f "$replacement" "$deployed_file"
+                echo "Rehydrated ARM64 ${relative_path}"
+              else
+                rm -f "$deployed_file"
+                echo "Removed host-only deployment file ${relative_path}"
+              fi
+            done < <(find dist -type f \( -iname '*.dll' -o -iname '*.exe' \) -print0)
           fi
 
           QT_BIN="${QT_ROOT_DIR}/bin"
@@ -496,17 +534,35 @@ jobs:
           # from System32 as a fallback for anything missed.
           # msvcp170 / vcruntime140_2 are the VS2022 v17.x toolset DLLs.
           # ----------------------------------------------------------------
-          for vcrt_dll in \
-            vcruntime140.dll vcruntime140_1.dll vcruntime140_2.dll \
-            msvcp140.dll msvcp140_1.dll msvcp140_2.dll \
-            msvcp170.dll \
-            concrt140.dll vccorlib140.dll; do
-            SYS32="/c/Windows/System32/${vcrt_dll}"
-            if [ -f "$SYS32" ] && [ ! -f "dist/${vcrt_dll}" ]; then
-              cp "$SYS32" dist/
-              echo "Copied MSVC runtime ${vcrt_dll}"
+          if [ "${{ matrix.arch }}" = "arm64" ]; then
+            VSWHERE="/c/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe"
+            [ -x "$VSWHERE" ] || { echo "::error::vswhere not found at ${VSWHERE}"; exit 1; }
+            VS_ROOT_WINDOWS=$("$VSWHERE" -latest -products '*' -property installationPath | tr -d '\r')
+            VS_ROOT=$(cygpath -u "$VS_ROOT_WINDOWS")
+            CRT_DIR=$(find "$VS_ROOT/VC/Redist/MSVC" -type d \
+              -path '*/arm64/Microsoft.VC*.CRT' | sort -V | tail -n 1)
+            if [ -z "$CRT_DIR" ] || [ ! -d "$CRT_DIR" ]; then
+              echo "::error::Visual Studio ARM64 CRT directory not found under ${VS_ROOT}/VC/Redist/MSVC"
+              exit 1
             fi
-          done
+            for runtime_dll in "$CRT_DIR"/*.dll; do
+              [ -f "$runtime_dll" ] || continue
+              cp -f "$runtime_dll" dist/
+              echo "Copied ARM64 MSVC runtime $(basename "$runtime_dll")"
+            done
+          else
+            for vcrt_dll in \
+              vcruntime140.dll vcruntime140_1.dll vcruntime140_2.dll \
+              msvcp140.dll msvcp140_1.dll msvcp140_2.dll \
+              msvcp170.dll \
+              concrt140.dll vccorlib140.dll; do
+              SYS32="/c/Windows/System32/${vcrt_dll}"
+              if [ -f "$SYS32" ] && [ ! -f "dist/${vcrt_dll}" ]; then
+                cp "$SYS32" dist/
+                echo "Copied MSVC runtime ${vcrt_dll}"
+              fi
+            done
+          fi
 
           # ----------------------------------------------------------------
           # Qt Platform Plugin — mandatory, app won't start without it
@@ -690,6 +746,11 @@ jobs:
           mkdir -p dist/resources
           cp -r resources/. dist/resources/
           bash ../.github/scripts/sync_scripts.sh scripts dist/scripts
+
+          # A cross-compiled executable surrounded by host x64 DLLs uploads
+          # successfully but cannot start on Windows ARM64. Audit every staged
+          # PE binary before the artifact can leave CI.
+          python3 ../.github/scripts/check_windows_pe_arch.py dist "${{ matrix.arch }}"
 
           # ----------------------------------------------------------------
           # Final diagnostic — list everything that will be zipped

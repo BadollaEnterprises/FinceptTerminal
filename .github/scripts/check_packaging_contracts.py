@@ -32,6 +32,7 @@ def main() -> int:
     python_framework_script = (
         root / ".github" / "scripts" / "embed_macos_python_framework.sh"
     )
+    pe_arch_script = root / ".github" / "scripts" / "check_windows_pe_arch.py"
     failures: list[str] = []
 
     require(
@@ -70,6 +71,32 @@ def main() -> int:
         "Windows packaging must fail instead of publishing an incomplete Qt bundle",
         failures,
     )
+    require(
+        text,
+        'WDQT_RUNTIME_ARG="--no-compiler-runtime"',
+        "Windows ARM64 packaging must not copy the host compiler runtime",
+        failures,
+    )
+    require(
+        text,
+        'Rehydrated ARM64 ${relative_path}',
+        "Windows ARM64 packaging must replace host Qt binaries from the target kit",
+        failures,
+    )
+    require(
+        text,
+        "-path '*/arm64/Microsoft.VC*.CRT'",
+        "Windows ARM64 packaging must copy the target Visual Studio runtime",
+        failures,
+    )
+    require(
+        text,
+        'check_windows_pe_arch.py dist "${{ matrix.arch }}"',
+        "Windows artifacts must pass a recursive PE architecture audit",
+        failures,
+    )
+    if not pe_arch_script.is_file():
+        failures.append("Windows PE architecture checker must exist")
     require(
         cmake_text,
         "libcrypto-3-arm64.dll",
