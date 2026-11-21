@@ -11,7 +11,7 @@ namespace fincept::services::maritime {
 
 inline VesselData community_vessel_position(const QString& requested_imo) {
     const QString imo = requested_imo.trimmed().isEmpty() ? QStringLiteral("9000001") : requested_imo.trimmed();
-    const quint32 seed = qHash(imo, 0);
+    const quint32 seed = static_cast<quint32>(qHash(imo, size_t{0}));
     const double lat = -55.0 + static_cast<double>(seed % 11000) / 100.0;
     const double lng = -175.0 + static_cast<double>((seed / 17) % 35000) / 100.0;
     const QStringList ports = {QStringLiteral("Singapore"), QStringLiteral("Rotterdam"),

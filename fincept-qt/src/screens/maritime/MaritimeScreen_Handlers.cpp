@@ -494,7 +494,7 @@ void MaritimeScreen::on_vessels_loaded(VesselsPage page) {
 
 void MaritimeScreen::apply_vessels_page(VesselsPage page, bool global_sample) {
     hide_map_loading();
-    const bool metered = policy::fincept_metered_services_enabled();
+    constexpr bool metered = policy::fincept_metered_services_enabled();
     // Leaving voyage-history mode: the table goes back to fleet columns and the
     // history summary (or its empty state) is hidden.
     history_mode_ = false;
@@ -612,38 +612,42 @@ void MaritimeScreen::apply_vessels_page(VesselsPage page, bool global_sample) {
                                 .arg(age_min));
     }
     // A cache hit carries no balance; show the session's (it follows billed calls).
-    if (metered && page.remaining_credits < 0) {
-        const auto& session = auth::AuthManager::instance().session();
-        if (session.authenticated)
-            update_credits(session.user_info.credit_balance);
+    if constexpr (metered) {
+        if (page.remaining_credits < 0) {
+            const auto& session = auth::AuthManager::instance().session();
+            if (session.authenticated)
+                update_credits(session.user_info.credit_balance);
+        }
     }
 
     // A copy older than the service's 10-minute window was shown on open without
     // a request: say how old it is and what refreshing costs.
     const qint64 copy_age_min =
         page.fetched_at_ms > 0 ? (QDateTime::currentMSecsSinceEpoch() - page.fetched_at_ms) / 60000 : 0;
-    if (metered && page.remaining_credits < 0 && copy_age_min >= 10) {
-        const QDateTime at = QDateTime::fromMSecsSinceEpoch(page.fetched_at_ms);
-        const bool today = at.date() == QDate::currentDate();
-        set_status(tr("AS OF %1 · ⟳ REFRESH = 8 CR")
-                       .arg(at.toString(today ? QStringLiteral("HH:mm") : QStringLiteral("dd MMM HH:mm")).toUpper()),
-                   "muted");
-        if (status_label_)
-            status_label_->setToolTip(tr("Vessel positions of your last load (%1), shown without spending credits. "
-                                         "⟳ REFRESH fetches the latest (8 credits).")
-                                          .arg(QLocale().toString(at, QLocale::ShortFormat)));
-    } else if (!metered) {
+    if constexpr (!metered) {
         set_status(tr("LOCAL SAMPLE · 0 FINCEPT CREDITS"), "positive");
         if (status_label_)
             status_label_->setToolTip(tr("Deterministic local vessel positions; refreshes never use Fincept credits."));
-    } else if (page.vessels.size() > kMtRenderLimit) {
-        set_status(tr("READY (table: newest %1 of %2, map: %3)")
-                       .arg(render_n)
-                       .arg(page.vessels.size())
-                       .arg(rendered_vessels_.size()),
-                   "amber");
     } else {
-        set_status(tr("READY"), "positive");
+        if (page.remaining_credits < 0 && copy_age_min >= 10) {
+            const QDateTime at = QDateTime::fromMSecsSinceEpoch(page.fetched_at_ms);
+            const bool today = at.date() == QDate::currentDate();
+            set_status(tr("AS OF %1 · ⟳ REFRESH = 8 CR")
+                           .arg(at.toString(today ? QStringLiteral("HH:mm") : QStringLiteral("dd MMM HH:mm")).toUpper()),
+                       "muted");
+            if (status_label_)
+                status_label_->setToolTip(tr("Vessel positions of your last load (%1), shown without spending credits. "
+                                             "⟳ REFRESH fetches the latest (8 credits).")
+                                                  .arg(QLocale().toString(at, QLocale::ShortFormat)));
+        } else if (page.vessels.size() > kMtRenderLimit) {
+            set_status(tr("READY (table: newest %1 of %2, map: %3)")
+                           .arg(render_n)
+                           .arg(page.vessels.size())
+                           .arg(rendered_vessels_.size()),
+                       "amber");
+        } else {
+            set_status(tr("READY"), "positive");
+        }
     }
 }
 
