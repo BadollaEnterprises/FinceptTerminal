@@ -18,7 +18,7 @@ third-party data or platform services can be replaced by an LLM.
 | Analytics regression suite | Pass | 246 of 246 tests passed. |
 | Packaged application diagnostics | Pass | All 14 flags returned by `FinceptTerminal --selftest-list` passed in the signed release bundle. |
 | macOS bundle integrity | Pass for local distribution | `codesign --verify --deep --strict` passed after the final release rebuild. The bundle is ad-hoc signed. |
-| Live unlocked UI walkthrough | Pending user action | The release reaches the secure six-digit PIN screen. AI Chat and symbol-command rendering still require the owner to unlock the running app locally. |
+| Live unlocked UI walkthrough | Pass | The signed release was unlocked locally. AI Chat displayed `DeepSeek / deepseek-flash`, `0 credits`, and billing to the user's DeepSeek key; Settings displayed all five BYO guardrails; `AAPL DES` opened Overview and `MSFT financials` opened Financials. |
 | Windows and Linux packages | Not verified | No Windows or Linux build host was available for this validation. |
 | Apple distribution | Not complete | Developer ID signing, hardened-runtime entitlements, notarization, and stapling require the owner's Apple distribution identity. |
 
@@ -75,13 +75,11 @@ used as a substitute for factual market feeds.
 
 ## Remaining release blockers
 
-1. Complete the unlocked visual walkthrough of AI Chat, the DeepSeek provider
-   badge, Settings guardrails, and at least one symbol-first command.
-2. Build and run the same test gates on Windows and Linux packaging hosts.
-3. Replace ad-hoc signing with Developer ID signing and complete notarization.
-4. Resolve or document the macOS deployment mismatch reported for Homebrew
+1. Build and run the same test gates on Windows and Linux packaging hosts.
+2. Replace ad-hoc signing with Developer ID signing and complete notarization.
+3. Resolve or document the macOS deployment mismatch reported for Homebrew
    OpenSSL dylibs built for a newer macOS than the application's 13.0 target.
-5. Revalidate live external feeds immediately before distribution because their
+4. Revalidate live external feeds immediately before distribution because their
    availability, schemas, limits, and latency are outside this repository.
 
 ## Reproduction commands
