@@ -1,6 +1,6 @@
 # BYO DeepSeek release-readiness record
 
-Last verified: 2026-11-21 on macOS (Apple Silicon)
+Last verified: 2026-11-22 on macOS (Apple Silicon)
 
 This document records the integration state of the community BYO-AI work on
 `community-byo-production-hardening`. It is an evidence log, not a claim that
@@ -16,8 +16,8 @@ third-party data or platform services can be replaced by an LLM.
 | Cache accounting survives restart | Pass | Provider cache-hit usage is written through local usage metrics and covered by the live smoke diagnostic. |
 | Native regression suite | Pass | 145 of 145 tests passed after the symbol-first workflow was added. |
 | Analytics regression suite | Pass | 246 of 246 tests passed. |
-| Packaged application diagnostics | Pass | All 14 flags returned by `FinceptTerminal --selftest-list` passed in the signed release bundle. |
-| macOS bundle integrity | Pass for local distribution | `codesign --verify --deep --strict` passed after the final release rebuild. The bundle is ad-hoc signed. |
+| Packaged application diagnostics | Pass | All 10 packaged CI self-tests passed with the bundled Qt offscreen plugin. |
+| macOS bundle integrity | Pass for local distribution | `codesign --verify --deep --strict` passed after the final release rebuild. The bundle is ad-hoc signed. OpenSSL 3.5.9 is bundle-relative, arm64, and built for macOS 13.0. |
 | Live unlocked UI walkthrough | Pass | The signed release was unlocked locally. AI Chat displayed `DeepSeek / deepseek-flash`, `0 credits`, and billing to the user's DeepSeek key; Settings displayed all five BYO guardrails; `AAPL DES` opened Overview and `MSFT financials` opened Financials. |
 | Windows and Linux packages | Not verified | No Windows or Linux build host was available for this validation. |
 | Apple distribution | Not complete | Developer ID signing, hardened-runtime entitlements, notarization, and stapling require the owner's Apple distribution identity. |
@@ -77,9 +77,7 @@ used as a substitute for factual market feeds.
 
 1. Build and run the same test gates on Windows and Linux packaging hosts.
 2. Replace ad-hoc signing with Developer ID signing and complete notarization.
-3. Resolve or document the macOS deployment mismatch reported for Homebrew
-   OpenSSL dylibs built for a newer macOS than the application's 13.0 target.
-4. Revalidate live external feeds immediately before distribution because their
+3. Revalidate live external feeds immediately before distribution because their
    availability, schemas, limits, and latency are outside this repository.
 
 ## Reproduction commands
@@ -89,7 +87,11 @@ From `fincept-qt`:
 ```sh
 ctest --test-dir build/tdd --output-on-failure
 python3 -m pytest scripts/Analytics/tests
-build/macos-release/FinceptTerminal.app/Contents/MacOS/FinceptTerminal --selftest-list
+../.github/scripts/build_macos_release.sh
+../.github/scripts/ci_app_checks.sh selftests \
+  build/macos-release/FinceptTerminal.app/Contents/MacOS/FinceptTerminal ci
+../.github/scripts/macos_verify_openssl.sh \
+  build/macos-release/FinceptTerminal.app/Contents/MacOS/FinceptTerminal 13.0
 codesign --verify --deep --strict build/macos-release/FinceptTerminal.app
 ```
 

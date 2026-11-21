@@ -4093,6 +4093,31 @@ if(APPLE AND DEPLOY_QT)
                 "$<TARGET_BUNDLE_DIR:FinceptTerminal>/Contents/PlugIns/sqldrivers/libqsqlmimer.dylib"
             COMMENT "Removing unused SQL driver plugins (ODBC/PostgreSQL/Mimer)..."
         )
+
+        # macdeployqt only stages Cocoa for a GUI app. Our release verification
+        # deliberately runs the packaged binary headlessly with
+        # QT_QPA_PLATFORM=offscreen, so keep that platform plugin in the bundle
+        # as well. This also makes diagnostics usable on display-less hosts.
+        cmake_path(GET Qt6_DIR PARENT_PATH _fincept_qt_cmake_dir)
+        cmake_path(GET _fincept_qt_cmake_dir PARENT_PATH _fincept_qt_lib_dir)
+        cmake_path(GET _fincept_qt_lib_dir PARENT_PATH _fincept_qt_prefix)
+        set(_fincept_qt_offscreen
+            "${_fincept_qt_prefix}/plugins/platforms/libqoffscreen.dylib")
+        if(EXISTS "${_fincept_qt_offscreen}")
+            add_custom_command(TARGET FinceptTerminal POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E make_directory
+                    "$<TARGET_BUNDLE_DIR:FinceptTerminal>/Contents/PlugIns/platforms"
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${_fincept_qt_offscreen}"
+                    "$<TARGET_BUNDLE_DIR:FinceptTerminal>/Contents/PlugIns/platforms/libqoffscreen.dylib"
+                COMMENT "Bundling Qt offscreen plugin for packaged self-tests..."
+                VERBATIM
+            )
+        else()
+            message(FATAL_ERROR
+                "Qt offscreen platform plugin is required for packaged self-tests: "
+                "${_fincept_qt_offscreen}")
+        endif()
     else()
         message(WARNING "macdeployqt not found — Qt frameworks will not be bundled. "
                         "Pass -DCMAKE_PREFIX_PATH=<Qt install dir> to help CMake find it.")
@@ -4267,6 +4292,22 @@ endif()
 
 find_package(OpenSSL REQUIRED)
 message(STATUS "OpenSSL found: ${OPENSSL_VERSION} — include: ${OPENSSL_INCLUDE_DIR}")
+if(APPLE AND OPENSSL_ROOT_DIR)
+    file(REAL_PATH "${OPENSSL_ROOT_DIR}" _fincept_openssl_root)
+    file(REAL_PATH "${OPENSSL_INCLUDE_DIR}" _fincept_openssl_include)
+    foreach(_fincept_openssl_path IN ITEMS
+            "${_fincept_openssl_include}"
+            "${OPENSSL_SSL_LIBRARY}"
+            "${OPENSSL_CRYPTO_LIBRARY}")
+        file(REAL_PATH "${_fincept_openssl_path}" _fincept_openssl_resolved_path)
+        string(FIND "${_fincept_openssl_resolved_path}/" "${_fincept_openssl_root}/" _fincept_openssl_root_position)
+        if(NOT _fincept_openssl_root_position EQUAL 0)
+            message(FATAL_ERROR
+                "OpenSSL discovery escaped OPENSSL_ROOT_DIR: ${_fincept_openssl_resolved_path} "
+                "is not under ${_fincept_openssl_root}. Reconfigure with --fresh.")
+        endif()
+    endforeach()
+endif()
 
 # zlib: gzip (Upstox master) + zip (Shoonya symbol masters) decompression.
 # See trading/instruments/InstrumentDecompress.cpp. System zlib on macOS/Linux,
@@ -4278,40 +4319,6 @@ else()
     find_package(ZLIB REQUIRED)
     message(STATUS "ZLIB found: ${ZLIB_VERSION_STRING}")
 endif()
-# ── macOS: make Qt's openssl TLS plugin discoverable ─────────────────────────
-# Qt's libqopensslbackend.dylib only searches /usr/local/lib, /opt/local/lib,
-# /sw/lib, /usr/lib and Qt's own lib dir for libssl/libcrypto. Homebrew on
-# Apple Silicon installs to /opt/homebrew which Qt does not search, so the
-# openssl plugin fails to register and Qt falls back to the deprecated Apple
-# SecureTransport backend — which double-frees in SSLWrite during QWebSocket
-# close and crashes the crypto tab.
-#
-# Symlink the OpenSSL dylibs from OPENSSL_ROOT_DIR into Qt's lib dir at
-# configure time so the openssl plugin loads and `QT_TLS_BACKEND=openssl`
-# (set in main.cpp) actually takes effect. Runs at configure (idempotent),
-# so it survives clean checkouts and Qt updates.
-if(APPLE AND OPENSSL_ROOT_DIR)
-    cmake_path(GET Qt6_DIR PARENT_PATH _ft_qt_cmake_dir)            # .../lib/cmake
-    cmake_path(GET _ft_qt_cmake_dir PARENT_PATH _ft_qt_lib_dir)     # .../lib
-    set(_ft_openssl_libs
-        libcrypto.dylib       libssl.dylib
-        libcrypto.3.dylib     libssl.3.dylib
-    )
-    foreach(_ft_lib IN LISTS _ft_openssl_libs)
-        set(_ft_src "${OPENSSL_ROOT_DIR}/lib/${_ft_lib}")
-        set(_ft_dst "${_ft_qt_lib_dir}/${_ft_lib}")
-        if(EXISTS "${_ft_src}" AND NOT EXISTS "${_ft_dst}")
-            execute_process(
-                COMMAND "${CMAKE_COMMAND}" -E create_symlink "${_ft_src}" "${_ft_dst}"
-                RESULT_VARIABLE _ft_rc
-            )
-            if(_ft_rc EQUAL 0)
-                message(STATUS "Symlinked ${_ft_lib} into Qt lib dir for TLS plugin discovery")
-            endif()
-        endif()
-    endforeach()
-endif()
-
 target_include_directories(FinceptTerminal PRIVATE
     "${OPENSSL_INCLUDE_DIR}"
     "${md4c_SOURCE_DIR}/src"
@@ -4333,6 +4340,28 @@ target_link_libraries(FinceptTerminal PRIVATE
     OpenSSL::Crypto
     fincept_ed25519
 )
+
+# Homebrew may publish OpenSSL dylibs with a newer LC_BUILD_VERSION than this
+# app's deployment target. Linking those libraries produces an app that builds
+# on the current runner but cannot launch on supported macOS releases. Bundle
+# the exact libraries selected by FindOpenSSL and reject incompatible binaries
+# at build time. The release scripts provide a pinned macOS-13 build.
+if(APPLE)
+    if(NOT OPENSSL_SSL_LIBRARY OR NOT OPENSSL_CRYPTO_LIBRARY)
+        message(FATAL_ERROR "FindOpenSSL did not expose the macOS SSL/Crypto library paths")
+    endif()
+    file(REAL_PATH "${OPENSSL_SSL_LIBRARY}" _fincept_openssl_ssl)
+    file(REAL_PATH "${OPENSSL_CRYPTO_LIBRARY}" _fincept_openssl_crypto)
+    add_custom_command(TARGET FinceptTerminal POST_BUILD
+        COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/../.github/scripts/macos_bundle_openssl.sh"
+            "$<TARGET_BUNDLE_DIR:FinceptTerminal>"
+            "${_fincept_openssl_ssl}"
+            "${_fincept_openssl_crypto}"
+            "${CMAKE_OSX_DEPLOYMENT_TARGET}"
+        COMMENT "Bundling deployment-compatible OpenSSL dylibs..."
+        VERBATIM
+    )
+endif()
 if(WIN32)
     target_link_libraries(FinceptTerminal PRIVATE Qt6::ZlibPrivate)
 else()

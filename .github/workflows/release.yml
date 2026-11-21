@@ -1597,6 +1597,15 @@ jobs:
       - name: Install build tools
         run: brew install ninja cmake || brew upgrade ninja cmake || true
 
+      - name: Build deployment-compatible OpenSSL
+        env:
+          FINCEPT_MACOS_ARCH: arm64
+        run: |
+          set -euo pipefail
+          OPENSSL_PREFIX="${RUNNER_TEMP}/fincept-openssl-3.5.9-macos13-arm64"
+          .github/scripts/build_macos_openssl.sh "$OPENSSL_PREFIX" 13.0
+          echo "OPENSSL_ROOT_DIR=$OPENSSL_PREFIX" >> "$GITHUB_ENV"
+
       # ── Qt ────────────────────────────────────────────────────────────────
       - name: Install Qt ${{ env.QT_VERSION }}
         uses: jurplel/install-qt-action@v4
@@ -1684,6 +1693,8 @@ jobs:
           cmake -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
             -DCMAKE_PREFIX_PATH="${QT_ROOT_DIR}" \
+            -DOPENSSL_ROOT_DIR="${OPENSSL_ROOT_DIR}" \
+            -DOPENSSL_USE_STATIC_LIBS=OFF \
             -DCMAKE_OSX_ARCHITECTURES=arm64 \
             -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0 \
             -DCMAKE_C_COMPILER_LAUNCHER=ccache \
@@ -2106,6 +2117,8 @@ jobs:
             fi
           done < <(find "${APP_BUNDLE}" -type f 2>/dev/null)
           echo "  thinned ${THINNED_COUNT} Mach-O(s) to arm64"
+
+          ../.github/scripts/macos_verify_openssl.sh "${MAIN_BIN}" 13.0
 
       # ── Import Developer ID certificate into a temp keychain ──────────────
       # The cert + private key live in repo secrets (base64-encoded .p12).

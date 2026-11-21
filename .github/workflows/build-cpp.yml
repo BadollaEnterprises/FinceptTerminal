@@ -166,6 +166,20 @@ jobs:
           fi
           echo "static zlib confirmed: $ZLIB_DIR/lib/zlib.lib"
 
+      # Homebrew's rolling OpenSSL bottles can require a newer macOS than the
+      # app's 13.0 deployment target. Build the pinned release for each matrix
+      # architecture so the linked and bundled dylibs retain that target.
+      - name: Build deployment-compatible OpenSSL (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          FINCEPT_MACOS_ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          OPENSSL_PREFIX="${RUNNER_TEMP}/fincept-openssl-3.5.9-macos13-${FINCEPT_MACOS_ARCH}"
+          .github/scripts/build_macos_openssl.sh "$OPENSSL_PREFIX" 13.0
+          echo "OPENSSL_ROOT_DIR=$OPENSSL_PREFIX" >> "$GITHUB_ENV"
+
       # ---- Qt6 target (all platforms) ----
       # Linux is no longer excluded — see the matrix comment on the Linux
       # entry: apt Qt 6.2 can never satisfy CMakeLists' 6.8 pin.
@@ -633,7 +647,7 @@ jobs:
           # requirements-*.txt where the app looks for them.
           mkdir -p dist/resources
           cp -r resources/. dist/resources/
-          bash .github/scripts/sync_scripts.sh scripts dist/scripts
+          bash ../.github/scripts/sync_scripts.sh scripts dist/scripts
 
           # ----------------------------------------------------------------
           # Final diagnostic — list everything that will be zipped
@@ -698,7 +712,7 @@ jobs:
           # ── Stage resources INSIDE the bundle (not as siblings) ───────────
           mkdir -p "${APP_BUNDLE}/Contents/Resources"
           cp -r resources "${APP_BUNDLE}/Contents/Resources/" 2>/dev/null || true
-          bash .github/scripts/sync_scripts.sh scripts "${APP_BUNDLE}/Contents/Resources/scripts"
+          bash ../.github/scripts/sync_scripts.sh scripts "${APP_BUNDLE}/Contents/Resources/scripts"
 
           # ── Embed Python.framework (tag builds only — skip on push) ───────
           if [ "$IS_TAG" = "true" ]; then
@@ -731,6 +745,9 @@ jobs:
             "$MACDEPLOYQT" "${APP_BUNDLE}" -verbose=1 || \
               echo "::warning::macdeployqt exited non-zero — continuing to codesign"
           fi
+
+          ../.github/scripts/macos_verify_openssl.sh \
+            "${APP_BUNDLE}/Contents/MacOS/${{ matrix.exe }}" 13.0
 
           # ── Deep ad-hoc codesign (tag builds only) — fix for issue #139 ───
           # Strip every signature leaf-to-root, then re-sign whole bundle with
