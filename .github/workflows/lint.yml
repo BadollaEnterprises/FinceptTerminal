@@ -16,8 +16,8 @@ name: Lint
 #   clang-format, clang-tidy, datahub-discipline, cppcheck — pull requests that
 #     touch src/, CMakeLists.txt, the lint configs or this file (as before), and
 #     manual runs. Never on push.
-#   unit-tests — pull requests and pushes that touch src/, tests/ or
-#     CMakeLists.txt.
+#   unit-tests — pull requests and pushes that touch src/, tests/,
+#     scripts/Analytics/ or CMakeLists.txt.
 #   packaging-metadata — pull requests and pushes that touch packaging/,
 #     CMakeLists.txt, release/build workflows or .github/scripts/.
 # A change to this file runs all of them. If `changes` fails, every job runs
@@ -28,6 +28,7 @@ on:
     paths:
       - 'fincept-qt/src/**'
       - 'fincept-qt/tests/**'
+      - 'fincept-qt/scripts/Analytics/**'
       - 'fincept-qt/CMakeLists.txt'
       - 'fincept-qt/.clang-tidy'
       - 'fincept-qt/.clang-format'
@@ -41,6 +42,7 @@ on:
     paths:
       - 'fincept-qt/src/**'
       - 'fincept-qt/tests/**'
+      - 'fincept-qt/scripts/Analytics/**'
       - 'fincept-qt/CMakeLists.txt'
       - 'fincept-qt/packaging/**'
       - '.github/scripts/**'
@@ -116,7 +118,8 @@ jobs:
           scope lint      'fincept-qt/src/*' 'fincept-qt/CMakeLists.txt' 'fincept-qt/.clang-tidy' \
                           'fincept-qt/.clang-format' 'fincept-qt/.cppcheck-suppressions' \
                           '.github/workflows/lint.yml'
-          scope tests     'fincept-qt/src/*' 'fincept-qt/tests/*' 'fincept-qt/CMakeLists.txt' \
+          scope tests     'fincept-qt/src/*' 'fincept-qt/tests/*' 'fincept-qt/scripts/Analytics/*' \
+                          'fincept-qt/CMakeLists.txt' \
                           '.github/workflows/lint.yml'
           scope packaging 'fincept-qt/packaging/*' 'fincept-qt/CMakeLists.txt' '.github/scripts/*' \
                           '.github/workflows/build-cpp.yml' '.github/workflows/release.yml' \
@@ -452,6 +455,10 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
         run: ctest --test-dir build-tests --output-on-failure
+
+      - name: Run analytics contract tests
+        working-directory: fincept-qt
+        run: python3 -m unittest discover -s scripts/Analytics/tests -p 'test_*.py'
 
   # ── packaging-metadata ───────────────────────────────────────────────────────
   # Seconds-long gate on pull requests: CMakeLists.txt version vs the packaging
