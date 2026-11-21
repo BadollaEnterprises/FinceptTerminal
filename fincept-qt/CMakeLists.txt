@@ -4405,7 +4405,7 @@ if(WIN32)
     if(OPENSSL_CRYPTO_DLL MATCHES "\\.lib$" OR NOT OPENSSL_CRYPTO_DLL)
         # Search common locations for the DLL
         find_file(OPENSSL_CRYPTO_DLL_FILE
-            NAMES libcrypto-3-x64.dll libcrypto-3.dll libcrypto.dll
+            NAMES libcrypto-3-x64.dll libcrypto-3-arm64.dll libcrypto-3.dll libcrypto.dll
             HINTS
                 "${OPENSSL_ROOT_DIR}/bin"
                 "$ENV{QT_ROOT_DIR}/bin"
@@ -4413,7 +4413,7 @@ if(WIN32)
                 "C:/Program Files/OpenSSL-Win64/bin"
         )
         find_file(OPENSSL_SSL_DLL_FILE
-            NAMES libssl-3-x64.dll libssl-3.dll libssl.dll
+            NAMES libssl-3-x64.dll libssl-3-arm64.dll libssl-3.dll libssl.dll
             HINTS
                 "${OPENSSL_ROOT_DIR}/bin"
                 "$ENV{QT_ROOT_DIR}/bin"

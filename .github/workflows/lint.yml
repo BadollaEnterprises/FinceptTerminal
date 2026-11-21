@@ -19,7 +19,7 @@ name: Lint
 #   unit-tests — pull requests and pushes that touch src/, tests/ or
 #     CMakeLists.txt.
 #   packaging-metadata — pull requests and pushes that touch packaging/,
-#     CMakeLists.txt or .github/scripts/.
+#     CMakeLists.txt, release/build workflows or .github/scripts/.
 # A change to this file runs all of them. If `changes` fails, every job runs
 # instead of being skipped (a skipped job reports success to branch protection).
 # ─────────────────────────────────────────────────────────────────────────────
@@ -34,6 +34,8 @@ on:
       - 'fincept-qt/.cppcheck-suppressions'
       - 'fincept-qt/packaging/**'
       - '.github/scripts/**'
+      - '.github/workflows/build-cpp.yml'
+      - '.github/workflows/release.yml'
       - '.github/workflows/lint.yml'
   push:
     paths:
@@ -42,6 +44,8 @@ on:
       - 'fincept-qt/CMakeLists.txt'
       - 'fincept-qt/packaging/**'
       - '.github/scripts/**'
+      - '.github/workflows/build-cpp.yml'
+      - '.github/workflows/release.yml'
       - '.github/workflows/lint.yml'
   workflow_dispatch:
 
@@ -115,6 +119,7 @@ jobs:
           scope tests     'fincept-qt/src/*' 'fincept-qt/tests/*' 'fincept-qt/CMakeLists.txt' \
                           '.github/workflows/lint.yml'
           scope packaging 'fincept-qt/packaging/*' 'fincept-qt/CMakeLists.txt' '.github/scripts/*' \
+                          '.github/workflows/build-cpp.yml' '.github/workflows/release.yml' \
                           '.github/workflows/lint.yml'
 
   # ── clang-format ─────────────────────────────────────────────────────────────
@@ -468,3 +473,6 @@ jobs:
 
       - name: Version drift (CMakeLists.txt vs packaging metadata)
         run: bash .github/scripts/check_version_drift.sh .
+
+      - name: Cross-platform packaging contracts
+        run: python3 .github/scripts/check_packaging_contracts.py .

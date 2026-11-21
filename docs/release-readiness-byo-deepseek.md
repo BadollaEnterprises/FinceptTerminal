@@ -19,7 +19,8 @@ third-party data or platform services can be replaced by an LLM.
 | Packaged application diagnostics | Pass | All 10 packaged CI self-tests passed with the bundled Qt offscreen plugin. |
 | macOS bundle integrity | Pass for local distribution | `codesign --verify --deep --strict` passed after the final release rebuild. The bundle is ad-hoc signed. OpenSSL 3.5.9 is bundle-relative, arm64, and built for macOS 13.0. |
 | Live unlocked UI walkthrough | Pass | The signed release was unlocked locally. AI Chat displayed `DeepSeek / deepseek-flash`, `0 credits`, and billing to the user's DeepSeek key; Settings displayed all five BYO guardrails; `AAPL DES` opened Overview and `MSFT financials` opened Financials. |
-| Windows and Linux packages | Not verified | No Windows or Linux build host was available for this validation. |
+| Cross-platform packaging contracts | Pass | The fast CI gate verifies architecture-specific Windows OpenSSL/zlib triplets, ARM64 runtime DLL discovery, Qt host-tool deployment, and release-workflow trigger coverage. |
+| Windows and Linux packages | Not host-verified | Windows ARM64 packaging is statically hardened, but no Windows or Linux build host was available for an end-to-end package run. |
 | Apple distribution | Not complete | Developer ID signing, hardened-runtime entitlements, notarization, and stapling require the owner's Apple distribution identity. |
 
 ## Verified BYO AI routes
@@ -86,7 +87,8 @@ From `fincept-qt`:
 
 ```sh
 ctest --test-dir build/tdd --output-on-failure
-python3 -m pytest scripts/Analytics/tests
+/usr/bin/python3 -m unittest discover -s scripts/Analytics/tests -p 'test_*.py'
+python3 ../.github/scripts/check_packaging_contracts.py ..
 ../.github/scripts/build_macos_release.sh
 ../.github/scripts/ci_app_checks.sh selftests \
   build/macos-release/FinceptTerminal.app/Contents/MacOS/FinceptTerminal ci

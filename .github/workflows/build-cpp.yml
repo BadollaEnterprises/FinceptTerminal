@@ -135,7 +135,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # zlib is linked STATICALLY (x64-windows-static-md). See release.yml's
+          # zlib is linked STATICALLY (*-windows-static-md). See release.yml's
           # "Install OpenSSL + zlib" step for the full history: v4.1.0 shipped an
           # exe importing an unbundled "z.dll" because ZLIB_ROOT was built from
           # VCPKG_INSTALLATION_ROOT (backslashes, e.g. C:\vcpkg), which mangled
@@ -145,9 +145,17 @@ jobs:
           VCPKG_ROOT="${VCPKG_INSTALLATION_ROOT:-C:/vcpkg}"
           VCPKG_ROOT="${VCPKG_ROOT//\\//}"   # backslashes -> forward slashes (the v4.1.0 bug)
           echo "Using vcpkg at: $VCPKG_ROOT"
-          "$VCPKG_ROOT/vcpkg" install openssl:x64-windows zlib:x64-windows-static-md --no-print-usage
-          OPENSSL_DIR="$VCPKG_ROOT/installed/x64-windows"
-          ZLIB_DIR="$VCPKG_ROOT/installed/x64-windows-static-md"
+          if [ "${{ matrix.arch }}" = "arm64" ]; then
+            OPENSSL_TRIPLET="arm64-windows"
+            ZLIB_TRIPLET="arm64-windows-static-md"
+          else
+            OPENSSL_TRIPLET="x64-windows"
+            ZLIB_TRIPLET="x64-windows-static-md"
+          fi
+          "$VCPKG_ROOT/vcpkg" install \
+            "openssl:${OPENSSL_TRIPLET}" "zlib:${ZLIB_TRIPLET}" --no-print-usage
+          OPENSSL_DIR="$VCPKG_ROOT/installed/$OPENSSL_TRIPLET"
+          ZLIB_DIR="$VCPKG_ROOT/installed/$ZLIB_TRIPLET"
           echo "OPENSSL_ROOT_DIR=$OPENSSL_DIR" >> "$GITHUB_ENV"
           echo "ZLIB_ROOT=$ZLIB_DIR" >> "$GITHUB_ENV"
           echo "OpenSSL installed at: $OPENSSL_DIR ; static zlib at: $ZLIB_DIR"
@@ -204,6 +212,18 @@ jobs:
           cache: true
           set-env: false
           dir: "${{ runner.temp }}/qt-host"
+
+      - name: Export Qt6 host tools path (Windows ARM64 only)
+        if: runner.os == 'Windows' && matrix.arch == 'arm64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          HOST_QT="${{ runner.temp }}/qt-host/Qt/${{ env.QT_VERSION }}/msvc2022_64"
+          [ -f "${HOST_QT}/bin/windeployqt.exe" ] || {
+            echo "::error::Qt host windeployqt not found at ${HOST_QT}/bin/windeployqt.exe"
+            exit 1
+          }
+          echo "QT_HOST_ROOT=$HOST_QT" >> "$GITHUB_ENV"
 
       # ---- yt-dlp (bundled for dashboard video playback) ----
       - name: Install yt-dlp
@@ -275,7 +295,7 @@ jobs:
         shell: bash
         working-directory: fincept-qt
         run: |
-          HOST_QT="${{ runner.temp }}/qt-host/Qt/${{ env.QT_VERSION }}/msvc2022_64"
+          HOST_QT="${QT_HOST_ROOT}"
           OPENSSL_ARG=""
           if [ -n "${OPENSSL_ROOT_DIR:-}" ]; then
             OPENSSL_ARG="-DOPENSSL_ROOT_DIR=${OPENSSL_ROOT_DIR}"
@@ -383,9 +403,10 @@ jobs:
           # Always an x64 host tool. For ARM64 cross-compiled builds
           # QT_ROOT_DIR points to the ARM64 kit; windeployqt lives in x64.
           # ----------------------------------------------------------------
-          WDQT="${QT_ROOT_DIR}/bin/windeployqt.exe"
-          if [ ! -f "$WDQT" ]; then
-            WDQT="${QT_ROOT_DIR}/../msvc2022_64/bin/windeployqt.exe"
+          if [ "${{ matrix.arch }}" = "arm64" ]; then
+            WDQT="${QT_HOST_ROOT}/bin/windeployqt.exe"
+          else
+            WDQT="${QT_ROOT_DIR}/bin/windeployqt.exe"
           fi
 
           if [ -f "$WDQT" ]; then
@@ -398,7 +419,8 @@ jobs:
               --force \
               dist/${{ matrix.exe }}
           else
-            echo "::warning::windeployqt not found — Qt DLLs not bundled"
+            echo "::error::windeployqt not found at ${WDQT} — refusing to publish an incomplete Qt bundle"
+            exit 1
           fi
 
           QT_BIN="${QT_ROOT_DIR}/bin"
@@ -423,10 +445,21 @@ jobs:
 
           # ----------------------------------------------------------------
           # OpenSSL DLLs — Qt6::Network requires these for HTTPS.
-          # Qt 6.x ships them in its own bin/ directory.
+          # The app also links OpenSSL directly, so copy from the architecture-
+          # specific vcpkg root first. Qt's bin/ remains a fallback for TLS
+          # backend variants shipped with the Qt kit.
           # ----------------------------------------------------------------
           for ssl_dll in \
+            "${OPENSSL_ROOT_DIR}"/bin/libssl*.dll \
+            "${OPENSSL_ROOT_DIR}"/bin/libcrypto*.dll; do
+            [ -f "$ssl_dll" ] || continue
+            base=$(basename "$ssl_dll")
+            cp "$ssl_dll" "dist/${base}"
+            echo "Copied vcpkg OpenSSL ${base}"
+          done
+          for ssl_dll in \
             libssl-3-x64.dll libcrypto-3-x64.dll \
+            libssl-3-arm64.dll libcrypto-3-arm64.dll \
             libssl-3.dll     libcrypto-3.dll \
             libssl-1_1-x64.dll libcrypto-1_1-x64.dll; do
             if [ -f "${QT_BIN}/${ssl_dll}" ] && [ ! -f "dist/${ssl_dll}" ]; then
