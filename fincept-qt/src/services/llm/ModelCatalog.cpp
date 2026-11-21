@@ -94,13 +94,12 @@ const CatalogEntry kCatalog[] = {
 
     // ── DeepSeek ────────────────────────────────────────────────────────
     // https://api-docs.deepseek.com/quick_start/pricing
-    // V4 generation publishes 384k unified; deepseek-chat / -reasoner now
-    // alias to v4. We cap at 65536 for interactive use — the model can
+    // V4 generation publishes a 384k context window. We cap at 65536 for
+    // interactive use — the model can
     // emit far more but we don't want a chat tab to consume 384k of budget
     // by accident. User override applies.
-    {"deepseek", "deepseek-v4*", 65536},
-    {"deepseek", "deepseek-reasoner*", 65536},
-    {"deepseek", "deepseek-chat*", 65536},
+    {"deepseek", "deepseek-v4-pro*", 65536},
+    {"deepseek", "deepseek-flash*", 65536},
     {"deepseek", "*", 16384},
 
     // ── Moonshot / Kimi ─────────────────────────────────────────────────

@@ -14,9 +14,12 @@
 #include "mcp/McpService.h"
 #include "mcp/ResultStore.h"
 #include "services/llm/LlmContentExtractors.h"
+#include "services/llm/DeepSeekRequestPolicy.h"
 #include "services/llm/LlmRequestPolicy.h"
 #include "services/llm/LlmService.h"
+#include "services/llm/LlmSummaryPolicy.h"
 #include "services/llm/LlmToolActivity.h"
+#include "services/llm/LlmUsage.h"
 
 #include <QElapsedTimer>
 #include <QJsonArray>
@@ -37,9 +40,7 @@ constexpr const char* kLlmToolLoopTag = "LlmService";
 // time. Reporting only the final round's usage (the old behaviour) under-counted
 // a 10-round turn by roughly 10x in the chat's token counter.
 void llm_tool_loop_add_usage(LlmResponse& total, const LlmResponse& round) {
-    total.prompt_tokens += round.prompt_tokens;
-    total.completion_tokens += round.completion_tokens;
-    total.total_tokens += round.total_tokens > 0 ? round.total_tokens : round.prompt_tokens + round.completion_tokens;
+    add_provider_usage(total, round);
 }
 } // namespace
 
@@ -62,7 +63,8 @@ void emit_tool_done(const QString& display, const QJsonObject& args, const mcp::
 }
 
 LlmResponse LlmService::do_tool_loop(QJsonArray loop_messages, const QString& url,
-                                     const QMap<QString, QString>& headers) {
+                                     const QMap<QString, QString>& headers, int initial_prompt_tokens,
+                                     int initial_completion_tokens) {
     LlmResponse resp;
     LlmResponse usage; // summed over every round of this loop
     // Operating the terminal takes a few rounds per task (look, open, act,
@@ -72,9 +74,14 @@ LlmResponse LlmService::do_tool_loop(QJsonArray loop_messages, const QString& ur
     // long-polls a background job can take 30 s, so MAX_ROUNDS alone leaves the
     // turn unbounded in wall-clock terms.
     detail::ToolLoopBudget budget(MAX_ROUNDS);
-    LOG_DEBUG(kLlmToolLoopTag, QString("TOOL LOOP: starting (max %1 rounds, %2 s deadline, model=%3)")
+    budget.note_prompt_tokens(initial_prompt_tokens);
+    budget.note_completion_tokens(initial_completion_tokens);
+    LOG_DEBUG(kLlmToolLoopTag, QString("TOOL LOOP: starting (max %1 rounds, %2 s deadline, %3 input-token budget, "
+                                      "%4 output-token budget, model=%5)")
                                    .arg(MAX_ROUNDS)
                                    .arg(detail::tool_loop_deadline_ms() / 1000)
+                                   .arg(detail::tool_loop_prompt_token_budget())
+                                   .arg(detail::tool_loop_completion_token_budget())
                                    .arg(model_));
 
     // Replies that only announced a next step ("I'll look for…") and were sent back.
@@ -95,6 +102,8 @@ LlmResponse LlmService::do_tool_loop(QJsonArray loop_messages, const QString& ur
         fu["messages"] = loop_messages;
         // Temperature intentionally omitted — provider default.
         apply_openai_token_limit(fu);
+        if (provider_ == QLatin1String("deepseek"))
+            apply_deepseek_thinking(fu, detail::t_reasoning_effort);
 
         QJsonArray tools =
             mcp::McpService::instance().format_tools_for_openai(detail::apply_request_policy(tool_filter_));
@@ -122,6 +131,8 @@ LlmResponse LlmService::do_tool_loop(QJsonArray loop_messages, const QString& ur
             LlmResponse round_usage;
             parse_usage(round_usage, rj, provider_);
             llm_tool_loop_add_usage(usage, round_usage);
+            budget.note_prompt_tokens(round_usage.prompt_tokens);
+            budget.note_completion_tokens(round_usage.completion_tokens);
         }
 
         QJsonArray choices = rj["choices"].toArray();
@@ -171,6 +182,11 @@ LlmResponse LlmService::do_tool_loop(QJsonArray loop_messages, const QString& ur
             QElapsedTimer round_clock;
             round_clock.start();
             const auto results = detail::execute_tool_calls(calls);
+            std::vector<QString> result_names;
+            result_names.reserve(calls.size());
+            for (const auto& call : calls)
+                result_names.push_back(call.display);
+            const auto encoded_results = detail::encode_tool_results_for_llm(result_names, results);
             const qint64 round_ms = round_clock.elapsed();
             for (std::size_t k = 0; k < calls.size(); ++k) {
                 const auto& c = calls[k];
@@ -181,7 +197,7 @@ LlmResponse LlmService::do_tool_loop(QJsonArray loop_messages, const QString& ur
                 emit_tool_done(c.display, c.args, tr, round_ms, calls.size() > 1);
                 loop_messages.append(QJsonObject{{"role", "tool"},
                                                  {"tool_call_id", c.call_id},
-                                                 {"content", detail::encode_tool_result_for_llm(c.display, tr)}});
+                                                 {"content", encoded_results[k]}});
             }
             continue;
         }
@@ -208,6 +224,7 @@ LlmResponse LlmService::do_tool_loop(QJsonArray loop_messages, const QString& ur
         resp.prompt_tokens = usage.prompt_tokens;
         resp.completion_tokens = usage.completion_tokens;
         resp.total_tokens = usage.total_tokens;
+        resp.cached_prompt_tokens = usage.cached_prompt_tokens;
         resp.success = !resp.content.isEmpty();
         // An empty final turn used to come back as a failure with NO message, which
         // the Quick Chat bubble rendered as a bare "Error: ".
@@ -252,24 +269,49 @@ LlmResponse LlmService::do_tool_loop(QJsonArray loop_messages, const QString& ur
     const QString exhaustion = budget.exhaustion_note();
     LOG_WARN(kLlmToolLoopTag, "TOOL LOOP: " + exhaustion + " — forcing summary turn");
     {
-        loop_messages.append(QJsonObject{
-            {"role", "system"},
-            {"content", "You have used your tool budget (" + exhaustion +
-                            "). Reply now with a final summary of what you accomplished and what (if anything) is "
-                            "incomplete. If there are critical remaining tool calls, you may make them, but prefer "
-                            "summarising."}});
+        QString summary_instruction =
+            "You have used your tool budget (" + exhaustion +
+            "). Reply now with a final summary of what you accomplished and what (if anything) is incomplete.";
+        if (budget.allows_summary_tool_calls())
+            summary_instruction +=
+                " If there are critical remaining tool calls, you may make them, but prefer summarising.";
+        else
+            summary_instruction += " Do not call or emit tools; report the result you already have.";
+        if (budget.allows_summary_tool_calls()) {
+            loop_messages.append(QJsonObject{{"role", "system"}, {"content", summary_instruction}});
+        } else {
+            const int before = QJsonDocument(loop_messages).toJson(QJsonDocument::Compact).size();
+            loop_messages = bounded_tool_summary_messages(loop_messages, summary_instruction,
+                                                          detail::tool_loop_summary_context_max_bytes());
+            const int after = QJsonDocument(loop_messages).toJson(QJsonDocument::Compact).size();
+            LOG_INFO(kLlmToolLoopTag,
+                     QString("TOOL LOOP: compacted exhausted-summary context from %1 to %2 bytes")
+                         .arg(before)
+                         .arg(after));
+        }
 
         QJsonObject fu;
         fu["model"] = model_;
         fu["messages"] = loop_messages;
         apply_openai_token_limit(fu);
-        // Keep tools available so structured tool_calls still work. Stripping
-        // them used to force text-markup mode (raw <minimax:tool_call> blobs)
-        // which leaked into the chat bubble.
-        QJsonArray tools =
-            mcp::McpService::instance().format_tools_for_openai(detail::apply_request_policy(tool_filter_));
-        if (!tools.isEmpty())
-            fu["tools"] = tools;
+        const int summary_limit = std::min(resolved_max_tokens(), detail::tool_loop_summary_max_tokens());
+        if (fu.contains(QStringLiteral("max_completion_tokens")))
+            fu[QStringLiteral("max_completion_tokens")] = summary_limit;
+        else
+            fu[QStringLiteral("max_tokens")] = summary_limit;
+        if (provider_ == QLatin1String("deepseek"))
+            apply_deepseek_thinking(fu, detail::t_reasoning_effort);
+        // Once either provider-reported token budget is spent, this request must
+        // be a final answer: advertising tools invites another paid round and
+        // also resends the schema block. Round/time exhaustion keeps the old
+        // behaviour because a critical last structured call may still finish
+        // the task.
+        if (budget.allows_summary_tool_calls()) {
+            QJsonArray tools =
+                mcp::McpService::instance().format_tools_for_openai(detail::apply_request_policy(tool_filter_));
+            if (!tools.isEmpty())
+                fu["tools"] = tools;
+        }
 
         auto http = blocking_post(url, fu, headers);
         if (http.success) {
@@ -286,6 +328,7 @@ LlmResponse LlmService::do_tool_loop(QJsonArray loop_messages, const QString& ur
                     resp.prompt_tokens = usage.prompt_tokens;
                     resp.completion_tokens = usage.completion_tokens;
                     resp.total_tokens = usage.total_tokens;
+                    resp.cached_prompt_tokens = usage.cached_prompt_tokens;
                     resp.success = !resp.content.isEmpty();
                     LOG_DEBUG(kLlmToolLoopTag,
                               QString("TOOL LOOP: summary fallback produced %1 chars").arg(resp.content.length()));
@@ -296,7 +339,8 @@ LlmResponse LlmService::do_tool_loop(QJsonArray loop_messages, const QString& ur
                     static const QRegularExpression rx_has_text_markup(
                         QStringLiteral("<\\s*/?\\s*(?:\\w+\\s*:\\s*)?tool_call\\b|<\\s*invoke\\s+name="),
                         QRegularExpression::CaseInsensitiveOption);
-                    if (resp.success && rx_has_text_markup.match(resp.content).hasMatch()) {
+                    if (resp.success && budget.allows_summary_tool_calls() &&
+                        rx_has_text_markup.match(resp.content).hasMatch()) {
                         LOG_DEBUG(kLlmToolLoopTag, "TOOL LOOP: summary fallback has text-tool markup — re-routing");
                         QString user_msg;
                         for (const auto& v : loop_messages) {
@@ -478,6 +522,8 @@ std::optional<LlmResponse> LlmService::try_extract_and_execute_text_tool_calls(c
         follow_body["messages"] = msgs;
         // Temperature intentionally omitted — provider default.
         apply_openai_token_limit(follow_body);
+        if (provider_ == QLatin1String("deepseek"))
+            apply_deepseek_thinking(follow_body, detail::t_reasoning_effort);
     }
 
     // Last-resort rendering when the summarisation turn can't be obtained.

@@ -89,9 +89,20 @@ class LlmConfigSection : public QWidget {
     QLabel* tokens_lbl_ = nullptr;
     QLabel* tool_rounds_lbl_ = nullptr;
     QLabel* system_prompt_lbl_ = nullptr;
+    QLabel* cost_guardrails_title_ = nullptr;
+    QLabel* history_budget_lbl_ = nullptr;
+    QLabel* prompt_budget_lbl_ = nullptr;
+    QLabel* completion_budget_lbl_ = nullptr;
+    QLabel* summary_context_budget_lbl_ = nullptr;
+    QLabel* summary_output_budget_lbl_ = nullptr;
     QDoubleSpinBox* temp_spin_ = nullptr;
     QSpinBox* tokens_spin_ = nullptr;
     QSpinBox* tool_rounds_spin_ = nullptr;
+    QSpinBox* history_budget_spin_ = nullptr;
+    QSpinBox* prompt_budget_spin_ = nullptr;
+    QSpinBox* completion_budget_spin_ = nullptr;
+    QSpinBox* summary_context_budget_spin_ = nullptr;
+    QSpinBox* summary_output_budget_spin_ = nullptr;
     QPlainTextEdit* system_prompt_ = nullptr;
     QPushButton* save_global_btn_ = nullptr;
 

@@ -4,6 +4,7 @@
 // (2026-06-10); update HERE when adding a provider.
 #include "services/llm/ProviderCatalog.h"
 
+#include "core/policy/CommunityPolicy.h"
 #include "ui/theme/ThemeTokens.h"
 
 #include <QHash>
@@ -12,9 +13,13 @@
 namespace fincept::ai_chat {
 
 const QStringList& ProviderCatalog::known_providers() {
-    static const QStringList kProviders = {"openai",     "anthropic", "gemini",       "groq",    "deepseek",
-                                           "openrouter", "minimax",   "kimi",         "ollama",  "xai",
-                                           "fincept",    "astraflow", "astraflow_cn", "aihubmix"};
+    // This list feeds every product-level provider discovery surface. Keep
+    // historical metadata for retired providers below so old rows can still be
+    // explained or migrated, but never advertise Ollama or Fincept's metered
+    // backend as a selectable provider in the community product.
+    static const QStringList kProviders = {"openai",     "anthropic", "gemini",   "groq",      "deepseek",
+                                           "openrouter", "minimax",   "kimi",     "xai",       "astraflow",
+                                           "astraflow_cn", "aihubmix"};
     return kProviders;
 }
 
@@ -37,6 +42,11 @@ QString ProviderCatalog::harness_id(const QString& provider) {
 }
 
 QString ProviderCatalog::display_name(const QString& provider_id) {
+    if (policy::is_deprecated_llm_provider(provider_id))
+        return QStringLiteral("Legacy AI (disabled)");
+    if (provider_id.trimmed().compare(QLatin1String("fincept"), Qt::CaseInsensitive) == 0 &&
+        !policy::fincept_metered_services_enabled())
+        return QStringLiteral("Hosted AI (disabled)");
     if (is_harness(provider_id)) {
         // The registry's descriptor is the source of the full name; this is the
         // short form for lists that only have the provider string.
@@ -121,7 +131,7 @@ QStringList ProviderCatalog::fallback_models(const QString& provider) {
     if (p == "groq")
         return {"llama-3.3-70b-versatile", "mixtral-8x7b-32768", "gemma2-9b-it"};
     if (p == "deepseek")
-        return {"deepseek-chat", "deepseek-reasoner"};
+        return {"deepseek-flash", "deepseek-v4-pro"};
     if (p == "openrouter")
         return {"openai/gpt-4o", "anthropic/claude-sonnet-4-5", "google/gemini-2.5-flash"};
     if (p == "minimax")
@@ -221,6 +231,11 @@ QString ProviderCatalog::brand_color(const QString& provider) {
 // NOLINTNEXTLINE(misc-no-recursion)
 QString ProviderCatalog::chat_endpoint(const QString& provider, const QString& base_url, const QString& model) {
     const QString p = provider.toLower();
+    // Historical metadata remains readable for migration, but endpoint
+    // composition is an execution boundary. Retired local/Codex routes must
+    // never be revived by a manually edited profile or a new direct caller.
+    if (policy::is_deprecated_llm_provider(p))
+        return {};
     if (p == "fincept")
         return {}; // caller composes AppConfig::api_base_url() + "/research/chat"
 

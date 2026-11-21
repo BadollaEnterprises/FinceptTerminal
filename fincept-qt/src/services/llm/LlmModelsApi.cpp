@@ -6,6 +6,7 @@
 #include "auth/AuthManager.h"
 #include "core/config/AppConfig.h"
 #include "core/logging/Logger.h"
+#include "core/policy/CommunityPolicy.h"
 #include "services/llm/LlmContentExtractors.h"
 #include "services/llm/LlmService.h"
 #include "services/llm/ModelListParse.h"
@@ -62,6 +63,11 @@ QString LlmService::get_models_url(const QString& provider, const QString& api_k
     // Blocked provider (AtlasCloud, removed) — no models URL, so the Fetch button
     // can never reach it even if base_url was hand-pointed at the host.
     if (ProviderCatalog::is_blocked(p, base_url))
+        return {};
+
+    // Retired routes remain parseable as historical data, but model discovery
+    // is a network boundary and must not reconnect them.
+    if (policy::is_deprecated_llm_provider(p))
         return {};
 
     // Ollama uses /api/tags, not /v1/models — must short-circuit before the custom-base_url branch

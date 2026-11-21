@@ -9,6 +9,7 @@
 #include "screens/settings/LlmConfigSection.h"
 
 #include "core/logging/Logger.h"
+#include "core/policy/CommunityPolicy.h"
 #include "services/llm/LlmService.h"
 #include "services/llm/ProviderCatalog.h"
 #include "storage/repositories/LlmConfigRepository.h"
@@ -47,6 +48,11 @@ QString LlmConfigSection::provider_display_name(const QString& provider_id) {
 
 QStringList LlmConfigSection::providers_sorted() {
     QStringList ids = KNOWN_PROVIDERS;
+    ids.removeIf([](const QString& id) {
+        return !policy::is_ai_backend_selectable(id) ||
+               (id.compare(QLatin1String("fincept"), Qt::CaseInsensitive) == 0 &&
+                !policy::fincept_metered_services_enabled());
+    });
     std::sort(ids.begin(), ids.end(), [](const QString& a, const QString& b) {
         return provider_display_name(a).compare(provider_display_name(b), Qt::CaseInsensitive) < 0;
     });
@@ -142,6 +148,7 @@ void LlmConfigSection::build_ui() {
     tab_widget_->addTab(build_profiles_tab(), tr("PROFILES"));
     tab_widget_->addTab(build_llm_terminal_ai_tab(this), tr("TERMINAL AI"));
     root->addWidget(tab_widget_, 1);
+    retranslateUi();
 }
 
 void LlmConfigSection::show_status(const QString& msg, bool error) {
@@ -232,6 +239,49 @@ void LlmConfigSection::retranslateUi() {
         system_prompt_lbl_->setText(tr("System Prompt"));
     if (system_prompt_)
         system_prompt_->setPlaceholderText(tr("Optional system prompt for the LLM..."));
+    if (cost_guardrails_title_)
+        cost_guardrails_title_->setText(tr("BYO AI COST GUARDRAILS"));
+    if (history_budget_lbl_) {
+        history_budget_lbl_->setText(tr("History Chars"));
+        history_budget_lbl_->setToolTip(
+            tr("Maximum conversation-history characters resent with a new message. 0 = unlimited."));
+    }
+    if (prompt_budget_lbl_) {
+        prompt_budget_lbl_->setText(tr("Turn Input Tokens"));
+        prompt_budget_lbl_->setToolTip(
+            tr("Maximum provider-reported input tokens across a multi-round tool turn. 0 = unlimited."));
+    }
+    if (completion_budget_lbl_) {
+        completion_budget_lbl_->setText(tr("Turn Output Tokens"));
+        completion_budget_lbl_->setToolTip(
+            tr("Maximum provider-reported output tokens across a multi-round tool turn. 0 = unlimited."));
+    }
+    if (summary_context_budget_lbl_) {
+        summary_context_budget_lbl_->setText(tr("Summary Context Bytes"));
+        summary_context_budget_lbl_->setToolTip(
+            tr("Maximum evidence bytes sent for the final summary after a tool-turn budget is reached."));
+    }
+    if (summary_output_budget_lbl_) {
+        summary_output_budget_lbl_->setText(tr("Summary Output Tokens"));
+        summary_output_budget_lbl_->setToolTip(
+            tr("Maximum output tokens allowed for the final budget-exhaustion summary."));
+    }
+    if (history_budget_spin_)
+        history_budget_spin_->setSpecialValueText(tr("Unlimited"));
+    if (prompt_budget_spin_)
+        prompt_budget_spin_->setSpecialValueText(tr("Unlimited"));
+    if (completion_budget_spin_)
+        completion_budget_spin_->setSpecialValueText(tr("Unlimited"));
+    if (history_budget_spin_ && history_budget_lbl_)
+        history_budget_spin_->setToolTip(history_budget_lbl_->toolTip());
+    if (prompt_budget_spin_ && prompt_budget_lbl_)
+        prompt_budget_spin_->setToolTip(prompt_budget_lbl_->toolTip());
+    if (completion_budget_spin_ && completion_budget_lbl_)
+        completion_budget_spin_->setToolTip(completion_budget_lbl_->toolTip());
+    if (summary_context_budget_spin_ && summary_context_budget_lbl_)
+        summary_context_budget_spin_->setToolTip(summary_context_budget_lbl_->toolTip());
+    if (summary_output_budget_spin_ && summary_output_budget_lbl_)
+        summary_output_budget_spin_->setToolTip(summary_output_budget_lbl_->toolTip());
     if (save_global_btn_)
         save_global_btn_->setText(tr("Save Global Settings"));
 

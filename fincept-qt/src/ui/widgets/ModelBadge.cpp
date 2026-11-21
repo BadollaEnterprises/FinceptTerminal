@@ -5,6 +5,7 @@
 
 #include "core/events/EventBus.h"
 #include "core/logging/Logger.h"
+#include "core/policy/CommunityPolicy.h"
 #include "services/harness/HarnessEligibility.h"
 #include "services/harness/HarnessRegistry.h"
 #include "services/harness/IHarnessAdapter.h"
@@ -120,8 +121,9 @@ void ModelBadge::set_compact(bool compact) {
 void ModelBadge::refresh() {
     const mb_ai::RouteResult r = mb_ai::ModelRouter::instance().route(feature_, context_id_);
     const mb_ai::ModelChoice c = r.chain.isEmpty() ? mb_ai::ModelChoice{} : r.chain.constFirst();
-    const QString label = c.label.isEmpty() ? tr("Fincept LLM") : c.label;
-    const QString shown = compact_ ? mb_compact_label(c) : label;
+    const bool blocked_fincept = c.is_fincept() && !policy::fincept_metered_services_enabled();
+    const QString label = blocked_fincept || c.label.isEmpty() ? tr("No AI configured") : c.label;
+    const QString shown = compact_ && !blocked_fincept && !c.label.isEmpty() ? mb_compact_label(c) : label;
 
     // A harness the user meant to use was passed over: WARNING, with the reason.
     QString skipped;
@@ -136,10 +138,10 @@ void ModelBadge::refresh() {
     QStringList tip;
     tip << tr("%1 is answered by %2 — %3.")
                .arg(spec ? QString::fromUtf8(spec->label) : feature_, label, mb_reason_text(c.reason));
-    const QString billing = mb_ai::ModelRouter::billing_note(c);
+    const QString billing = blocked_fincept ? QString{} : mb_ai::ModelRouter::billing_note(c);
     if (!billing.isEmpty())
         tip << billing;
-    else if (c.is_fincept())
+    else if (c.is_fincept() && policy::fincept_metered_services_enabled())
         tip << tr("Fincept LLM uses your Fincept credits.");
     if (!skipped.isEmpty())
         tip << tr("Not used: %1").arg(skipped);
@@ -269,7 +271,7 @@ void ModelBadge::open_picker() {
     if (!context_id_.isEmpty())
         auto_state.assignments.remove(mb_ai::ModelRouter::assignment_key(feature_, {}));
     const mb_ai::RouteResult auto_route = mb_ai::ModelRouter::resolve_with(auto_state, feature_, context_id_);
-    const QString auto_label = auto_route.chain.isEmpty() ? tr("Fincept LLM") : auto_route.chain.constFirst().label;
+    const QString auto_label = auto_route.chain.isEmpty() ? tr("No AI configured") : auto_route.chain.constFirst().label;
 
     auto* menu = new QMenu(this);
     menu->setAttribute(Qt::WA_DeleteOnClose);
@@ -290,8 +292,8 @@ void ModelBadge::open_picker() {
     QAction* auto_action = menu->addAction(literal_ampersands(tr("Auto — %1").arg(auto_label)));
     auto_action->setCheckable(true);
     auto_action->setChecked(current_pid.isEmpty());
-    auto_action->setToolTip(tr("The terminal's rule: your choice → your connected harness → your API provider → "
-                               "Fincept LLM."));
+    auto_action->setToolTip(tr("The terminal's rule: your choice → your connected harness → "
+                               "your configured API provider. No paid Fincept fallback is used."));
     connect(auto_action, &QAction::triggered, this, [self, feature, context]() {
         mb_ai::ModelRouter::instance().clear_choice(feature, context);
         if (self)
@@ -303,6 +305,8 @@ void ModelBadge::open_picker() {
     const bool fit = !spec || spec->harness_fit != mb_ai::HarnessFit::No;
     bool any_harness = false;
     for (const mb_ai::RouterHarness& h : state.harnesses) {
+        if (policy::is_deprecated_llm_provider(h.id))
+            continue;
         const mb_h::HarnessStatus st = reg.status(h.id);
         if (!st.installed())
             continue;
@@ -390,7 +394,7 @@ void ModelBadge::open_picker() {
         }
     }
     if (!any_harness) {
-        QAction* a = menu->addAction(tr("No harness installed (Claude Code, Codex)"));
+        QAction* a = menu->addAction(tr("No supported local agent harness installed"));
         a->setEnabled(false);
     }
 
@@ -400,7 +404,8 @@ void ModelBadge::open_picker() {
     for (auto it = state.profiles.cbegin(); it != state.profiles.cend(); ++it) {
         const mb_ai::RouterProfile& p = it.value();
         if (p.provider.startsWith(QLatin1String("harness:"), Qt::CaseInsensitive) ||
-            p.provider.compare(QLatin1String("fincept"), Qt::CaseInsensitive) == 0)
+            p.provider.compare(QLatin1String("fincept"), Qt::CaseInsensitive) == 0 ||
+            policy::is_deprecated_llm_provider(p.provider))
             continue;
         profiles.append(p);
     }
@@ -425,7 +430,8 @@ void ModelBadge::open_picker() {
         connect(a, &QAction::triggered, this, [pick, c]() { pick(c); });
     }
     const mb_ai::RouterActiveRow& row = state.active_row;
-    if (row.present && row.provider != QLatin1String("fincept")) {
+    if (row.present && row.provider != QLatin1String("fincept") &&
+        !policy::is_deprecated_llm_provider(row.provider)) {
         const QString provider_name = state.provider_names.value(row.provider, row.provider);
         QAction* a = menu->addAction(literal_ampersands(
             tr("%1 · %2 (active provider)").arg(provider_name, row.model.isEmpty() ? tr("default model") : row.model)));
@@ -443,7 +449,7 @@ void ModelBadge::open_picker() {
         c.label = row.model.isEmpty() ? provider_name : provider_name + QStringLiteral(" · ") + row.model;
         connect(a, &QAction::triggered, this, [pick, c]() { pick(c); });
     }
-    {
+    if (policy::commercial_promotions_enabled() && policy::fincept_metered_services_enabled()) {
         QAction* a = menu->addAction(tr("Fincept LLM (uses credits)"));
         a->setCheckable(true);
         a->setChecked(current_key.startsWith(QLatin1String("fincept|")));

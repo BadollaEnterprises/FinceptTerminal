@@ -23,6 +23,7 @@
 #include "mcp/McpTypes.h"
 #include "mcp/ResultStore.h"
 #include "mcp/TerminalMcpBridge.h"
+#include "services/llm/LlmBudgetSettings.h"
 #include "services/llm/LlmService.h"
 
 #include <QElapsedTimer>
@@ -30,6 +31,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QLocale>
 #include <QSet>
 #include <QString>
 #include <QThread>
@@ -284,12 +286,19 @@ inline int tool_result_budget_bytes() {
     return std::clamp(AppConfig::instance().get("mcp/tool_result_max_chars", QVariant(8000)).toInt(), 512, 200000);
 }
 
+/// Byte ceiling for all tool results produced by one model round. A per-result
+/// ceiling alone is insufficient: four parallel 8 KB reads become a 32 KB
+/// transcript addition, and every later round pays for all 32 KB again.
+inline int tool_round_result_budget_bytes() {
+    return std::clamp(AppConfig::instance().get("mcp/tool_round_result_max_chars", QVariant(16000)).toInt(), 4096,
+                      400000);
+}
+
 /// Shrink `payload` to the budget if needed, parking the original in the
 /// ResultStore and annotating the envelope with `result_id` + retrieval note.
 /// No-op when the payload already fits.
-inline void fit_llm_payload(const QString& tool_name, QJsonObject& payload) {
+inline void fit_llm_payload(const QString& tool_name, QJsonObject& payload, int budget) {
     const QByteArray compact = QJsonDocument(payload).toJson(QJsonDocument::Compact);
-    const int budget = tool_result_budget_bytes();
     if (compact.size() <= budget)
         return;
 
@@ -311,11 +320,34 @@ inline void fit_llm_payload(const QString& tool_name, QJsonObject& payload) {
                           .arg(st.final_bytes)
                           .arg(result_id);
 
+    // shrink_json budgets the shaped value before the retrieval metadata is
+    // added. With a very small fair share in a wide parallel round, that
+    // metadata can itself push the envelope back over its allotment. Fall
+    // back to a compact, actionable pointer so the aggregate ceiling remains
+    // a hard ceiling rather than an estimate.
+    if (QJsonDocument(payload).toJson(QJsonDocument::Compact).size() > budget) {
+        payload = QJsonObject{{"success", payload.value(QStringLiteral("success"))},
+                              {"truncated", true},
+                              {"result_id", result_id},
+                              {"full_bytes", compact.size()},
+                              {"note", QStringLiteral("Full result: ui_read(ref='%1', offset=0).").arg(result_id)}};
+        if (QJsonDocument(payload).toJson(QJsonDocument::Compact).size() > budget)
+            payload = QJsonObject{{"truncated", true}, {"result_id", result_id}};
+        if (QJsonDocument(payload).toJson(QJsonDocument::Compact).size() > budget)
+            payload = QJsonObject{{"result_id", result_id}};
+        if (QJsonDocument(payload).toJson(QJsonDocument::Compact).size() > budget)
+            payload = QJsonObject();
+    }
+
     LOG_INFO("LlmService", QString("Tool '%1' returned %2 KB — shaped to %3 B, full payload parked as %4")
                                .arg(tool_name)
                                .arg(st.original_bytes / 1024)
                                .arg(st.final_bytes)
                                .arg(result_id));
+}
+
+inline void fit_llm_payload(const QString& tool_name, QJsonObject& payload) {
+    fit_llm_payload(tool_name, payload, tool_result_budget_bytes());
 }
 
 /// Envelope for a tool result, shaped to the transcript budget.
@@ -328,6 +360,72 @@ inline QJsonObject shape_tool_result_for_llm(const QString& tool_name, const mcp
 /// Same, serialised — for the providers whose tool messages take a string.
 inline QString encode_tool_result_for_llm(const QString& tool_name, const mcp::ToolResult& tr) {
     return QString::fromUtf8(QJsonDocument(shape_tool_result_for_llm(tool_name, tr)).toJson(QJsonDocument::Compact));
+}
+
+/// Shape a whole round of provider result objects under one aggregate byte
+/// budget. Any detail that does not fit remains available through
+/// ResultStore/ui_read.
+inline std::vector<QJsonObject> fit_llm_payloads_for_round(const std::vector<QString>& tool_names,
+                                                          std::vector<QJsonObject> payloads, int round_budget = -1,
+                                                          int single_budget = -1) {
+    std::vector<QJsonObject> out;
+    out.reserve(payloads.size());
+    if (payloads.empty())
+        return out;
+
+    const int count = static_cast<int>(payloads.size());
+    // Two bytes per result is the irreducible JSON cost (`{}`). Do not scale
+    // the configured ceiling by call count: doing so would recreate the very
+    // parallel-call multiplier this function exists to remove.
+    const int aggregate = std::max(2 * count, round_budget > 0 ? round_budget : tool_round_result_budget_bytes());
+    const int per_result = std::max(2, single_budget > 0 ? single_budget : tool_result_budget_bytes());
+    int remaining = aggregate;
+    int raw_total = 0;
+
+    for (int i = 0; i < count; ++i) {
+        const QString name = i < static_cast<int>(tool_names.size()) ? tool_names[static_cast<std::size_t>(i)]
+                                                                    : QStringLiteral("tool");
+        QJsonObject envelope = std::move(payloads[static_cast<std::size_t>(i)]);
+        raw_total += QJsonDocument(envelope).toJson(QJsonDocument::Compact).size();
+
+        const int calls_left = count - i;
+        const int fair_share = std::max(2, remaining / calls_left);
+        fit_llm_payload(name, envelope, std::min(per_result, fair_share));
+        const int used = QJsonDocument(envelope).toJson(QJsonDocument::Compact).size();
+        remaining = std::max(0, remaining - used);
+        out.push_back(std::move(envelope));
+    }
+
+    if (raw_total > aggregate) {
+        LOG_INFO("LlmService", QString("Parallel tool results used %1 KB raw — shaped under the %2 KB round budget")
+                                   .arg(raw_total / 1024)
+                                   .arg(aggregate / 1024));
+    }
+    return out;
+}
+
+/// ToolResult convenience wrapper for the OpenAI and Anthropic string-result
+/// dialects. Each answer remains a distinct provider tool-result message.
+inline std::vector<QJsonObject> shape_tool_results_for_llm(const std::vector<QString>& tool_names,
+                                                           const std::vector<mcp::ToolResult>& results,
+                                                           int round_budget = -1, int single_budget = -1) {
+    std::vector<QJsonObject> payloads;
+    payloads.reserve(results.size());
+    for (const auto& result : results)
+        payloads.push_back(result.to_json());
+    return fit_llm_payloads_for_round(tool_names, std::move(payloads), round_budget, single_budget);
+}
+
+inline std::vector<QString> encode_tool_results_for_llm(const std::vector<QString>& tool_names,
+                                                        const std::vector<mcp::ToolResult>& results,
+                                                        int round_budget = -1, int single_budget = -1) {
+    const std::vector<QJsonObject> shaped =
+        shape_tool_results_for_llm(tool_names, results, round_budget, single_budget);
+    std::vector<QString> out;
+    out.reserve(shaped.size());
+    for (const auto& envelope : shaped)
+        out.push_back(QString::fromUtf8(QJsonDocument(envelope).toJson(QJsonDocument::Compact)));
+    return out;
 }
 
 // —— Tool-loop budget ———
@@ -352,9 +450,58 @@ inline int tool_loop_deadline_ms() {
     return std::max(0, AppConfig::instance().get("mcp/tool_loop_deadline_ms", QVariant(600000)).toInt());
 }
 
+/// Provider-reported prompt-token ceiling for one multi-round tool turn. The
+/// initial request and every follow-up are counted before another model call
+/// is allowed, preventing the loop from silently multiplying a BYO bill.
+/// The one forced final summary is deliberately short and tool-free. 0 disables.
+inline int tool_loop_prompt_token_budget() {
+    return validate_llm_budget_settings(
+               {.prompt_tokens = AppConfig::instance()
+                                     .get(kLlmPromptTokensKey, QVariant(kDefaultLlmPromptTokens))
+                                     .toInt()})
+        .prompt_tokens;
+}
+
+/// Provider-reported completion-token ceiling for one multi-round tool turn.
+/// Reasoning/tool-call output is billable on every round, so the per-request
+/// max_tokens value alone does not bound the cost of a whole turn. 0 disables.
+inline int tool_loop_completion_token_budget() {
+    return validate_llm_budget_settings(
+               {.completion_tokens = AppConfig::instance()
+                                         .get(kLlmCompletionTokensKey, QVariant(kDefaultLlmCompletionTokens))
+                                         .toInt()})
+        .completion_tokens;
+}
+
+/// A budget-exhausted turn still gets one concise final summary, but must not
+/// regain the normal multi-thousand-token reply allowance on that last call.
+inline int tool_loop_summary_max_tokens() {
+    return validate_llm_budget_settings(
+               {.summary_output_tokens = AppConfig::instance()
+                                             .get(kLlmSummaryOutputTokensKey,
+                                                  QVariant(kDefaultLlmSummaryOutputTokens))
+                                             .toInt()})
+        .summary_output_tokens;
+}
+
+/// JSON-byte ceiling for the protocol-safe evidence bundle used by a forced
+/// summary after provider token exhaustion.
+inline int tool_loop_summary_context_max_bytes() {
+    return validate_llm_budget_settings(
+               {.summary_context_bytes = AppConfig::instance()
+                                            .get(kLlmSummaryContextBytesKey,
+                                                 QVariant(kDefaultLlmSummaryContextBytes))
+                                            .toInt()})
+        .summary_context_bytes;
+}
+
 class ToolLoopBudget {
   public:
-    explicit ToolLoopBudget(int max_rounds) : max_rounds_(max_rounds), deadline_ms_(tool_loop_deadline_ms()) {
+    explicit ToolLoopBudget(int max_rounds, int prompt_token_limit = -1, int completion_token_limit = -1)
+        : max_rounds_(max_rounds), deadline_ms_(tool_loop_deadline_ms()),
+          prompt_token_limit_(prompt_token_limit >= 0 ? prompt_token_limit : tool_loop_prompt_token_budget()),
+          completion_token_limit_(completion_token_limit >= 0 ? completion_token_limit
+                                                              : tool_loop_completion_token_budget()) {
         timer_.start();
     }
 
@@ -362,13 +509,38 @@ class ToolLoopBudget {
     bool exhausted() const { return reason() != Reason::None; }
 
     void note_round() { ++rounds_; }
+    void note_prompt_tokens(int tokens) { prompt_tokens_used_ += std::max(0, tokens); }
+    void note_completion_tokens(int tokens) { completion_tokens_used_ += std::max(0, tokens); }
     int rounds_used() const { return rounds_; }
+    int prompt_tokens_used() const { return prompt_tokens_used_; }
+    int completion_tokens_used() const { return completion_tokens_used_; }
+    bool prompt_tokens_exhausted() const {
+        return prompt_token_limit_ > 0 && prompt_tokens_used_ >= prompt_token_limit_;
+    }
+    bool completion_tokens_exhausted() const {
+        return completion_token_limit_ > 0 && completion_tokens_used_ >= completion_token_limit_;
+    }
+    bool provider_token_budget_exhausted() const {
+        return prompt_tokens_exhausted() || completion_tokens_exhausted();
+    }
+    bool allows_summary_tool_calls() const { return !provider_token_budget_exhausted(); }
     qint64 elapsed_ms() const { return timer_.elapsed(); }
 
     /// One line naming which budget ran out and what it cost, for the log and
     /// for the model's final-summary prompt. Empty while the loop is healthy.
     QString exhaustion_note() const {
         switch (reason()) {
+            case Reason::PromptTokens:
+                return QStringLiteral("provider input budget spent: %1 of %2 prompt tokens used after %3 round(s)")
+                    .arg(QLocale().toString(prompt_tokens_used_))
+                    .arg(QLocale().toString(prompt_token_limit_))
+                    .arg(rounds_);
+            case Reason::CompletionTokens:
+                return QStringLiteral(
+                           "provider output budget spent: %1 of %2 completion tokens used after %3 round(s)")
+                    .arg(QLocale().toString(completion_tokens_used_))
+                    .arg(QLocale().toString(completion_token_limit_))
+                    .arg(rounds_);
             case Reason::Rounds:
                 return QStringLiteral("tool-call budget spent: %1 of %1 rounds used in %2 s")
                     .arg(rounds_)
@@ -385,9 +557,13 @@ class ToolLoopBudget {
     }
 
   private:
-    enum class Reason { None, Rounds, Deadline };
+    enum class Reason { None, PromptTokens, CompletionTokens, Rounds, Deadline };
 
     Reason reason() const {
+        if (prompt_tokens_exhausted())
+            return Reason::PromptTokens;
+        if (completion_tokens_exhausted())
+            return Reason::CompletionTokens;
         if (max_rounds_ > 0 && rounds_ >= max_rounds_)
             return Reason::Rounds;
         if (deadline_ms_ > 0 && timer_.elapsed() >= deadline_ms_)
@@ -398,6 +574,10 @@ class ToolLoopBudget {
     QElapsedTimer timer_;
     int max_rounds_ = 0;
     int deadline_ms_ = 0;
+    int prompt_token_limit_ = 0;
+    int completion_token_limit_ = 0;
+    int prompt_tokens_used_ = 0;
+    int completion_tokens_used_ = 0;
     int rounds_ = 0;
 };
 

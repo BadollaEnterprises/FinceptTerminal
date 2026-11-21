@@ -210,7 +210,10 @@ class AuthManager : public QObject {
     /// Inject a redeemed desktop-handoff session (api_key + session_token) and
     /// run the shared post-login flow. Shared by login_with_google().
     void complete_desktop_login(const QString& api_key, const QString& session_token);
-    void auto_configure_fincept_llm();
+    /// Apply the product's provider policy after authentication. In the
+    /// community build this removes legacy metered Fincept rows and restores a
+    /// selectable user-owned provider as active without creating any provider.
+    void reconcile_llm_provider_policy();
     QString generate_device_id() const;
     QJsonObject unwrap_data(const QJsonObject& raw) const;
 

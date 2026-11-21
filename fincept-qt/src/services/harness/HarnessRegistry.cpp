@@ -6,6 +6,7 @@
 #include "core/config/AppConfig.h"
 #include "core/config/AppPaths.h"
 #include "core/logging/Logger.h"
+#include "core/policy/CommunityPolicy.h"
 #include "core/privacy/LogRedact.h"
 #include "core/process/HostExec.h"
 #include "services/harness/HarnessDetect.h"
@@ -1069,7 +1070,8 @@ HarnessRegistry::HarnessRegistry() : QObject(nullptr), d_(std::make_unique<Impl>
     // Registration order = the order every list shows (installed ones first).
     // Verified against this machine's CLIs and recorded runs:
     d_->add(std::make_shared<ClaudeAdapter>());
-    d_->add(std::make_shared<CodexAdapter>());
+    if (policy::deprecated_ai_backends_enabled())
+        d_->add(std::make_shared<CodexAdapter>());
     // BETA (descriptor().beta): Grok from its --help, the rest from vendor docs.
     d_->add(std::make_shared<GrokAdapter>());
     d_->add(std::make_shared<CursorAdapter>());
@@ -1124,6 +1126,8 @@ bool HarnessRegistry::is_known(const QString& id) const {
 }
 
 QString HarnessRegistry::display_name(const QString& id) const {
+    if (policy::is_deprecated_llm_provider(id))
+        return tr("Legacy AI (disabled)");
     const auto it = d_->entries.constFind(id);
     if (it != d_->entries.cend())
         return it->adapter->descriptor().display_name;

@@ -83,6 +83,9 @@ inline constexpr const char* kFeatureQuickAsk = "quick_ask";
 inline constexpr const char* kFeatureToolPicker = "workflow_tool_picker";
 inline constexpr const char* kFeatureChatModeHarness = "chat_mode_harness";
 inline constexpr const char* kFeatureArena = "arena";
+inline constexpr const char* kFeatureNewsAnalysis = "news_analysis";
+inline constexpr const char* kFeatureProAnalyticsExplain = "pro_analytics_explain";
+inline constexpr const char* kFeatureAgent = "agent";
 
 // ── Choices ──────────────────────────────────────────────────────────────────
 

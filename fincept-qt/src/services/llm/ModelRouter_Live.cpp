@@ -5,6 +5,7 @@
 
 #include "core/config/AppConfig.h"
 #include "core/logging/Logger.h"
+#include "core/policy/CommunityPolicy.h"
 #include "services/harness/HarnessEligibility.h"
 #include "services/harness/HarnessRegistry.h"
 #include "services/harness/IHarnessAdapter.h"
@@ -38,6 +39,13 @@ bool mrl_on_gui_thread() {
     return app && QThread::currentThread() == app->thread();
 }
 
+bool mrl_provider_allowed(const QString& provider) {
+    if (policy::is_deprecated_llm_provider(provider))
+        return false;
+    return provider.trimmed().compare(QLatin1String("fincept"), Qt::CaseInsensitive) != 0 ||
+           policy::fincept_metered_services_enabled();
+}
+
 /// Profiles, assignments, the active provider row and the per-feature
 /// switches: database + settings, safe from any thread.
 void mrl_gather_db(RouterState& s) {
@@ -49,11 +57,13 @@ void mrl_gather_db(RouterState& s) {
 
     if (auto r = LlmProfileRepository::instance().list_all_profiles(); r.is_ok()) {
         for (const LlmProfile& p : r.value()) {
+            if (!mrl_provider_allowed(p.provider))
+                continue;
             RouterProfile rp;
             rp.id = p.id;
             rp.name = p.name;
             rp.provider = p.provider;
-            rp.model = p.model_id;
+            rp.model = policy::normalize_llm_model(p.provider, p.model_id);
             rp.effort = p.reasoning_effort;
             rp.is_default = p.is_default;
             rp.has_key = !p.api_key.isEmpty();
@@ -67,21 +77,28 @@ void mrl_gather_db(RouterState& s) {
         for (const LlmProfileAssignment& a : r.value())
             s.assignments.insert(ModelRouter::assignment_key(a.context_type, a.context_id), a.profile_id);
     }
-    // The active provider row (else the first one — what LlmService always used).
+    // Prefer the active allowed row, else the first allowed row. A historical
+    // Ollama/Fincept row must not mask a configured DeepSeek provider.
     if (auto r = LlmConfigRepository::instance().list_providers(); r.is_ok() && !r.value().isEmpty()) {
         const QVector<LlmConfig>& rows = r.value();
-        const LlmConfig* pick = &rows.constFirst();
+        const LlmConfig* pick = nullptr;
         for (const LlmConfig& c : rows) {
+            if (!mrl_provider_allowed(c.provider))
+                continue;
+            if (!pick)
+                pick = &c;
             if (c.is_active) {
                 pick = &c;
                 break;
             }
         }
-        s.active_row.present = true;
-        s.active_row.provider = pick->provider.toLower();
-        s.active_row.model = pick->model;
-        s.active_row.has_key = !pick->api_key.isEmpty();
-        s.active_row.key_required = ProviderCatalog::requires_api_key(s.active_row.provider);
+        if (pick) {
+            s.active_row.present = true;
+            s.active_row.provider = pick->provider.toLower();
+            s.active_row.model = policy::normalize_llm_model(pick->provider, pick->model);
+            s.active_row.has_key = !pick->api_key.isEmpty();
+            s.active_row.key_required = ProviderCatalog::requires_api_key(s.active_row.provider);
+        }
     }
     auto& cfg = AppConfig::instance();
     for (const FeatureSpec& f : feature_specs()) {
@@ -102,6 +119,8 @@ qint64 mrl_gather_harnesses(RouterState& s, const QHash<QString, qint64>& refuse
     const QStringList system_names = QProcessEnvironment::systemEnvironment().keys(); // names only, never values
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
     for (const QString& id : reg.ids()) {
+        if (policy::is_deprecated_llm_provider(id))
+            continue;
         const harness::IHarnessAdapter* a = reg.adapter(id);
         if (!a)
             continue;
@@ -131,6 +150,8 @@ qint64 mrl_gather_harnesses(RouterState& s, const QHash<QString, qint64>& refuse
         s.harnesses.append(h);
     }
     s.default_harness = reg.default_harness();
+    if (policy::is_deprecated_llm_provider(s.default_harness))
+        s.default_harness.clear();
     return next_change;
 }
 
@@ -144,6 +165,11 @@ QString mrl_profile_for(const ModelChoice& choice, QString* error) {
         return {};
     }
     const QString provider = choice.provider_id().toLower();
+    if (!mrl_provider_allowed(provider)) {
+        if (error)
+            *error = QStringLiteral("This AI backend is disabled in the community build.");
+        return {};
+    }
     for (const LlmProfile& p : all.value()) {
         if (p.provider.toLower() != provider)
             continue;

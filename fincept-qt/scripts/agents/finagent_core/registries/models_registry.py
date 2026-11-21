@@ -74,13 +74,6 @@ class ModelsRegistry:
         },
 
         # Local Models
-        "ollama": {
-            "class": "agno.models.ollama.Ollama",
-            "models": ["llama3.3", "llama3.2", "mistral", "mixtral", "codellama", "phi3", "gemma2", "qwen2.5"],
-            "api_key_env": None,  # No API key needed
-            "default_model": "llama3.3",
-            "base_url": "http://localhost:11434",
-        },
         "lmstudio": {
             "class": "agno.models.lmstudio.LMStudio",
             "models": [],  # Dynamic based on loaded models
@@ -104,9 +97,9 @@ class ModelsRegistry:
         # DeepSeek
         "deepseek": {
             "class": "agno.models.deepseek.DeepSeek",
-            "models": ["deepseek-chat", "deepseek-coder", "deepseek-reasoner"],
+            "models": ["deepseek-flash", "deepseek-v4-pro"],
             "api_key_env": "DEEPSEEK_API_KEY",
-            "default_model": "deepseek-chat",
+            "default_model": "deepseek-flash",
         },
 
         # Mistral
@@ -269,14 +262,6 @@ class ModelsRegistry:
             "default_model": None,
         },
 
-        # Fincept (Built-in custom endpoint)
-        "fincept": {
-            "class": "finagent_core.registries.fincept_model.FinceptChat",
-            "models": ["fincept-llm"],
-            "api_key_env": "FINCEPT_API_KEY",
-            "default_model": "fincept-llm",
-            "base_url": "https://api.fincept.in/research/llm",
-        },
     }
 
     _loaded_models: Dict[str, Any] = {}
@@ -316,6 +301,11 @@ class ModelsRegistry:
             "gpt": "openai",
         }
         provider_lower = _PROVIDER_ALIASES.get(provider_lower, provider_lower)
+
+        if provider_lower in {"fincept", "ollama", "codex", "harness:codex"}:
+            raise ValueError(
+                f"LLM provider '{provider_lower}' is disabled. Configure a user-owned provider such as DeepSeek."
+            )
 
         if provider_lower not in cls.MODEL_CATALOG:
             # Unknown provider - treat as OpenAI-compatible with custom base_url
@@ -379,11 +369,6 @@ class ModelsRegistry:
                 "internlm", "dashscope", "siliconflow",
             }
 
-            # Providers whose SDK constructor names the endpoint `host` rather than
-            # `base_url`. agno.models.ollama.Ollama takes host=... — passing base_url
-            # raises "Ollama.__init__() got an unexpected keyword argument 'base_url'".
-            HOST_NOT_BASE_URL_PROVIDERS = {"ollama"}
-
             # Always pop base_url from kwargs so it never leaks via catch-all
             kwarg_base_url = kwargs.pop("base_url", None)
 
@@ -441,43 +426,23 @@ class ModelsRegistry:
 
             if provider_lower not in NO_BASE_URL_PROVIDERS:
                 if effective_base_url:
-                    if provider_lower in HOST_NOT_BASE_URL_PROVIDERS:
-                        model_kwargs["host"] = effective_base_url
-                    else:
-                        model_kwargs["base_url"] = effective_base_url
+                    model_kwargs["base_url"] = effective_base_url
 
             # Add optional parameters with provider-specific name mapping
             # Google Gemini uses max_output_tokens instead of max_tokens
             USES_MAX_OUTPUT_TOKENS = {"google", "vertexai"}
 
-            if provider_lower in HOST_NOT_BASE_URL_PROVIDERS:
-                # Ollama's constructor has no temperature/max_tokens fields — sampling
-                # params ride in an `options` dict (num_predict is its max-tokens key).
-                # Passing them top-level raises "unexpected keyword argument 'temperature'".
-                ollama_options = dict(model_kwargs.pop("options", {}) or {})
-                temp = kwargs.pop("temperature", None)
-                if temp is not None:
-                    ollama_options["temperature"] = temp
-                max_tok = kwargs.pop("max_tokens", None)
+            if "temperature" in kwargs:
+                model_kwargs["temperature"] = kwargs.pop("temperature")
+            if "max_tokens" in kwargs:
+                max_tok = kwargs.pop("max_tokens")
                 if max_tok is not None:
-                    ollama_options["num_predict"] = max_tok
-                max_ctok = kwargs.pop("max_completion_tokens", None)
-                if max_ctok is not None:
-                    ollama_options.setdefault("num_predict", max_ctok)
-                if ollama_options:
-                    model_kwargs["options"] = ollama_options
-            else:
-                if "temperature" in kwargs:
-                    model_kwargs["temperature"] = kwargs.pop("temperature")
-                if "max_tokens" in kwargs:
-                    max_tok = kwargs.pop("max_tokens")
-                    if max_tok is not None:
-                        if provider_lower in USES_MAX_OUTPUT_TOKENS:
-                            model_kwargs["max_output_tokens"] = max_tok
-                        else:
-                            model_kwargs["max_tokens"] = max_tok
-                if "max_completion_tokens" in kwargs:
-                    model_kwargs["max_completion_tokens"] = kwargs.pop("max_completion_tokens")
+                    if provider_lower in USES_MAX_OUTPUT_TOKENS:
+                        model_kwargs["max_output_tokens"] = max_tok
+                    else:
+                        model_kwargs["max_tokens"] = max_tok
+            if "max_completion_tokens" in kwargs:
+                model_kwargs["max_completion_tokens"] = kwargs.pop("max_completion_tokens")
 
             # Add remaining kwargs (filter out None values)
             for k, v in kwargs.items():

@@ -2,6 +2,10 @@
 
 #include "services/llm/LlmToolActivity.h"
 #include "services/llm/LlmService.h"
+#include "services/llm/LlmHistoryPolicy.h"
+
+#include "core/policy/CommunityPolicy.h"
+#include "core/metrics/LocalUsageMetrics.h"
 
 #include "auth/AuthManager.h"
 #include "core/config/AppConfig.h"
@@ -14,6 +18,7 @@
 #include "services/llm/LlmContentExtractors.h"
 #include "services/llm/LlmErrors.h"
 #include "services/llm/LlmRequestPolicy.h"
+#include "services/llm/LlmUsage.h"
 #include "services/llm/ModelCatalog.h"
 #include "services/llm/ModelRouter.h"
 #include "services/llm/ProviderCatalog.h"
@@ -50,10 +55,18 @@ namespace fincept::ai_chat {
 
 static constexpr const char* kLlmSvcTag = "LlmService";
 
+static bool llm_svc_provider_allowed(const QString& provider) {
+    if (policy::is_deprecated_llm_provider(provider))
+        return false;
+    return provider.compare(QLatin1String("fincept"), Qt::CaseInsensitive) != 0 ||
+           policy::fincept_metered_services_enabled();
+}
+
 // The one INFO line per LLM request (policy B.4): who answered, how long, what it
 // cost. Never the prompt or the answer.
 static void llm_svc_log_request_finished(const LlmResponse& resp, const QString& feature, bool stream,
                                          qint64 duration_ms) {
+    metrics::LocalUsageMetrics::record_llm(resp.provider, resp.prompt_tokens, resp.completion_tokens, resp.success);
     if (!Logger::instance().should_log(LogLevel::Info, kLlmSvcTag))
         return;
     QList<LogField> fields{{"provider", resp.provider},
@@ -69,51 +82,29 @@ static void llm_svc_log_request_finished(const LlmResponse& resp, const QString&
     LOG_INFO(kLlmSvcTag, logf("LLM request finished", fields));
 }
 
-// The whole conversation is re-posted with every request, and nothing bounded it:
-// a long AI Chat session eventually exceeded the model's context window and every
-// further message failed with a context-length 400 until the user opened a new
-// session. Drop the OLDEST turns once the transcript passes a character budget
-// (~4 chars/token, so the 200k default is ~50k tokens — under a 128k window with
-// room for the system prompt, tool schemas and the reply). Leading system
-// messages are never dropped, the newest turn is always kept, and the kept
-// transcript is made to open on a user turn because Anthropic and Gemini reject
-// an assistant-first array. `llm/history_max_chars` overrides; 0 disables.
-static std::vector<ConversationMessage> llm_svc_trim_history(const std::vector<ConversationMessage>& history) {
-    const qsizetype budget = std::max(0, AppConfig::instance().get("llm/history_max_chars", QVariant(200000)).toInt());
-    if (budget == 0 || history.empty())
-        return history;
-
-    std::size_t first_turn = 0;
-    qsizetype system_chars = 0;
-    while (first_turn < history.size() && history[first_turn].role == QLatin1String("system")) {
-        system_chars += history[first_turn].content.size();
-        ++first_turn;
+// Every provider re-posts conversation history on each turn. Budget the whole
+// request-side conversation, including the new user message, so an attachment
+// cannot combine with old history and unexpectedly multiply BYO input spend.
+// `llm/history_max_chars` overrides the cost-conscious default; 0 disables.
+static std::vector<ConversationMessage> llm_svc_trim_history(const std::vector<ConversationMessage>& history,
+                                                             qsizetype current_message_chars) {
+    LlmBudgetSettings budget_settings;
+    budget_settings.history_chars = AppConfig::instance()
+                                        .get(kLlmHistoryCharsKey, QVariant(kDefaultLlmHistoryChars))
+                                        .toInt();
+    const qsizetype budget = validate_llm_budget_settings(budget_settings).history_chars;
+    HistoryTrimResult result = trim_history_for_request(history, current_message_chars, budget);
+    if (result.dropped_messages > 0) {
+        LOG_INFO(kLlmSvcTag,
+                 QString("Conversation request trimmed from %1 to %2 history chars (new message %3, budget %4); "
+                         "dropped %5 oldest message(s)")
+                     .arg(result.original_chars)
+                     .arg(result.kept_chars)
+                     .arg(current_message_chars)
+                     .arg(budget)
+                     .arg(result.dropped_messages));
     }
-    qsizetype total = system_chars;
-    for (std::size_t i = first_turn; i < history.size(); ++i)
-        total += history[i].content.size();
-    if (total <= budget)
-        return history;
-
-    std::size_t keep_from = history.size();
-    qsizetype used = system_chars;
-    while (keep_from > first_turn) {
-        const qsizetype sz = history[keep_from - 1].content.size();
-        if (keep_from < history.size() && used + sz > budget)
-            break;
-        used += sz;
-        --keep_from;
-    }
-    while (keep_from < history.size() && history[keep_from].role == QLatin1String("assistant"))
-        ++keep_from;
-
-    LOG_WARN(kLlmSvcTag, QString("Conversation history is %1 chars (budget %2) — dropping the %3 oldest message(s)")
-                             .arg(total)
-                             .arg(budget)
-                             .arg(keep_from - first_turn));
-    std::vector<ConversationMessage> out(history.begin(), history.begin() + static_cast<std::ptrdiff_t>(first_turn));
-    out.insert(out.end(), history.begin() + static_cast<std::ptrdiff_t>(keep_from), history.end());
-    return out;
+    return std::move(result.messages);
 }
 
 // Executor for chat_streaming() requests. A turn can hold its thread for minutes
@@ -300,7 +291,7 @@ void LlmService::ensure_config() const {
     auto providers = LlmConfigRepository::instance().list_providers();
     if (providers.is_ok()) {
         for (const auto& c : providers.value()) {
-            if (c.is_active) {
+            if (c.is_active && llm_svc_provider_allowed(c.provider)) {
                 provider_ = c.provider.toLower();
                 api_key_ = c.api_key;
                 base_url_ = c.base_url;
@@ -309,24 +300,30 @@ void LlmService::ensure_config() const {
                 break;
             }
         }
-        // No active provider — pick the first one.
-        if (provider_.isEmpty() && !providers.value().isEmpty()) {
-            const auto& c = providers.value().first();
-            provider_ = c.provider.toLower();
-            api_key_ = c.api_key;
-            base_url_ = c.base_url;
-            model_ = c.model;
-            tools_enabled_ = c.tools_enabled;
+        // No allowed active provider — pick the first allowed user-owned row.
+        if (provider_.isEmpty()) {
+            for (const auto& c : providers.value()) {
+                if (!llm_svc_provider_allowed(c.provider))
+                    continue;
+                provider_ = c.provider.toLower();
+                api_key_ = c.api_key;
+                base_url_ = c.base_url;
+                model_ = c.model;
+                tools_enabled_ = c.tools_enabled;
+                break;
+            }
         }
     }
 
-    // Nothing configured — default to Fincept with the session key.
+    // Nothing configured — use the BYO DeepSeek route. Without the user's key
+    // it fails visibly; a metered Fincept provider is never selected silently.
     if (provider_.isEmpty()) {
-        provider_ = "fincept";
-        model_ = "MiniMax-M2.7";
-        base_url_ = {};
-        LOG_INFO(kLlmSvcTag, "No LLM provider configured — using Fincept default");
+        provider_ = policy::default_llm_provider();
+        model_ = policy::default_llm_model();
+        base_url_ = policy::default_llm_base_url();
+        LOG_INFO(kLlmSvcTag, "No LLM provider configured — using BYO DeepSeek default");
     }
+    model_ = policy::normalize_llm_model(provider_, model_);
 
     // Fincept key resolves via AuthManager (live session → encrypted
     // SecureStorage). The legacy plaintext settings row is no longer read (CR-08).
@@ -435,18 +432,19 @@ QVector<ModelChoice> LlmService::route_chain(const ChatRoute& route) {
                     chain.end());
     }
     if (chain.isEmpty()) {
-        ModelChoice fincept;
-        fincept.kind = ModelChoice::Kind::Fincept;
-        fincept.provider = QStringLiteral("fincept");
-        fincept.label = QStringLiteral("Fincept LLM");
-        fincept.reason = QStringLiteral("fincept_fallback");
-        fincept.vendor = QStringLiteral("Fincept");
-        chain.append(fincept);
+        ModelChoice byo;
+        byo.kind = ModelChoice::Kind::Api;
+        byo.provider = policy::default_llm_provider();
+        byo.model = policy::default_llm_model();
+        byo.label = QStringLiteral("DeepSeek · ") + byo.model;
+        byo.reason = QStringLiteral("byo_fallback");
+        byo.vendor = QStringLiteral("DeepSeek");
+        chain.append(byo);
     }
     return chain;
 }
 
-LlmService::ConfigSnapshot LlmService::snapshot_for(const ModelChoice& choice, const QString& feature) {
+LlmService::ConfigSnapshot LlmService::snapshot_for(const ModelChoice& choice, const QString& feature) const {
     ConfigSnapshot s;
     QString legacy_provider;
     {
@@ -482,6 +480,8 @@ LlmService::ConfigSnapshot LlmService::snapshot_for(const ModelChoice& choice, c
             break;
         }
         case ModelChoice::Kind::Api:
+            {
+            bool applied_profile = false;
             if (!choice.profile_id.isEmpty()) {
                 const auto p = LlmProfileRepository::instance().get_profile(choice.profile_id);
                 if (p.is_ok()) {
@@ -496,11 +496,43 @@ LlmService::ConfigSnapshot LlmService::snapshot_for(const ModelChoice& choice, c
                     if (!prof.system_prompt.trimmed().isEmpty())
                         s.system_prompt = prof.system_prompt;
                     s.tools_enabled = true;
+                    applied_profile = true;
                 }
             }
-            // No profile: the active provider row — already in the snapshot.
+            // A route fallback can differ from the active settings row (for
+            // example, a saved Ollama row is rejected and DeepSeek is chosen).
+            // Adopt the chosen provider's own row, or a clean keyless snapshot,
+            // instead of accidentally executing the rejected active backend.
+            if (!applied_profile && s.provider.compare(choice.provider, Qt::CaseInsensitive) != 0) {
+                bool found = false;
+                if (auto rows = LlmConfigRepository::instance().list_providers(); rows.is_ok()) {
+                    for (const LlmConfig& row : rows.value()) {
+                        if (row.provider.compare(choice.provider, Qt::CaseInsensitive) != 0)
+                            continue;
+                        s.provider = row.provider.toLower();
+                        s.model = row.model;
+                        s.api_key = row.api_key;
+                        s.base_url = row.base_url;
+                        s.tools_enabled = row.tools_enabled;
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    s.provider = choice.provider.toLower();
+                    s.model = choice.model;
+                    s.api_key.clear();
+                    s.base_url = ProviderCatalog::default_base_url(s.provider);
+                    s.tools_enabled = true;
+                }
+            }
+            if (s.model.isEmpty())
+                s.model = choice.model;
             break;
+            }
     }
+    if (!choice.is_harness())
+        s.model = policy::normalize_llm_model(s.provider, s.model);
     return s;
 }
 
@@ -559,6 +591,28 @@ int LlmService::active_max_tokens() const {
     return max_tokens_;
 }
 
+QJsonObject LlmService::resolved_config_json(const ChatRoute& route) const {
+    const QString feature = route.feature.isEmpty() ? QString::fromLatin1(kFeatureAiChat) : route.feature;
+    const QVector<ModelChoice> chain = route_chain(route);
+    if (chain.isEmpty() || chain.constFirst().is_harness())
+        return {};
+
+    const ConfigSnapshot cfg = snapshot_for(chain.constFirst(), feature);
+    if (!llm_svc_provider_allowed(cfg.provider) || ProviderCatalog::is_blocked(cfg.provider, cfg.base_url) ||
+        (ProviderCatalog::requires_api_key(cfg.provider) && cfg.api_key.trimmed().isEmpty()))
+        return {};
+
+    QJsonObject out;
+    out[QStringLiteral("provider")] = cfg.provider;
+    out[QStringLiteral("model_id")] = cfg.model;
+    out[QStringLiteral("api_key")] = cfg.api_key;
+    out[QStringLiteral("base_url")] = cfg.base_url;
+    out[QStringLiteral("temperature")] = cfg.temperature;
+    if (cfg.max_tokens > 0)
+        out[QStringLiteral("max_tokens")] = cfg.max_tokens;
+    return out;
+}
+
 int LlmService::active_max_tool_rounds() const {
     QMutexLocker lock(&mutex_);
     ensure_config();
@@ -572,14 +626,26 @@ bool LlmService::tools_enabled() const {
 }
 
 bool LlmService::is_configured() const {
-    // A route always ends with Fincept LLM, so something can answer; only a
-    // blocked provider chosen explicitly is "not configured".
-    const ModelChoice c = ModelRouter::instance().resolve(QString::fromLatin1(kFeatureAiChat));
-    if (c.kind != ModelChoice::Kind::Api)
+    return is_configured(ChatRoute{});
+}
+
+bool LlmService::is_configured(const ChatRoute& route) const {
+    const QString feature = route.feature.isEmpty() ? QString::fromLatin1(kFeatureAiChat) : route.feature;
+    const QVector<ModelChoice> chain = route_chain(route);
+    if (chain.isEmpty())
+        return false;
+    const ModelChoice& c = chain.constFirst();
+    if (c.is_harness())
         return true;
-    QMutexLocker lock(&mutex_);
-    ensure_config();
-    return !ProviderCatalog::is_blocked(c.provider, c.profile_id.isEmpty() ? base_url_ : QString());
+
+    // Resolve the exact profile/provider row the request would use. The router
+    // deliberately keeps a keyless DeepSeek fallback in its chain so the UI can
+    // explain what to configure; that fallback must not make the composer look
+    // ready or trigger an unauthenticated network request.
+    const ConfigSnapshot cfg = snapshot_for(c, feature);
+    if (!llm_svc_provider_allowed(cfg.provider) || ProviderCatalog::is_blocked(cfg.provider, cfg.base_url))
+        return false;
+    return !ProviderCatalog::requires_api_key(cfg.provider) || !cfg.api_key.trimmed().isEmpty();
 }
 
 ResolvedLlmProfile LlmService::resolve_profile(const QString& context_type, const QString& context_id) const {
@@ -642,6 +708,8 @@ QString LlmService::get_endpoint_url() const {
     // Fincept sync chat endpoint (async lives in fincept_async_request).
     // The only provider whose route is not derivable from a base_url, so it is
     // the only one ProviderCatalog::chat_endpoint leaves to the caller.
+    if (p == "fincept" && !policy::fincept_metered_services_enabled())
+        return {};
     if (p == "fincept")
         return fincept::AppConfig::instance().api_base_url() + "/research/chat";
 
@@ -694,12 +762,25 @@ QMap<QString, QString> LlmService::get_headers() const {
 }
 
 LlmResponse LlmService::do_request(const QString& user_message, const std::vector<ConversationMessage>& history) {
+    LlmResponse resp;
+
+    // Final execution boundary. Config loading and ModelRouter already filter
+    // these providers, but a manually constructed snapshot must not revive a
+    // retired Ollama/Codex route or the metered Fincept backend.
+    if (!llm_svc_provider_allowed(provider_)) {
+        resp.error = QStringLiteral("This AI backend is disabled. Configure a user-owned provider such as DeepSeek.");
+        return resp;
+    }
+    if (ProviderCatalog::requires_api_key(provider_) && api_key_.trimmed().isEmpty()) {
+        resp.error = QStringLiteral(
+            "No LLM provider configured: add your own API key in Settings › LLM Configuration.");
+        return resp;
+    }
+
     // An agent harness (ModelRouter route "harness:<id>"): the same branch point
     // as the Fincept special case below.
     if (ProviderCatalog::is_harness(provider_))
         return do_harness_request(user_message, history, {});
-
-    LlmResponse resp;
 
     if (ProviderCatalog::is_blocked(provider_, base_url_)) {
         resp.error = "AtlasCloud has been banned by Fincept and cannot be used.";
@@ -868,6 +949,11 @@ LlmResponse LlmService::do_request(const QString& user_message, const std::vecto
                 QElapsedTimer batch_timer;
                 batch_timer.start();
                 const auto results = detail::execute_tool_calls(calls);
+                std::vector<QString> result_names;
+                result_names.reserve(calls.size());
+                for (const auto& call : calls)
+                    result_names.push_back(call.display);
+                const auto encoded_results = detail::encode_tool_results_for_llm(result_names, results);
                 {
                     const qint64 ms = batch_timer.elapsed();
                     for (std::size_t k = 0; k < calls.size(); ++k)
@@ -881,7 +967,7 @@ LlmResponse LlmService::do_request(const QString& user_message, const std::vecto
                     more_results.append(
                         QJsonObject{{"type", "tool_result"},
                                     {"tool_use_id", calls[k].call_id},
-                                    {"content", detail::encode_tool_result_for_llm(calls[k].display, results[k])}});
+                                    {"content", encoded_results[k]}});
                 }
                 loop_msgs.append(QJsonObject{{"role", "user"}, {"content", more_results}});
             }
@@ -975,11 +1061,12 @@ LlmResponse LlmService::do_request(const QString& user_message, const std::vecto
                         for (std::size_t k = 0; k < calls.size(); ++k)
                             emit_tool_done(calls[k].display, calls[k].args, results[k], ms, calls.size() > 1);
                     }
-                    QJsonArray fn_response_parts;
+                    std::vector<QString> result_names;
+                    std::vector<QJsonObject> response_objects;
+                    result_names.reserve(calls.size());
+                    response_objects.reserve(calls.size());
                     for (std::size_t k = 0; k < calls.size(); ++k) {
-                        const auto& c = calls[k];
                         const auto& tr = results[k];
-                        // Gemini requires response to be an object — wrap strings under "result".
                         QJsonObject response_obj;
                         if (!tr.data.isNull() && !tr.data.isUndefined() && tr.data.isObject())
                             response_obj = tr.data.toObject();
@@ -987,13 +1074,19 @@ LlmResponse LlmService::do_request(const QString& user_message, const std::vecto
                             response_obj["result"] = tr.message;
                         else
                             response_obj = tr.to_json();
-                        // Same transcript budget as the other providers — this
-                        // path re-posts `fu_contents` wholesale every round too.
-                        detail::fit_llm_payload(c.display, response_obj);
+                        result_names.push_back(calls[k].display);
+                        response_objects.push_back(std::move(response_obj));
+                    }
+                    const auto shaped_results =
+                        detail::fit_llm_payloads_for_round(result_names, std::move(response_objects));
+                    QJsonArray fn_response_parts;
+                    for (std::size_t k = 0; k < calls.size(); ++k) {
+                        const auto& c = calls[k];
                         // Parts are positional and must mirror the model's
                         // functionCall order, not completion order.
                         fn_response_parts.append(QJsonObject{
-                            {"functionResponse", QJsonObject{{"name", c.wire_name}, {"response", response_obj}}}});
+                            {"functionResponse",
+                             QJsonObject{{"name", c.wire_name}, {"response", shaped_results[k]}}}});
                     }
                     fu_contents.append(QJsonObject{{"role", "user"}, {"parts", fn_response_parts}});
                     last_response_parts = fn_response_parts;
@@ -1135,16 +1228,12 @@ LlmResponse LlmService::do_request(const QString& user_message, const std::vecto
                                                  {"content", detail::encode_tool_result_for_llm(bare, tr)}});
                 }
 
-                resp = do_tool_loop(loop_msgs, url, hdr);
+                LlmResponse r1;
+                parse_usage(r1, rj, provider_);
+                resp = do_tool_loop(loop_msgs, url, hdr, r1.prompt_tokens, r1.completion_tokens);
                 // do_tool_loop sums the follow-up rounds; add round 1 instead of
                 // overwriting the total with it.
-                {
-                    LlmResponse r1;
-                    parse_usage(r1, rj, provider_);
-                    resp.prompt_tokens += r1.prompt_tokens;
-                    resp.completion_tokens += r1.completion_tokens;
-                    resp.total_tokens += r1.total_tokens;
-                }
+                add_provider_usage(resp, r1);
                 return resp;
 
             } else {
@@ -1176,6 +1265,20 @@ LlmResponse LlmService::do_request(const QString& user_message, const std::vecto
 
 LlmResponse LlmService::do_streaming_request(const QString& user_message,
                                              const std::vector<ConversationMessage>& history, StreamCallback on_chunk) {
+    if (!llm_svc_provider_allowed(provider_)) {
+        LlmResponse resp;
+        resp.error = QStringLiteral("This AI backend is disabled. Configure a user-owned provider such as DeepSeek.");
+        on_chunk("", true);
+        return resp;
+    }
+    if (ProviderCatalog::requires_api_key(provider_) && api_key_.trimmed().isEmpty()) {
+        LlmResponse resp;
+        resp.error = QStringLiteral(
+            "No LLM provider configured: add your own API key in Settings › LLM Configuration.");
+        on_chunk("", true);
+        return resp;
+    }
+
     // An agent harness streams through its own process (text, thinking, tool cards).
     if (ProviderCatalog::is_harness(provider_)) {
         LlmResponse resp = do_harness_request(user_message, history, on_chunk);
@@ -1640,7 +1743,7 @@ LlmResponse LlmService::chat(const QString& user_message, const std::vector<Conv
 
     // thread_local guard avoids racing with concurrent chat_streaming calls from the floating bubble.
     detail::ToolPolicyGuard guard(use_tools ? ToolPolicy::All : ToolPolicy::None);
-    const std::vector<ConversationMessage> trimmed = llm_svc_trim_history(history);
+    const std::vector<ConversationMessage> trimmed = llm_svc_trim_history(history, user_message.size());
     QString notice;
     int idx = 0;
     LlmResponse resp;
@@ -1872,7 +1975,8 @@ void LlmService::chat_streaming(const QString& user_message, const std::vector<C
                     *emitted_output = true;
                 guarded_chunk(chunk, false);
             };
-            const std::vector<ConversationMessage> trimmed_history = llm_svc_trim_history(history_copy);
+            const std::vector<ConversationMessage> trimmed_history =
+                llm_svc_trim_history(history_copy, user_message.size());
             QString notice;
             int idx = 0;
             LlmResponse resp;

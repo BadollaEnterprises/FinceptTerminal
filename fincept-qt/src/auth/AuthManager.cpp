@@ -6,8 +6,10 @@
 #include "auth/PinManager.h"
 #include "auth/UserApi.h"
 #include "core/logging/Logger.h"
+#include "core/policy/CommunityPolicy.h"
 #include "network/http/HttpClient.h"
 #include "storage/repositories/LlmConfigRepository.h"
+#include "storage/repositories/LlmProfileRepository.h"
 #include "storage/repositories/SettingsRepository.h"
 #include "storage/secure/SecretMigration.h"
 #include "storage/secure/SecureStorage.h"
@@ -406,7 +408,8 @@ void AuthManager::clear_session() {
     // re-auth flow (LockScreen → reauth_requested), and that path should call
     // PinManager::clear_pin() explicitly before invoking logout().
 
-    // Clear auto-configured fincept LLM provider and reset LlmService
+    // A legacy build may have provisioned this metered route. It is account
+    // state, not a user-owned credential, so sign-out retires it as well.
     LlmConfigRepository::instance().delete_provider("fincept");
 }
 
@@ -421,6 +424,11 @@ bool AuthManager::needs_pin_setup() const {
 void AuthManager::initialize() {
     set_loading(true);
     load_session();
+
+    // Provider configuration is device-local and independent of whether the
+    // account secret or network is currently available. Retire stale metered
+    // rows immediately so an offline start cannot surface or reactivate them.
+    reconcile_llm_provider_policy();
 
     if (saved_session_failure_.failed()) {
         // Neither "signed in" nor "signed out": WindowFrame shows the blocked
@@ -634,7 +642,7 @@ void AuthManager::complete_auth_flow(std::function<void()> on_done) {
         if (!session_.api_key.isEmpty())
             session_.authenticated = true;
         save_session();
-        auto_configure_fincept_llm();
+        reconcile_llm_provider_policy();
         set_loading(false);
         if (on_done)
             on_done();
@@ -1284,47 +1292,80 @@ void AuthManager::announce_credit_balance() {
     emit credit_balance_changed(balance);
 }
 
-// ── Auto-configure Fincept LLM provider ──────────────────────────────────────
+// ── Enforce the LLM provider policy after authentication ────────────────────
 
-void AuthManager::auto_configure_fincept_llm() {
-    if (session_.api_key.isEmpty())
+void AuthManager::reconcile_llm_provider_policy() {
+    // A commercial build that explicitly enables metered routes owns its
+    // provisioning flow elsewhere. Authentication must never manufacture a
+    // model choice or silently change a user-owned route.
+    if (policy::fincept_metered_services_enabled())
         return;
 
-    // CR-08: do NOT persist the api_key in the plaintext settings table. The
-    // key already lives in the in-memory session and in SecureStorage (written
-    // by save_session). LlmService and friends resolve it via
-    // AuthManager::fincept_api_key(). A plaintext row an older build left is
-    // removed by retire_legacy_copies() once its move is confirmed — never here
-    // unconditionally (it may hold the only copy when the store is failing).
+    auto& repository = LlmConfigRepository::instance();
+    const auto listed = repository.list_providers();
+    QString replacement;
+    bool has_selectable_active = false;
+    bool retired_was_active = false;
 
-    // Only create the fincept provider row if it doesn't already exist.
-    // This prevents overwriting the user's model/settings choice on every
-    // session revalidation (~30s interval).
-    auto providers = LlmConfigRepository::instance().list_providers();
-    bool fincept_exists = false;
-    if (providers.is_ok()) {
-        for (const auto& p : providers.value()) {
-            if (p.provider.toLower() == "fincept") {
-                fincept_exists = true;
-                break;
+    if (listed.is_ok()) {
+        for (const auto& configured : listed.value()) {
+            const QString provider = configured.provider.trimmed();
+            if (!policy::is_ai_backend_selectable(provider)) {
+                retired_was_active = retired_was_active || configured.is_active;
+                continue;
             }
+            has_selectable_active = has_selectable_active || configured.is_active;
+            if (replacement.isEmpty() ||
+                provider.compare(policy::default_llm_provider(), Qt::CaseInsensitive) == 0)
+                replacement = provider;
         }
     }
 
-    if (!fincept_exists) {
-        LlmConfig fincept_llm;
-        fincept_llm.provider = "fincept";
-        fincept_llm.model = "MiniMax-M2.7";
-        fincept_llm.base_url = {};
-        LlmConfigRepository::instance().save_provider(fincept_llm);
-        LOG_INFO("Auth", "Created fincept LLM provider config");
+    // delete_provider also removes any encrypted provider credential. Fincept's
+    // account key remains solely in AuthManager/SecureStorage for account APIs;
+    // it is never copied into an LLM configuration row.
+    const auto removed = repository.delete_provider(QStringLiteral("fincept"));
+    if (removed.is_err())
+        LOG_WARN("Auth", QStringLiteral("Could not retire legacy Fincept LLM provider: %1")
+                             .arg(QString::fromStdString(removed.error())));
+
+    // Older releases also persisted Ollama/Codex rows and could use different
+    // casing for provider ids. Retire every non-selectable provider exactly as
+    // stored; the explicit lowercase deletion above handles the common legacy
+    // Fincept row even when list_providers itself could not be read.
+    if (listed.is_ok()) {
+        for (const auto& configured : listed.value()) {
+            if (policy::is_ai_backend_selectable(configured.provider))
+                continue;
+            const auto retired = repository.delete_provider(configured.provider);
+            if (retired.is_err())
+                LOG_WARN("Auth", QStringLiteral("Could not retire legacy LLM provider %1: %2")
+                                     .arg(configured.provider, QString::fromStdString(retired.error())));
+        }
     }
 
-    // Set as active if no other provider is currently active
-    auto active = LlmConfigRepository::instance().get_active_provider();
-    bool has_active = active.is_ok() && !active.value().provider.isEmpty();
-    if (!has_active)
-        LlmConfigRepository::instance().set_active("fincept");
+    // Profiles have their own table and assignment graph. Removing a retired
+    // profile also cascade-removes its assignments, so no hidden Fincept,
+    // Ollama or Codex choice can be revived by an old agent or feature slot.
+    auto& profiles = LlmProfileRepository::instance();
+    const auto all_profiles = profiles.list_all_profiles();
+    if (all_profiles.is_ok()) {
+        for (const auto& profile : all_profiles.value()) {
+            if (policy::is_ai_backend_selectable(profile.provider))
+                continue;
+            const auto retired = profiles.delete_profile(profile.id);
+            if (retired.is_err())
+                LOG_WARN("Auth", QStringLiteral("Could not retire legacy LLM profile %1: %2")
+                                     .arg(profile.id, QString::fromStdString(retired.error())));
+        }
+    }
+
+    if (!replacement.isEmpty() && (retired_was_active || !has_selectable_active)) {
+        const auto activated = repository.set_active(replacement);
+        if (activated.is_err())
+            LOG_WARN("Auth", QStringLiteral("Could not restore BYO LLM provider %1: %2")
+                                 .arg(replacement, QString::fromStdString(activated.error())));
+    }
 }
 
 } // namespace fincept::auth

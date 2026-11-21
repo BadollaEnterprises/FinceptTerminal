@@ -46,12 +46,14 @@
 
 #include "core/config/AppConfig.h"
 #include "core/logging/Logger.h"
+#include "core/policy/CommunityPolicy.h"
 #include "mcp/McpProvider.h"
 #include "mcp/McpService.h"
 #include "mcp/ResultStore.h"
 #include "services/llm/LlmContentExtractors.h"
 #include "services/llm/LlmErrors.h"
 #include "services/llm/LlmRequestPolicy.h"
+#include "services/llm/LlmUsage.h"
 #include "services/llm/LlmService.h"
 #include "services/llm/LlmToolActivity.h"
 
@@ -139,9 +141,7 @@ constexpr int kMaxConsecutivePollFailures = 8;
 // loop re-sends the whole prompt and is billed for it; returning only the last
 // round's usage made a ten-round turn look ten times cheaper than it was.
 void fincept_add_usage(LlmResponse& total, const LlmResponse& round) {
-    total.prompt_tokens += round.prompt_tokens;
-    total.completion_tokens += round.completion_tokens;
-    total.total_tokens += round.total_tokens > 0 ? round.total_tokens : round.prompt_tokens + round.completion_tokens;
+    add_provider_usage(total, round);
 }
 } // namespace
 
@@ -391,6 +391,15 @@ LlmResponse LlmService::fincept_submit_poll(const QString& prompt, QJsonArray* o
     LlmResponse resp;
     if (out_tool_calls)
         *out_tool_calls = {};
+
+    // Defense in depth: callers already route Fincept through the community
+    // policy, but this is the final network boundary. Never let a new or
+    // refactored caller reach the hosted, credit-backed endpoint directly.
+    if (!fincept::policy::fincept_metered_services_enabled()) {
+        resp.error = QStringLiteral("Blocked by the community credit firewall. Use a configured BYO provider such "
+                                    "as DeepSeek instead.");
+        return resp;
+    }
 
     // {prompt, max_tokens} only — the endpoint's documented contract. No
     // `tools` (see the header note), no temperature (backend default).
@@ -814,6 +823,7 @@ LlmResponse LlmService::fincept_async_request(const QString& user_message,
         r.prompt_tokens = usage.prompt_tokens;
         r.completion_tokens = usage.completion_tokens;
         r.total_tokens = usage.total_tokens;
+        r.cached_prompt_tokens = usage.cached_prompt_tokens;
         return r;
     };
     // Success of each memoised call, so a served-from-cache repeat reports the

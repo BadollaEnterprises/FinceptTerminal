@@ -4,6 +4,8 @@
 
 #include "services/llm/ModelRouter.h"
 
+#include "core/policy/CommunityPolicy.h"
+
 #include <QStringList>
 
 namespace fincept::ai_chat {
@@ -29,7 +31,13 @@ QString mr_provider_name(const RouterState& s, const QString& provider) {
     const QString n = s.provider_names.value(provider.toLower());
     if (!n.isEmpty())
         return n;
+    if (provider.compare(QLatin1String("deepseek"), Qt::CaseInsensitive) == 0)
+        return QStringLiteral("DeepSeek");
     return provider.isEmpty() ? provider : provider.left(1).toUpper() + provider.mid(1);
+}
+
+bool mr_api_provider_allowed(const QString& provider) {
+    return !policy::is_deprecated_llm_provider(provider);
 }
 
 ModelChoice mr_api(const RouterState& s, const QString& provider, const QString& model, const QString& reason,
@@ -37,10 +45,10 @@ ModelChoice mr_api(const RouterState& s, const QString& provider, const QString&
     ModelChoice c;
     c.kind = ModelChoice::Kind::Api;
     c.provider = provider.toLower();
-    c.model = model;
+    c.model = policy::normalize_llm_model(c.provider, model);
     c.profile_id = profile_id;
     c.vendor = mr_provider_name(s, c.provider);
-    c.label = model.isEmpty() ? c.vendor : c.vendor + QStringLiteral(" · ") + model;
+    c.label = c.model.isEmpty() ? c.vendor : c.vendor + QStringLiteral(" · ") + c.model;
     c.reason = reason;
     c.require_api_key_source = false;
     return c;
@@ -104,7 +112,7 @@ const QVector<FeatureSpec>& feature_specs() {
          "agent per day at the default cadence)."},
         {"portfolio_insights", "Portfolio insights", HarnessFit::Ok, true, false, true, false, false, false,
          "Runs on the Python agent runtime; harnesses need its loopback gateway first."},
-        {"agent", "Agent Studio agents", HarnessFit::No, false, true, true, false, false, false,
+        {kFeatureAgent, "Agent Studio agents", HarnessFit::No, false, true, true, false, false, false,
          "Tool-using agents run on the Python agent runtime: not available for harnesses yet."},
         {"team", "Agent Studio teams", HarnessFit::No, false, true, true, false, false, false,
          "One call per member per round: a harness process per call is too slow."},
@@ -114,8 +122,9 @@ const QVector<FeatureSpec>& feature_specs() {
          "Use Chat Mode's harness engine for long harness tasks."},
         {"ai_quant_lab", "AI Quant Lab", HarnessFit::No, false, false, true, false, false, false,
          "LangChain tool loops and embeddings: API providers only."},
-        {"news_analysis", "News analysis", HarnessFit::Ok, false, false, false, true, false, false,
-         "Answered by the Fincept server."},
+        {kFeatureNewsAnalysis, "News analysis", HarnessFit::Ok, false, false, false, true, false, true, ""},
+        {kFeatureProAnalyticsExplain, "Local analytics explanations", HarnessFit::No, true, false, false, false,
+         false, true, ""},
     };
     return k;
 }
@@ -173,12 +182,20 @@ QString ModelRouter::harness_label(const QString& display_name, const QString& m
 }
 
 QString ModelRouter::billing_note(const ModelChoice& c) {
+    // Historical conversations may still carry the provider that produced an
+    // old answer. Never turn that archival metadata into live-looking billing
+    // copy (for example, "Ollama · runs locally") after the backend has been
+    // retired from this product.
+    if (!policy::is_ai_backend_selectable(c.provider_id()))
+        return {};
     switch (c.kind) {
         case ModelChoice::Kind::Harness:
             return c.require_api_key_source
                        ? QStringLiteral("0 credits · billed to your %1 API key").arg(c.vendor)
                        : QStringLiteral("0 credits · billed to your %1 key").arg(c.vendor);
         case ModelChoice::Kind::Api:
+            if (c.provider.compare(QLatin1String("ollama"), Qt::CaseInsensitive) == 0)
+                return QStringLiteral("0 credits · runs locally");
             return QStringLiteral("0 credits · billed to your %1 API key").arg(c.vendor);
         case ModelChoice::Kind::Fincept:
             break;
@@ -229,7 +246,14 @@ RouteResult ModelRouter::resolve_with(const RouterState& state, const QString& f
                                p.effort.isEmpty() ? h->default_effort : p.effort, QStringLiteral("explicit"), p.id));
             }
         } else if (provider == QLatin1String("fincept")) {
-            add(mr_fincept(p.model, QStringLiteral("explicit"), p.id));
+            if (policy::fincept_metered_services_enabled())
+                add(mr_fincept(p.model, QStringLiteral("explicit"), p.id));
+            else
+                skip(QStringLiteral("Profile “%1”").arg(p.name),
+                     QStringLiteral("blocked by the community credit firewall"));
+        } else if (!mr_api_provider_allowed(provider)) {
+            skip(QStringLiteral("Profile “%1”").arg(p.name),
+                 QStringLiteral("this legacy local-model backend is disabled"));
         } else if (p.key_required && !p.has_key) {
             skip(QStringLiteral("Profile “%1”").arg(p.name), QStringLiteral("it has no API key"));
         } else {
@@ -278,8 +302,16 @@ RouteResult ModelRouter::resolve_with(const RouterState& state, const QString& f
         const RouterProfile& p = it.value();
         if (!p.is_default || p.provider.toLower().startsWith(QLatin1String(kMrHarnessPrefix)))
             continue;
-        if (p.provider.compare(QLatin1String("fincept"), Qt::CaseInsensitive) == 0)
-            add(mr_fincept(p.model, QStringLiteral("profile"), p.id));
+        if (p.provider.compare(QLatin1String("fincept"), Qt::CaseInsensitive) == 0) {
+            if (policy::fincept_metered_services_enabled())
+                add(mr_fincept(p.model, QStringLiteral("profile"), p.id));
+            else
+                skip(QStringLiteral("Default profile “%1”").arg(p.name),
+                     QStringLiteral("blocked by the community credit firewall"));
+        }
+        else if (!mr_api_provider_allowed(p.provider))
+            skip(QStringLiteral("Default profile “%1”").arg(p.name),
+                 QStringLiteral("this legacy local-model backend is disabled"));
         else if (!p.key_required || p.has_key)
             add(mr_api(state, p.provider, p.model, QStringLiteral("profile"), p.id));
         else
@@ -287,12 +319,17 @@ RouteResult ModelRouter::resolve_with(const RouterState& state, const QString& f
         break;
     }
     const RouterActiveRow& row = state.active_row;
-    if (row.present && !row.provider.isEmpty() && row.provider.compare(QLatin1String("fincept"), Qt::CaseInsensitive) != 0 &&
+    if (row.present && !row.provider.isEmpty() && mr_api_provider_allowed(row.provider) &&
+        row.provider.compare(QLatin1String("fincept"), Qt::CaseInsensitive) != 0 &&
         (row.has_key || !row.key_required))
         add(mr_api(state, row.provider, row.model, QStringLiteral("active_provider"), {}));
 
-    // ── 4. Fincept LLM ──
-    add(mr_fincept(QString(), QStringLiteral("fincept_fallback")));
+    // ── 4. BYO fallback ──
+    // Metered Fincept models are used only when explicitly configured or
+    // assigned. A missing DeepSeek key fails visibly instead of spending
+    // Fincept credits.
+    add(mr_api(state, policy::default_llm_provider(), policy::default_llm_model(),
+               QStringLiteral("byo_fallback"), {}));
     return out;
 }
 

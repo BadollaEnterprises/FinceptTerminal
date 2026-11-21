@@ -3,6 +3,7 @@
 
 #include "core/result/Result.h"
 #include "mcp/McpTypes.h"
+#include "services/llm/LlmConversation.h"
 #include "services/harness/HarnessTypes.h"
 #include "storage/repositories/LlmProfileRepository.h"
 
@@ -68,17 +69,13 @@ inline QString tool_stream_prefix() {
     return QStringLiteral("\x03__TOOL__");
 }
 
-struct ConversationMessage {
-    QString role; // system | user | assistant
-    QString content;
-};
-
 struct LlmResponse {
     QString content;
     QString error;
     int prompt_tokens = 0;
     int completion_tokens = 0;
     int total_tokens = 0;
+    int cached_prompt_tokens = 0; ///< subset of prompt_tokens served from provider cache
     bool success = false;
     /// Failure looks transient (upstream/model error, not a malformed request),
     /// so the caller may resubmit the identical prompt once.
@@ -190,10 +187,18 @@ class LlmService : public QObject {
     QString active_base_url() const;
     double active_temperature() const;
     int active_max_tokens() const;
+    /// One atomic API-provider configuration for a routed feature. Unlike the
+    /// legacy active_* accessors, every field comes from the same resolved
+    /// route/profile, so a migrated provider can never inherit a retired row's
+    /// key or endpoint. Harness routes are not serializable and return empty.
+    QJsonObject resolved_config_json(const ChatRoute& route = {}) const;
     /// Tool-call rounds ceiling used by do_tool_loop. Clamped to [1, 200].
     int active_max_tool_rounds() const;
     bool tools_enabled() const;
     bool is_configured() const;
+    /// Whether the first usable entry of a specific feature route has the
+    /// credentials it needs. This is the preflight for non-chat AI surfaces.
+    bool is_configured(const ChatRoute& route) const;
 
     /// context_type ∈ {ai_chat, agent, agent_default, team, team_default, team_coordinator}.
     /// context_id is the agent/team id; empty for type-level queries.
@@ -315,7 +320,7 @@ class LlmService : public QObject {
     /// The config one entry of a feature's route runs with (any thread; may read
     /// the profile's key). Globals (temperature, system prompt, …) come from the
     /// current config; provider / model / key / endpoint from the choice.
-    ConfigSnapshot snapshot_for(const ModelChoice& choice, const QString& feature);
+    ConfigSnapshot snapshot_for(const ModelChoice& choice, const QString& feature) const;
     /// The route for `route.feature`, minus `route.skip_harness`.
     static QVector<ModelChoice> route_chain(const ChatRoute& route);
     /// Fill the route fields of `resp` (who answered, the notice, the billing note).
@@ -371,7 +376,8 @@ class LlmService : public QObject {
     // tool calls (executed by the caller). The full tool set is declared on
     // every round — the catalogue is the ten core tools plus any external
     // servers', so there is nothing to discover mid-turn.
-    LlmResponse do_tool_loop(QJsonArray loop_messages, const QString& url, const QMap<QString, QString>& headers);
+    LlmResponse do_tool_loop(QJsonArray loop_messages, const QString& url, const QMap<QString, QString>& headers,
+                             int initial_prompt_tokens, int initial_completion_tokens);
 
     /// Returns nullopt if the content had no text/XML tool calls.
     std::optional<LlmResponse> try_extract_and_execute_text_tool_calls(const QString& content,

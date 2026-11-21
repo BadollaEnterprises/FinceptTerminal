@@ -119,6 +119,11 @@ bool mr_skipped_mentions(const RouteResult& r, const QString& what, const QStrin
     return false;
 }
 
+bool mr_is_byo_fallback(const ModelChoice& c) {
+    return c.kind == ModelChoice::Kind::Api && c.provider_id() == QLatin1String("deepseek") &&
+           c.reason == QLatin1String("byo_fallback");
+}
+
 } // namespace
 
 class TestModelRouter : public QObject {
@@ -139,8 +144,11 @@ class TestModelRouter : public QObject {
     void subscription_session_refusal_reads_init_only();
 
     // ── Resolution order ──
-    void nothing_configured_is_fincept();
-    void active_provider_then_fincept();
+    void nothing_configured_is_local();
+    void active_provider_then_local();
+    void legacy_deepseek_alias_is_normalized_in_route_label();
+    void legacy_ollama_routes_are_blocked_in_community_mode();
+    void retired_backends_have_no_live_billing_copy();
     void default_profile_before_active_row();
     void eligible_harness_is_the_automatic_default();
     void explicit_choice_wins_and_rest_is_fallback();
@@ -325,15 +333,32 @@ void TestModelRouter::subscription_session_refusal_reads_init_only() {
 
 // ── Resolution order ─────────────────────────────────────────────────────────
 
-void TestModelRouter::nothing_configured_is_fincept() {
+void TestModelRouter::nothing_configured_is_local() {
     const RouteResult r = ModelRouter::resolve_with(RouterState{}, QString::fromLatin1(kFeatureAiChat));
     QCOMPARE(r.chain.size(), 1);
-    QVERIFY(r.chain.at(0).is_fincept());
-    QCOMPARE(r.chain.at(0).reason, QStringLiteral("fincept_fallback"));
-    QCOMPARE(r.chain.at(0).provider_id(), QStringLiteral("fincept"));
+    QVERIFY(mr_is_byo_fallback(r.chain.at(0)));
+    QCOMPARE(r.chain.at(0).provider_id(), QStringLiteral("deepseek"));
+    QCOMPARE(r.chain.at(0).model, QStringLiteral("deepseek-flash"));
+    const FeatureSpec* spec = feature_spec(QStringLiteral("news_analysis"));
+    QVERIFY(spec != nullptr);
+    QVERIFY(spec->routed);
+    QVERIFY(spec->needs_json);
+    const RouteResult route = ModelRouter::resolve_with({}, QStringLiteral("news_analysis"));
+    QVERIFY(!route.chain.isEmpty());
+    QVERIFY(mr_is_byo_fallback(route.chain.constFirst()));
+    const FeatureSpec* analytics = feature_spec(QString::fromLatin1(kFeatureProAnalyticsExplain));
+    QVERIFY(analytics != nullptr);
+    QVERIFY(analytics->routed);
+    QVERIFY(analytics->sends_user_financial_data);
+    QVERIFY(!analytics->needs_tools);
+    QCOMPARE(analytics->harness_fit, HarnessFit::No);
+    const RouteResult analytics_route =
+        ModelRouter::resolve_with({}, QString::fromLatin1(kFeatureProAnalyticsExplain));
+    QVERIFY(!analytics_route.chain.isEmpty());
+    QVERIFY(mr_is_byo_fallback(analytics_route.chain.constFirst()));
 }
 
-void TestModelRouter::active_provider_then_fincept() {
+void TestModelRouter::active_provider_then_local() {
     RouterState st;
     mr_add_active_openai(st);
     st.provider_names.insert(QStringLiteral("openai"), QStringLiteral("OpenAI"));
@@ -342,13 +367,61 @@ void TestModelRouter::active_provider_then_fincept() {
     QCOMPARE(r.chain.at(0).kind, ModelChoice::Kind::Api);
     QCOMPARE(r.chain.at(0).reason, QStringLiteral("active_provider"));
     QCOMPARE(r.chain.at(0).label, QStringLiteral("OpenAI · gpt-5"));
-    QVERIFY(r.chain.at(1).is_fincept());
+    QVERIFY(mr_is_byo_fallback(r.chain.at(1)));
     // Without a key the active row is passed over; the active row "fincept" adds nothing.
     st.active_row.has_key = false;
     QCOMPARE(ModelRouter::resolve_with(st, QString::fromLatin1(kFeatureAiChat)).chain.size(), 1);
     st.active_row.provider = QStringLiteral("fincept");
     st.active_row.key_required = false;
     QCOMPARE(ModelRouter::resolve_with(st, QString::fromLatin1(kFeatureAiChat)).chain.size(), 1);
+}
+
+void TestModelRouter::legacy_deepseek_alias_is_normalized_in_route_label() {
+    RouterState st;
+    st.active_row.present = true;
+    st.active_row.provider = QStringLiteral("deepseek");
+    st.active_row.model = QStringLiteral("deepseek-flash");
+    st.active_row.has_key = true;
+    st.active_row.key_required = true;
+    const RouteResult r = ModelRouter::resolve_with(st, QString::fromLatin1(kFeatureAiChat));
+    QCOMPARE(r.chain.constFirst().model, QStringLiteral("deepseek-flash"));
+    QCOMPARE(r.chain.constFirst().label, QStringLiteral("DeepSeek · deepseek-flash"));
+}
+
+void TestModelRouter::legacy_ollama_routes_are_blocked_in_community_mode() {
+    const QStringList retired{QStringLiteral("ollama"), QStringLiteral("codex"),
+                              QStringLiteral("harness:codex")};
+    for (const QString& provider : retired) {
+        RouterState st;
+        st.active_row.present = true;
+        st.active_row.provider = provider;
+        st.active_row.model = QStringLiteral("legacy-model");
+        st.active_row.has_key = true;
+        st.active_row.key_required = false;
+        const RouteResult active = ModelRouter::resolve_with(st, QString::fromLatin1(kFeatureAiChat));
+        QCOMPARE(active.chain.size(), 1);
+        QVERIFY(mr_is_byo_fallback(active.chain.constFirst()));
+
+        st.active_row.present = false;
+        st.profiles.insert(QStringLiteral("retired"),
+                           RouterProfile{QStringLiteral("retired"), QStringLiteral("Retired model"), provider,
+                                         QStringLiteral("legacy-model"), {}, true, false, true});
+        const RouteResult profile = ModelRouter::resolve_with(st, QString::fromLatin1(kFeatureAiChat));
+        QCOMPARE(profile.chain.size(), 1);
+        QVERIFY(mr_is_byo_fallback(profile.chain.constFirst()));
+    }
+}
+
+void TestModelRouter::retired_backends_have_no_live_billing_copy() {
+    ModelChoice retired;
+    retired.kind = ModelChoice::Kind::Api;
+    retired.provider = QStringLiteral("ollama");
+    retired.vendor = QStringLiteral("Ollama");
+    QCOMPARE(ModelRouter::billing_note(retired), QString());
+
+    retired.provider = QStringLiteral("codex");
+    retired.vendor = QStringLiteral("Codex");
+    QCOMPARE(ModelRouter::billing_note(retired), QString());
 }
 
 void TestModelRouter::default_profile_before_active_row() {
@@ -374,7 +447,7 @@ void TestModelRouter::eligible_harness_is_the_automatic_default() {
     QCOMPARE(r.chain.at(0).label, QStringLiteral("Claude Code · sonnet · high"));
     QCOMPARE(r.chain.at(0).provider_id(), QStringLiteral("harness:claude"));
     QCOMPARE(r.chain.at(1).kind, ModelChoice::Kind::Api);
-    QVERIFY(r.chain.at(2).is_fincept());
+    QVERIFY(mr_is_byo_fallback(r.chain.at(2)));
     QVERIFY(r.skipped.isEmpty());
 }
 
@@ -388,14 +461,15 @@ void TestModelRouter::explicit_choice_wins_and_rest_is_fallback() {
     QCOMPARE(r.chain.at(0).reason, QStringLiteral("explicit"));
     QCOMPARE(r.chain.at(0).model, QStringLiteral("gpt-4.1"));
     QVERIFY(r.chain.at(1).is_harness()); // the connected harness is the first fallback
-    QVERIFY(r.chain.constLast().is_fincept());
+    QVERIFY(mr_is_byo_fallback(r.chain.constLast()));
     // A context-specific assignment beats the type-level one.
     st.profiles.insert(QStringLiteral("p2"), RouterProfile{QStringLiteral("p2"), QStringLiteral("Node"),
                                                            QStringLiteral("fincept"), {}, {}, false, false, false});
     st.assignments.insert(ModelRouter::assignment_key(QString::fromLatin1(kFeatureToolPicker), QStringLiteral("node7")),
                           QStringLiteral("p2"));
     const RouteResult node = ModelRouter::resolve_with(st, QString::fromLatin1(kFeatureToolPicker), QStringLiteral("node7"));
-    QVERIFY(node.chain.at(0).is_fincept() && node.chain.at(0).reason == QStringLiteral("explicit"));
+    QVERIFY(std::none_of(node.chain.cbegin(), node.chain.cend(), [](const auto& choice) { return choice.is_fincept(); }));
+    QVERIFY(mr_is_byo_fallback(node.chain.constLast()));
 }
 
 void TestModelRouter::explicit_harness_profile() {
@@ -411,7 +485,7 @@ void TestModelRouter::explicit_harness_profile() {
     QCOMPARE(r.chain.at(0).reason, QStringLiteral("explicit"));
     QCOMPARE(r.chain.at(0).label, QStringLiteral("Claude Code · opus · max"));
     QCOMPARE(r.chain.at(0).profile_id, QStringLiteral("h1"));
-    QCOMPARE(r.chain.size(), 2); // + Fincept (the harness is not the default)
+    QCOMPARE(r.chain.size(), 2); // + BYO DeepSeek (the harness is not the default)
 }
 
 void TestModelRouter::explicit_harness_without_consent_is_skipped() {
@@ -422,7 +496,7 @@ void TestModelRouter::explicit_harness_without_consent_is_skipped() {
                                                            QStringLiteral("harness:claude"), {}, {}, false, false, false});
     st.assignments.insert(ModelRouter::assignment_key(QString::fromLatin1(kFeatureAiChat), {}), QStringLiteral("h1"));
     const RouteResult r = ModelRouter::resolve_with(st, QString::fromLatin1(kFeatureAiChat));
-    QVERIFY(r.chain.at(0).is_fincept());
+    QVERIFY(mr_is_byo_fallback(r.chain.at(0)));
     QVERIFY(mr_skipped_mentions(r, QStringLiteral("Claude Code"), QStringLiteral("Needs your OK")));
 }
 
@@ -444,7 +518,7 @@ void TestModelRouter::signed_out_default_harness_is_skipped() {
     s.status.auth.method.clear();
     const RouteResult r =
         ModelRouter::resolve_with(mr_state_with({mr_harness(s)}, QStringLiteral("claude")), QString::fromLatin1(kFeatureAiChat));
-    QVERIFY(r.chain.at(0).is_fincept());
+    QVERIFY(mr_is_byo_fallback(r.chain.at(0)));
     QVERIFY(mr_skipped_mentions(r, QStringLiteral("Claude Code"), QStringLiteral("not signed in")));
 }
 
@@ -452,7 +526,7 @@ void TestModelRouter::cooling_down_harness_is_skipped() {
     MrHarnessSetup s = mr_ready_claude();
     s.status.cooldown_until_ms = QDateTime::currentMSecsSinceEpoch() + 5 * 60000;
     const RouteResult r = ModelRouter::resolve_with(mr_state_with({mr_harness(s)}), QString::fromLatin1(kFeatureAiChat));
-    QVERIFY(r.chain.at(0).is_fincept());
+    QVERIFY(mr_is_byo_fallback(r.chain.at(0)));
     QVERIFY(mr_skipped_mentions(r, QStringLiteral("Claude Code"), QStringLiteral("rate limit")));
 }
 
@@ -496,7 +570,7 @@ void TestModelRouter::not_enabled_harness_is_explicit_only() {
     MrHarnessSetup s = mr_ready_claude();
     s.enabled = false;
     const RouteResult r = ModelRouter::resolve_with(mr_state_with({mr_harness(s)}), QString::fromLatin1(kFeatureAiChat));
-    QVERIFY(r.chain.at(0).is_fincept());
+    QVERIFY(mr_is_byo_fallback(r.chain.at(0)));
     QVERIFY(r.skipped.isEmpty()); // switched off on purpose: nothing to explain
 }
 
@@ -508,7 +582,7 @@ void TestModelRouter::default_harness_preferred_over_registration_order() {
     const RouteResult r = ModelRouter::resolve_with(st, QString::fromLatin1(kFeatureAiChat));
     QCOMPARE(r.chain.at(0).harness_id, QStringLiteral("codex"));
     // Only ONE automatic harness: the next entry is not the other harness.
-    QVERIFY(r.chain.size() == 2 && r.chain.at(1).is_fincept());
+    QVERIFY(r.chain.size() == 2 && mr_is_byo_fallback(r.chain.at(1)));
 }
 
 void TestModelRouter::key_less_profile_is_skipped() {
@@ -518,7 +592,7 @@ void TestModelRouter::key_less_profile_is_skipped() {
                                                            false, true});
     st.assignments.insert(ModelRouter::assignment_key(QString::fromLatin1(kFeatureAiChat), {}), QStringLiteral("p1"));
     const RouteResult r = ModelRouter::resolve_with(st, QString::fromLatin1(kFeatureAiChat));
-    QVERIFY(r.chain.at(0).is_fincept());
+    QVERIFY(mr_is_byo_fallback(r.chain.at(0)));
     QVERIFY(mr_skipped_mentions(r, QStringLiteral("Profile “Broken”"), QStringLiteral("no API key")));
 }
 
@@ -541,7 +615,9 @@ void TestModelRouter::fallback_before_output_falls_back_once() {
                                                                 UnavailableBehaviour::Fallback);
         QVERIFY(d.fall_back);
         QCOMPARE(d.next_index, 1);
-        QCOMPARE(d.notice, QStringLiteral("Claude Code %1 — answered by Fincept LLM").arg(QLatin1String(c.what)));
+        QCOMPARE(d.notice,
+                 QStringLiteral("Claude Code %1 — answered by DeepSeek · deepseek-flash")
+                     .arg(QLatin1String(c.what)));
     }
 }
 
@@ -577,7 +653,8 @@ void TestModelRouter::ask_and_fail_settings() {
         ModelRouter::decide_fallback(r.chain, 0, FailureKind::RateLimit, false, false, false, UnavailableBehaviour::Ask);
     QVERIFY(!ask.fall_back && ask.ask);
     QCOMPARE(ask.next_index, 1);
-    QCOMPARE(ask.notice, QStringLiteral("Claude Code is rate limited. Answer with Fincept LLM instead?"));
+    QCOMPARE(ask.notice,
+             QStringLiteral("Claude Code is rate limited. Answer with DeepSeek · deepseek-flash instead?"));
     const FallbackDecision fail =
         ModelRouter::decide_fallback(r.chain, 0, FailureKind::RateLimit, false, false, false, UnavailableBehaviour::Fail);
     QVERIFY(!fail.fall_back && !fail.ask);
@@ -603,7 +680,8 @@ void TestModelRouter::billing_note_for_harness() {
     const RouteResult r =
         ModelRouter::resolve_with(mr_state_with({mr_harness(mr_ready_claude())}), QString::fromLatin1(kFeatureAiChat));
     QCOMPARE(ModelRouter::billing_note(r.chain.at(0)), QStringLiteral("0 credits · billed to your Anthropic API key"));
-    QVERIFY(ModelRouter::billing_note(r.chain.constLast()).isEmpty()); // Fincept LLM: credits, said elsewhere
+    QCOMPARE(ModelRouter::billing_note(r.chain.constLast()),
+             QStringLiteral("0 credits · billed to your DeepSeek API key"));
 }
 
 QTEST_GUILESS_MAIN(TestModelRouter)

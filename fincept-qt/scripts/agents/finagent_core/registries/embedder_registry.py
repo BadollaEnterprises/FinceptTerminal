@@ -100,21 +100,6 @@ class EmbedderRegistry:
             "default_model": "nomic-ai/nomic-embed-text-v1.5",
         },
 
-        # Local Models
-        "ollama": {
-            "class": "agno.knowledge.embedder.ollama.OllamaEmbedder",
-            "models": ["nomic-embed-text", "mxbai-embed-large", "all-minilm"],
-            "api_key_env": None,
-            "default_model": "nomic-embed-text",
-            "base_url": "http://localhost:11434",
-            # OllamaEmbedder names its endpoint `host`, not `base_url`.
-            "url_kwarg": "host",
-            # OllamaEmbedder defaults to 4096 dimensions whatever the model; vector
-            # stores size their tables from it, so pass the model's real size.
-            "dimensions": {"nomic-embed-text": 768, "mxbai-embed-large": 1024, "all-minilm": 384},
-            "set_dimensions": True,
-        },
-
         # HuggingFace
         "huggingface": {
             "class": "agno.knowledge.embedder.huggingface.HuggingfaceCustomEmbedder",

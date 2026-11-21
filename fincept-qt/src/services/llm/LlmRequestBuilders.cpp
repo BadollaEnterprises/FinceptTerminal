@@ -3,6 +3,7 @@
 #include "core/logging/Logger.h"
 #include "mcp/McpProvider.h"
 #include "mcp/McpService.h"
+#include "services/llm/DeepSeekRequestPolicy.h"
 #include "services/llm/LlmRequestPolicy.h"
 #include "services/llm/LlmService.h"
 
@@ -41,8 +42,7 @@ QJsonObject LlmService::build_openai_request(const QString& user_message,
                                              bool with_tools) {
     const QString model_lower = model_.toLower();
 
-    // Models that reject `tools`: deepseek-reasoner, groq whisper-* (audio), groq llama-guard-* (classifier).
-    const bool is_ds_reasoner = (provider_ == "deepseek" && model_lower.contains("reasoner"));
+    // Models that reject `tools`: groq whisper-* (audio), groq llama-guard-* (classifier).
     const bool groq_no_tools =
         (provider_ == "groq" && (model_lower.startsWith("whisper-") || model_lower.contains("llama-guard")));
 
@@ -58,6 +58,8 @@ QJsonObject LlmService::build_openai_request(const QString& user_message,
     req["messages"] = messages;
     // Temperature omitted — each provider's default.
     apply_openai_token_limit(req);
+    if (provider_ == QLatin1String("deepseek"))
+        apply_deepseek_thinking(req, detail::t_reasoning_effort);
     if (stream) {
         req["stream"] = true;
         // OpenAI/xAI (and OpenAI-family models via AIHubMix) omit usage on streamed
@@ -69,7 +71,7 @@ QJsonObject LlmService::build_openai_request(const QString& user_message,
     // Send tools on streaming requests too — the stream path detects tool_calls and falls back
     // to do_request to execute. Otherwise the model answers from training and tool calling silently breaks.
     const bool tools_effectively_on = detail::effective_tools_enabled(tools_enabled_);
-    if (with_tools && tools_effectively_on && !is_ds_reasoner && !groq_no_tools) {
+    if (with_tools && tools_effectively_on && !groq_no_tools) {
         QJsonArray tools =
             mcp::McpService::instance().format_tools_for_openai(detail::apply_request_policy(tool_filter_));
         if (!tools.isEmpty())
@@ -80,11 +82,10 @@ QJsonObject LlmService::build_openai_request(const QString& user_message,
     } else {
         // Per request, and expected (tools switched off, summary turns, models without tools).
         LOG_DEBUG(kLlmBuildersTag, QString("OpenAI request: stream=%1 provider=%2 NO TOOLS — "
-                                          "with_tools=%3 tools_effectively_on=%4 ds_reasoner=%5 groq_no_tools=%6")
+                                          "with_tools=%3 tools_effectively_on=%4 groq_no_tools=%5")
                                       .arg(stream ? "true" : "false", provider_)
                                       .arg(with_tools ? "true" : "false")
                                       .arg(tools_effectively_on ? "true" : "false")
-                                      .arg(is_ds_reasoner ? "true" : "false")
                                       .arg(groq_no_tools ? "true" : "false"));
     }
     return req;

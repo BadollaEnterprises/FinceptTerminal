@@ -12,6 +12,9 @@ namespace fincept::ai_chat {
 
 class ProviderCatalog {
   public:
+    /// User-owned API providers that product discovery surfaces may advertise.
+    /// Retired Ollama and metered Fincept metadata remains available to migrate
+    /// historical rows, but those ids are intentionally absent from this list.
     static const QStringList& known_providers();
     /// Hard block for retired/forbidden providers (currently AtlasCloud). Returns
     /// true for the blocked provider id AND for any base_url pointing at its host,

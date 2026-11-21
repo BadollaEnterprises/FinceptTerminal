@@ -5,6 +5,7 @@
 #include "auth/AuthManager.h"
 #include "network/http/HttpClient.h"
 #include "services/llm/LlmContentExtractors.h"
+#include "services/llm/LlmUsage.h"
 #include "services/llm/LlmErrors.h"
 #include "services/llm/LlmRequestPolicy.h"
 #include "services/llm/LlmService.h"
@@ -320,26 +321,11 @@ LlmService::SseDelta LlmService::parse_sse_chunk(const QString& data, const QStr
 
 // ── Token usage extraction ─────────────────────────────────────────────────
 void LlmService::parse_usage(LlmResponse& resp, const QJsonObject& rj, const QString& provider) {
-    if (rj.contains("usageMetadata")) { // Gemini generateContent
-        const QJsonObject g = rj["usageMetadata"].toObject();
-        resp.prompt_tokens = g["promptTokenCount"].toInt();
-        resp.completion_tokens = g["candidatesTokenCount"].toInt();
-        resp.total_tokens = g.contains("totalTokenCount") ? g["totalTokenCount"].toInt()
-                                                          : resp.prompt_tokens + resp.completion_tokens;
-        return;
-    }
-    if (!rj.contains("usage"))
-        return;
-    QJsonObject u = rj["usage"].toObject();
-    if (provider == "anthropic") {
-        resp.prompt_tokens = u["input_tokens"].toInt();
-        resp.completion_tokens = u["output_tokens"].toInt();
-        resp.total_tokens = resp.prompt_tokens + resp.completion_tokens;
-    } else {
-        resp.prompt_tokens = u["prompt_tokens"].toInt();
-        resp.completion_tokens = u["completion_tokens"].toInt();
-        resp.total_tokens = u["total_tokens"].toInt();
-    }
+    const ProviderUsage usage = parse_provider_usage(rj, provider);
+    resp.prompt_tokens = usage.prompt_tokens;
+    resp.completion_tokens = usage.completion_tokens;
+    resp.total_tokens = usage.total_tokens;
+    resp.cached_prompt_tokens = usage.cached_prompt_tokens;
 }
 
 } // namespace fincept::ai_chat

@@ -18,6 +18,7 @@
 // router or the registry reports a change, coalesced and only while visible.
 
 #include "screens/settings/LlmConfigSection.h"
+#include "core/policy/CommunityPolicy.h"
 #include "services/harness/HarnessEligibility.h"
 #include "services/harness/HarnessRegistry.h"
 #include "services/harness/IHarnessAdapter.h"
@@ -284,7 +285,7 @@ class LtaTerminalAiTab : public QWidget {
 
   private:
     void retranslate() {
-        intro_->setText(lta_tr("Claude Code and Codex, authenticated with an API key, can answer AI Chat, Quick Chat, "
+        intro_->setText(lta_tr("Optional API-key agent harnesses can answer AI Chat, Quick Chat, "
                                "Dashboard Quick Ask and the workflow tool picker directly — billed to your own API key, "
                                "no Fincept credits. A personal subscription sign-in is never used for terminal AI (the "
                                "vendors do not allow other apps to route requests through it); it stays available in "
@@ -295,8 +296,8 @@ class LtaTerminalAiTab : public QWidget {
         rb_ask_->setText(lta_tr("Ask me"));
         rb_fail_->setText(lta_tr("Fail"));
         behaviour_hint_->setText(lta_tr("Signed out, rate limited, not installed or no answer in time — before anything "
-                                        "was shown, the next model of the feature's route answers once. A fallback to "
-                                        "Fincept LLM spends credits and is always announced."));
+                                        "was shown, the next user-funded model answers once. Metered Fincept fallback "
+                                        "is disabled."));
         features_title_->setText(lta_tr("FEATURES"));
         features_hint_->setText(lta_tr("What answers each AI feature now (an explicit choice made with a feature's model "
                                        "badge wins). Features that send your financial data use a harness "
@@ -329,6 +330,10 @@ class LtaTerminalAiTab : public QWidget {
         lta_clear_layout(harness_box_);
         auto& reg = lta_h::HarnessRegistry::instance();
         QVector<lta_ai::RouterHarness> rows = lta_ai::ModelRouter::instance().harness_states();
+        rows.erase(std::remove_if(rows.begin(), rows.end(), [](const lta_ai::RouterHarness& h) {
+                       return !policy::is_ai_backend_selectable(QStringLiteral("harness:") + h.id);
+                   }),
+                   rows.end());
         // Installed first, registration order otherwise.
         std::stable_sort(rows.begin(), rows.end(), [&reg](const lta_ai::RouterHarness& a, const lta_ai::RouterHarness& b) {
             return reg.status(a.id).installed() && !reg.status(b.id).installed();
@@ -354,8 +359,8 @@ class LtaTerminalAiTab : public QWidget {
         spec.glyph = QStringLiteral("⌁");
         spec.glyph_tone = ui::EmptyState::Tone::Info;
         spec.title = lta_tr("No agent harness on this computer");
-        spec.message = lta_tr("Install Claude Code or Codex and give it an API key: it then answers AI Chat, Quick Chat "
-                              "and Quick Ask directly, billed to your own key. Until then Fincept LLM answers.");
+        spec.message = lta_tr("Install an API-key agent harness to answer AI Chat, Quick Chat and Quick Ask directly, "
+                              "billed to your own provider key. Otherwise the configured DeepSeek profile answers.");
         for (const auto& h : rows) {
             const lta_h::IHarnessAdapter* a = reg.adapter(h.id);
             if (!a || !a->descriptor().caps.chat)

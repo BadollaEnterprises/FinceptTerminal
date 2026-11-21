@@ -3,11 +3,14 @@
 #include "storage/repositories/LlmProfileRepository.h"
 
 #include "core/logging/Logger.h"
+#include "core/policy/CommunityPolicy.h"
 #include "storage/repositories/LlmConfigRepository.h"
 #include "storage/secure/SecureStorage.h"
 
 #include <QSqlQuery>
 #include <QUuid>
+
+#include <algorithm>
 
 namespace fincept {
 
@@ -16,6 +19,14 @@ namespace {
 // plaintext column so legacy rows keep working and no key is lost.
 QString profile_secret_key(const QString& id) {
     return QStringLiteral("llm:apikey:profile:") + id;
+}
+
+bool runtime_profile_allowed(const QString& provider) {
+    const QString normalized = provider.trimmed().toLower();
+    if (normalized.isEmpty() || normalized.startsWith(QLatin1String("harness:")) ||
+        policy::is_deprecated_llm_provider(normalized))
+        return false;
+    return normalized != QLatin1String("fincept") || policy::fincept_metered_services_enabled();
 }
 } // namespace
 
@@ -67,8 +78,16 @@ static const char* kSelectCols = "SELECT id, name, provider, model_id, api_key, 
 Result<QVector<LlmProfile>> LlmProfileRepository::list_profiles() const {
     // Harness profiles serve terminal AI only (ModelRouter); the agent runtime,
     // node editors and AI Quant Lab, which list profiles here, cannot use them.
-    return query_list(QString(kSelectCols) + "WHERE lower(provider) NOT LIKE 'harness:%' ORDER BY name", {},
-                      map_profile);
+    auto result = query_list(QString(kSelectCols) + "WHERE lower(provider) NOT LIKE 'harness:%' ORDER BY name", {},
+                             map_profile);
+    if (result.is_err())
+        return result;
+    auto profiles = result.value();
+    profiles.erase(std::remove_if(profiles.begin(), profiles.end(), [](const LlmProfile& p) {
+                       return !runtime_profile_allowed(p.provider);
+                   }),
+                   profiles.end());
+    return Result<QVector<LlmProfile>>::ok(std::move(profiles));
 }
 
 Result<QVector<LlmProfile>> LlmProfileRepository::list_all_profiles() const {
@@ -234,23 +253,39 @@ ResolvedLlmProfile LlmProfileRepository::profile_to_resolved(const LlmProfile& p
 }
 
 ResolvedLlmProfile LlmProfileRepository::legacy_fallback() const {
-    // Read the active provider via LlmConfigRepository (which decrypts the
-    // api_key from SecureStorage) rather than a raw SELECT on llm_configs —
-    // that column is now blanked for encrypted rows.
-    auto cr = LlmConfigRepository::instance().get_active_provider();
-    if (cr.is_err())
-        return {};
-    const LlmConfig c = cr.value();
-    if (c.provider.isEmpty())
-        return {};
+    // Read provider rows through the repository so encrypted keys are restored.
+    // A saved retired/hosted active row is skipped before its key can enter an
+    // agent payload; prefer the configured DeepSeek row, then another BYO row.
+    auto& configs = LlmConfigRepository::instance();
+    LlmConfig chosen;
+    if (auto active = configs.get_active_provider(); active.is_ok() &&
+        runtime_profile_allowed(active.value().provider))
+        chosen = active.value();
+    if (chosen.provider.isEmpty()) {
+        if (auto rows = configs.list_providers(); rows.is_ok()) {
+            const QString preferred = policy::default_llm_provider();
+            for (const LlmConfig& row : rows.value())
+                if (runtime_profile_allowed(row.provider) &&
+                    row.provider.compare(preferred, Qt::CaseInsensitive) == 0) {
+                    chosen = row;
+                    break;
+                }
+            if (chosen.provider.isEmpty())
+                for (const LlmConfig& row : rows.value())
+                    if (runtime_profile_allowed(row.provider)) {
+                        chosen = row;
+                        break;
+                    }
+        }
+    }
 
     ResolvedLlmProfile rp;
     rp.profile_id = {};
-    rp.profile_name = "Legacy Active";
-    rp.provider = c.provider;
-    rp.api_key = c.api_key;
-    rp.base_url = c.base_url;
-    rp.model_id = c.model;
+    rp.profile_name = chosen.provider.isEmpty() ? QStringLiteral("DeepSeek setup") : QStringLiteral("Active BYO");
+    rp.provider = chosen.provider.isEmpty() ? policy::default_llm_provider() : chosen.provider;
+    rp.api_key = chosen.api_key;
+    rp.base_url = chosen.provider.isEmpty() ? policy::default_llm_base_url() : chosen.base_url;
+    rp.model_id = chosen.provider.isEmpty() ? policy::default_llm_model() : chosen.model;
 
     // Pull global temperature/max_tokens
     auto gs = db().execute("SELECT temperature, max_tokens FROM llm_global_settings WHERE id = 1");
@@ -277,7 +312,7 @@ ResolvedLlmProfile LlmProfileRepository::resolve_for_context(const QString& cont
         QString pid = get_assignment(context_type, context_id);
         if (!pid.isEmpty()) {
             auto pr = get_profile(pid);
-            if (pr.is_ok() && !pr.value().is_harness()) {
+            if (pr.is_ok() && runtime_profile_allowed(pr.value().provider)) {
                 LOG_DEBUG("LlmProfileRepo",
                           QString("Resolved [%1/%2] → profile '%3'").arg(context_type, context_id, pr.value().name));
                 return profile_to_resolved(pr.value());
@@ -291,7 +326,7 @@ ResolvedLlmProfile LlmProfileRepository::resolve_for_context(const QString& cont
         QString pid = get_assignment(type_key, {});
         if (!pid.isEmpty()) {
             auto pr = get_profile(pid);
-            if (pr.is_ok() && !pr.value().is_harness()) {
+            if (pr.is_ok() && runtime_profile_allowed(pr.value().provider)) {
                 LOG_DEBUG("LlmProfileRepo",
                           QString("Resolved [%1] via type-default → profile '%2'").arg(context_type, pr.value().name));
                 return profile_to_resolved(pr.value());
@@ -307,9 +342,11 @@ ResolvedLlmProfile LlmProfileRepository::resolve_for_context(const QString& cont
             auto& q = r.value();
             if (q.next()) {
                 LlmProfile p = map_profile(q);
-                LOG_DEBUG("LlmProfileRepo",
-                          QString("Resolved [%1] via global default → profile '%2'").arg(context_type, p.name));
-                return profile_to_resolved(p);
+                if (runtime_profile_allowed(p.provider)) {
+                    LOG_DEBUG("LlmProfileRepo",
+                              QString("Resolved [%1] via global default → profile '%2'").arg(context_type, p.name));
+                    return profile_to_resolved(p);
+                }
             }
         }
     }

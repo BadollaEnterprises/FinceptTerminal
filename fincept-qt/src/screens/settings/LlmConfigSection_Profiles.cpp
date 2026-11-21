@@ -6,6 +6,7 @@
 // Part of the partial-class split of LlmConfigSection.cpp.
 
 #include "core/logging/Logger.h"
+#include "core/policy/CommunityPolicy.h"
 #include "screens/settings/LlmConfigSection.h"
 #include "services/harness/HarnessRegistry.h"
 #include "services/harness/IHarnessAdapter.h"
@@ -55,10 +56,15 @@ void llm_profiles_apply_tokens_cap(QSpinBox* spin, const QString& provider) {
     spin->setToolTip(fincept ? LlmConfigSection::tr("The Fincept AI service accepts at most %1 output tokens.").arg(cap)
                              : QString());
 }
+
+bool lph_profile_provider_is_hidden(const QString& provider) {
+    const QString normalized = provider.trimmed().toLower();
+    return !fincept::policy::is_ai_backend_selectable(normalized) || normalized == QLatin1String("fincept");
+}
 } // namespace
 
 // ── Harness profiles (provider "harness:<id>") ───────────────────────────────
-// A harness profile names an agent harness (Claude Code, Codex) answering
+// A harness profile names an external agent harness answering
 // terminal AI: its model and reasoning effort, never a key or an endpoint (the
 // harness authenticates with the user's own CLI setup). Widgets that the
 // header does not declare are found by objectName.
@@ -77,6 +83,8 @@ QStringList lph_harness_providers() {
     QStringList out;
     auto& reg = harness::HarnessRegistry::instance();
     for (const QString& id : reg.ids()) {
+        if (!policy::is_ai_backend_selectable(QStringLiteral("harness:") + id))
+            continue;
         const harness::IHarnessAdapter* a = reg.adapter(id);
         if (a && a->descriptor().caps.chat)
             out << QStringLiteral("harness:") + id;
@@ -260,12 +268,14 @@ QWidget* LlmConfigSection::build_profile_form_panel() {
     // Formatted names, alphabetical; the provider id rides in itemData.
     for (const auto& id : providers_sorted())
         profile_provider_combo_->addItem(provider_display_name(id), id);
-    // Agent harnesses that can answer terminal AI ("Claude Code (harness)").
+    // Agent harnesses that can answer terminal AI with the user's own account.
     const QStringList harness_providers = llm_profiles_harness_detail::lph_harness_providers();
     if (!harness_providers.isEmpty()) {
         profile_provider_combo_->insertSeparator(profile_provider_combo_->count());
-        for (const QString& hp : harness_providers)
-            profile_provider_combo_->addItem(provider_display_name(hp), hp);
+        for (const QString& hp : harness_providers) {
+            if (!lph_profile_provider_is_hidden(hp))
+                profile_provider_combo_->addItem(provider_display_name(hp), hp);
+        }
     }
     profile_provider_combo_->setStyleSheet(
         QString("QComboBox{%1}QComboBox::drop-down{border:none;}").arg(field_style()));
@@ -290,9 +300,9 @@ QWidget* LlmConfigSection::build_profile_form_panel() {
     effort_combo->setStyleSheet(QString("QComboBox{%1}QComboBox::drop-down{border:none;}").arg(field_style()));
     effort_combo->setVisible(false);
     vl->addWidget(effort_combo);
-    auto* harness_hint = new QLabel(tr("Authenticates with your own Claude Code / Codex setup — no key is stored. It "
-                                       "answers terminal AI only when signed in with an API key (Settings › LLM "
-                                       "Configuration › Terminal AI); Agent Studio cannot use it yet."));
+    auto* harness_hint = new QLabel(tr("Authenticates with your own external agent account — no key is stored. It "
+                                       "answers terminal AI only when the harness is signed in; Agent Studio cannot "
+                                       "use it yet."));
     harness_hint->setObjectName(QString::fromLatin1(llm_profiles_harness_detail::kLphHint));
     harness_hint->setWordWrap(true);
     harness_hint->setStyleSheet("color:" + QString(ui::colors::TEXT_TERTIARY()) + ";");
@@ -407,6 +417,8 @@ void LlmConfigSection::load_profiles() {
     auto result = LlmProfileRepository::instance().list_all_profiles();
     if (result.is_ok()) {
         for (const auto& p : result.value()) {
+            if (lph_profile_provider_is_hidden(p.provider))
+                continue;
             QString display = p.name;
             if (p.is_default)
                 display += "  ★";
@@ -416,7 +428,8 @@ void LlmConfigSection::load_profiles() {
                     what += QStringLiteral(" · ") + p.reasoning_effort;
                 display += QString("  [%1 / %2]  · %3").arg(provider_display_name(p.provider), what, tr("terminal AI only"));
             } else {
-                display += QString("  [%1 / %2]").arg(p.provider, p.model_id);
+                const QString displayed_model = policy::normalize_llm_model(p.provider, p.model_id);
+                display += QString("  [%1 / %2]").arg(p.provider, displayed_model);
             }
             auto* item = new QListWidgetItem(display);
             item->setData(Qt::UserRole, p.id);
@@ -440,10 +453,14 @@ void LlmConfigSection::populate_profile_form(const LlmProfile& p) {
     int idx = profile_provider_combo_->findData(p.provider, Qt::UserRole, Qt::MatchFixedString);
     if (idx >= 0)
         profile_provider_combo_->setCurrentIndex(idx);
-    else {
+    else if (!lph_profile_provider_is_hidden(p.provider)) {
         // Custom/unknown provider: add it with the id in itemData.
         profile_provider_combo_->addItem(provider_display_name(p.provider), p.provider);
         profile_provider_combo_->setCurrentIndex(profile_provider_combo_->count() - 1);
+    } else {
+        const int deepseek = profile_provider_combo_->findData(QStringLiteral("deepseek"));
+        if (deepseek >= 0)
+            profile_provider_combo_->setCurrentIndex(deepseek);
     }
 
     const bool is_harness = llm_profiles_harness_detail::lph_is_harness(p.provider);
@@ -458,7 +475,7 @@ void LlmConfigSection::populate_profile_form(const LlmProfile& p) {
         // Populate model combo from fallback list, then select saved model
         profile_model_combo_->clear();
         profile_model_combo_->addItems(fallback_models(p.provider));
-        profile_model_combo_->setCurrentText(p.model_id);
+        profile_model_combo_->setCurrentText(policy::normalize_llm_model(p.provider, p.model_id));
     }
 
     profile_api_key_edit_->setText(is_harness ? QString() : p.api_key);
@@ -576,7 +593,7 @@ void LlmConfigSection::on_profile_provider_changed(const QString& provider) {
                             return;
                         disconnect(*conn);
                         if (!err.isEmpty()) {
-                            show_profile_status(tr("Cannot reach Ollama — is `ollama serve` running locally?"), true);
+                            show_profile_status(tr("Cannot reach the configured local model server."), true);
                             return;
                         }
                         const QString current = profile_model_combo_->currentText();
@@ -617,6 +634,8 @@ void LlmConfigSection::on_save_profile() {
     // A harness may run its CLI's default model ("CLI default" = empty).
     QString model = is_harness ? llm_profiles_harness_detail::lph_model_of(profile_model_combo_)
                                : profile_model_combo_->currentText().trimmed();
+    if (!is_harness)
+        model = policy::normalize_llm_model(provider, model);
     if (model.isEmpty() && !is_harness) {
         show_profile_status(tr("Model is required"), true);
         return;

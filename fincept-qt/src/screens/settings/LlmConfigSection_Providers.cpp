@@ -7,8 +7,11 @@
 // Part of the partial-class split of LlmConfigSection.cpp.
 
 #include "auth/AuthManager.h"
+#include "core/config/AppConfig.h"
 #include "core/logging/Logger.h"
+#include "core/policy/CommunityPolicy.h"
 #include "screens/settings/LlmConfigSection.h"
+#include "services/llm/LlmBudgetSettings.h"
 #include "services/llm/LlmService.h"
 #include "services/llm/ModelCatalog.h"
 #include "storage/repositories/LlmConfigRepository.h"
@@ -30,6 +33,13 @@ constexpr const char* TAG_PROVIDERS = "LlmConfigSection";
 // Global Max Tokens ceiling for providers that publish a higher cap. Fincept's
 // own API ceiling is lower (ModelCatalog::kFinceptMaxOutputTokens).
 constexpr int kLlmProvidersTokensMax = 32000;
+
+bool provider_is_visible_in_community(const QString& provider) {
+    if (!fincept::policy::is_ai_backend_selectable(provider))
+        return false;
+    return provider.compare(QLatin1String("fincept"), Qt::CaseInsensitive) != 0 ||
+           fincept::policy::fincept_metered_services_enabled();
+}
 } // namespace
 
 #include <QFormLayout>
@@ -451,6 +461,53 @@ QWidget* LlmConfigSection::build_global_panel() {
 
     vl->addLayout(row);
 
+    cost_guardrails_title_ = new QLabel(tr("BYO AI COST GUARDRAILS"));
+    cost_guardrails_title_->setStyleSheet("color:" + QString(ui::colors::AMBER()) +
+                                          ";font-weight:700;letter-spacing:1px;");
+    vl->addWidget(cost_guardrails_title_);
+
+    auto* budget_row = new QHBoxLayout;
+    budget_row->setSpacing(16);
+    const QString budget_spin_style =
+        "QSpinBox{background:" + QString(ui::colors::BG_RAISED()) + ";color:" +
+        QString(ui::colors::TEXT_PRIMARY()) + ";border:1px solid " + QString(ui::colors::BORDER_MED()) +
+        ";border-radius:3px;padding:4px;}";
+    const QString budget_label_style = "color:" + QString(ui::colors::TEXT_SECONDARY()) + ";";
+
+    auto add_budget_control = [&](QLabel*& label, QSpinBox*& spin, const QString& text, int minimum, int maximum,
+                                  int step, const QString& object_name) {
+        auto* group = new QVBoxLayout;
+        label = new QLabel(text);
+        label->setStyleSheet(budget_label_style);
+        spin = new QSpinBox;
+        spin->setObjectName(object_name);
+        spin->setRange(minimum, maximum);
+        spin->setSingleStep(step);
+        spin->setFixedWidth(142);
+        spin->setStyleSheet(budget_spin_style);
+        group->addWidget(label);
+        group->addWidget(spin);
+        budget_row->addLayout(group);
+    };
+
+    add_budget_control(history_budget_lbl_, history_budget_spin_, tr("History Chars"), 0,
+                       ai_chat::kMaxLlmTurnTokens, 4000, QStringLiteral("llmHistoryBudgetSpin"));
+    history_budget_spin_->setSpecialValueText(tr("Unlimited"));
+    add_budget_control(prompt_budget_lbl_, prompt_budget_spin_, tr("Turn Input Tokens"), 0,
+                       ai_chat::kMaxLlmTurnTokens, 1000, QStringLiteral("llmPromptBudgetSpin"));
+    prompt_budget_spin_->setSpecialValueText(tr("Unlimited"));
+    add_budget_control(completion_budget_lbl_, completion_budget_spin_, tr("Turn Output Tokens"), 0,
+                       ai_chat::kMaxLlmTurnTokens, 1000, QStringLiteral("llmCompletionBudgetSpin"));
+    completion_budget_spin_->setSpecialValueText(tr("Unlimited"));
+    add_budget_control(summary_context_budget_lbl_, summary_context_budget_spin_, tr("Summary Context Bytes"),
+                       ai_chat::kMinLlmSummaryContextBytes, ai_chat::kMaxLlmSummaryContextBytes, 1024,
+                       QStringLiteral("llmSummaryContextBudgetSpin"));
+    add_budget_control(summary_output_budget_lbl_, summary_output_budget_spin_, tr("Summary Output Tokens"),
+                       ai_chat::kMinLlmSummaryOutputTokens, ai_chat::kMaxLlmSummaryOutputTokens, 128,
+                       QStringLiteral("llmSummaryOutputBudgetSpin"));
+    budget_row->addStretch();
+    vl->addLayout(budget_row);
+
     save_global_btn_ = new QPushButton(tr("Save Global Settings"));
     save_global_btn_->setMinimumSize(180, 30);
     save_global_btn_->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
@@ -482,9 +539,16 @@ void LlmConfigSection::load_providers() {
     provider_list_->clear();
 
     QString active_provider;
+    QString first_visible_provider;
     auto result = LlmConfigRepository::instance().list_providers();
     if (result.is_ok()) {
         for (const auto& p : result.value()) {
+            // Rows created by older builds stay in storage for explicit user
+            // recovery, but cannot reappear or become effective in this UI.
+            if (!provider_is_visible_in_community(p.provider))
+                continue;
+            if (first_visible_provider.isEmpty())
+                first_visible_provider = p.provider;
             bool is_fincept = (p.provider.toLower() == "fincept");
             QString display = provider_display_name(p.provider);
             if (p.is_active) {
@@ -492,8 +556,9 @@ void LlmConfigSection::load_providers() {
                 active_provider = p.provider;
             }
             // Show model tag only for non-fincept providers
-            if (!is_fincept && !p.model.isEmpty())
-                display += "  [" + p.model + "]";
+            const QString displayed_model = policy::normalize_llm_model(p.provider, p.model);
+            if (!is_fincept && !displayed_model.isEmpty())
+                display += "  [" + displayed_model + "]";
             auto* item = new QListWidgetItem(display);
             item->setData(Qt::UserRole, p.provider);
             item->setData(Qt::UserRole + 1, p.is_active); // read by the theme_changed recolour
@@ -509,11 +574,10 @@ void LlmConfigSection::load_providers() {
     provider_list_->blockSignals(false);
 
     // Max Tokens applies to the provider LlmService actually uses: the active
-    // row, else the first row, else the built-in Fincept default.
+    // visible row, else the first visible row, else the BYO default.
     QString effective_provider = active_provider;
     if (effective_provider.isEmpty())
-        effective_provider = (result.is_ok() && !result.value().isEmpty()) ? result.value().first().provider
-                                                                          : QStringLiteral("fincept");
+        effective_provider = first_visible_provider.isEmpty() ? policy::default_llm_provider() : first_visible_provider;
     const bool fincept_active = effective_provider.compare(QLatin1String("fincept"), Qt::CaseInsensitive) == 0;
     const int tokens_max = fincept_active ? ai_chat::ModelCatalog::kFinceptMaxOutputTokens : kLlmProvidersTokensMax;
     tokens_spin_->setMaximum(tokens_max);
@@ -546,6 +610,27 @@ void LlmConfigSection::load_providers() {
         if (tool_rounds_spin_)
             tool_rounds_spin_->setValue(gs.value().max_tool_rounds);
     }
+
+    QVariantMap budget_values;
+    auto& app_config = AppConfig::instance();
+    budget_values.insert(QString::fromLatin1(ai_chat::kLlmHistoryCharsKey),
+                         app_config.get(ai_chat::kLlmHistoryCharsKey, ai_chat::kDefaultLlmHistoryChars));
+    budget_values.insert(QString::fromLatin1(ai_chat::kLlmPromptTokensKey),
+                         app_config.get(ai_chat::kLlmPromptTokensKey, ai_chat::kDefaultLlmPromptTokens));
+    budget_values.insert(QString::fromLatin1(ai_chat::kLlmCompletionTokensKey),
+                         app_config.get(ai_chat::kLlmCompletionTokensKey, ai_chat::kDefaultLlmCompletionTokens));
+    budget_values.insert(
+        QString::fromLatin1(ai_chat::kLlmSummaryContextBytesKey),
+        app_config.get(ai_chat::kLlmSummaryContextBytesKey, ai_chat::kDefaultLlmSummaryContextBytes));
+    budget_values.insert(
+        QString::fromLatin1(ai_chat::kLlmSummaryOutputTokensKey),
+        app_config.get(ai_chat::kLlmSummaryOutputTokensKey, ai_chat::kDefaultLlmSummaryOutputTokens));
+    const ai_chat::LlmBudgetSettings budgets = ai_chat::llm_budget_settings_from_config_map(budget_values);
+    history_budget_spin_->setValue(budgets.history_chars);
+    prompt_budget_spin_->setValue(budgets.prompt_tokens);
+    completion_budget_spin_->setValue(budgets.completion_tokens);
+    summary_context_budget_spin_->setValue(budgets.summary_context_bytes);
+    summary_output_budget_spin_->setValue(budgets.summary_output_tokens);
 
     delete_btn_->setEnabled(false);
 
@@ -590,12 +675,13 @@ void LlmConfigSection::populate_form(const QString& provider) {
     for (const auto& p : result.value()) {
         if (p.provider.toLower() == provider.toLower()) {
             // Set model — try to select in combo, or set as editable text
-            if (!p.model.isEmpty()) {
-                int idx = model_combo_->findText(p.model);
+            const QString normalized_model = policy::normalize_llm_model(p.provider, p.model);
+            if (!normalized_model.isEmpty()) {
+                int idx = model_combo_->findText(normalized_model);
                 if (idx >= 0)
                     model_combo_->setCurrentIndex(idx);
                 else
-                    model_combo_->setCurrentText(p.model);
+                    model_combo_->setCurrentText(normalized_model);
             }
             base_url_edit_->setText(p.base_url.isEmpty() ? def_url : p.base_url);
 
@@ -712,7 +798,7 @@ void LlmConfigSection::on_save_provider() {
     LlmConfig cfg;
     cfg.provider = provider;
     cfg.api_key = is_fincept ? QString() : api_key_edit_->text().trimmed();
-    cfg.model = model_combo_->currentText().trimmed();
+    cfg.model = policy::normalize_llm_model(cfg.provider, model_combo_->currentText());
     cfg.base_url = base_url_edit_->text().trimmed();
     cfg.is_active = true;
     cfg.tools_enabled = tools_check_->isChecked();
@@ -816,6 +902,14 @@ void LlmConfigSection::on_save_global() {
         return;
     }
 
+    const ai_chat::LlmBudgetSettings budgets = ai_chat::validate_llm_budget_settings(
+        {history_budget_spin_->value(), prompt_budget_spin_->value(), completion_budget_spin_->value(),
+         summary_context_budget_spin_->value(), summary_output_budget_spin_->value()});
+    const QVariantMap budget_values = ai_chat::llm_budget_settings_to_config_map(budgets);
+    auto& app_config = AppConfig::instance();
+    for (auto it = budget_values.cbegin(); it != budget_values.cend(); ++it)
+        app_config.set(it.key(), it.value());
+
     show_status(tr("Global settings saved"), false);
     emit config_changed();
 }
@@ -905,7 +999,7 @@ void LlmConfigSection::on_models_fetched(const QString& provider, const QStringL
         // not found, etc.) instead of guessing. For ollama add a hint about
         // the local server in case that's the cause.
         if (provider.toLower() == "ollama")
-            show_status(tr("Ollama fetch failed: %1 — check `ollama serve` and base URL").arg(error), true);
+            show_status(tr("Local model server fetch failed: %1 — check the configured base URL").arg(error), true);
         else
             show_status(tr("Fetch failed: ") + error, true);
         return;
