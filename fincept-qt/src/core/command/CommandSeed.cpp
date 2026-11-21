@@ -159,7 +159,7 @@ const SectionRow kSections[] = {
     {"derivatives", "strategy", QT_TRANSLATE_NOOP("CommandSeed", "Strategy"), "payoff, spread, straddle"},
     {"derivatives", "scenarios", QT_TRANSLATE_NOOP("CommandSeed", "Scenarios"), "stress, what if"},
     {"derivatives", "curves", QT_TRANSLATE_NOOP("CommandSeed", "Curves"), "yield curve, rates"},
-    {"derivatives", "credit", QT_TRANSLATE_NOOP("CommandSeed", "Credit"), "cds, default"},
+    {"derivatives", "credit", QT_TRANSLATE_NOOP("CommandSeed", "Credit"), "wcds, cds, default"},
     {"derivatives", "book", QT_TRANSLATE_NOOP("CommandSeed", "Book"), "positions, greeks"},
     {"derivatives", "pricer:bond", QT_TRANSLATE_NOOP("CommandSeed", "Bond pricer"), "bonds, fixed income, yield"},
     {"derivatives", "pricer:equity", QT_TRANSLATE_NOOP("CommandSeed", "Equity option pricer"), "black scholes, bsm, call, put"},
@@ -312,7 +312,8 @@ const SectionRow kSections[] = {
     {"portfolio", "economics", QT_TRANSLATE_NOOP("CommandSeed", "Portfolio economics"), "macro"},
     // Equity Research tabs
     {"equity_research", "overview", QT_TRANSLATE_NOOP("CommandSeed", "Company overview"), "chart, quote"},
-    {"equity_research", "financials", QT_TRANSLATE_NOOP("CommandSeed", "Financials"), "income statement, balance sheet, cash flow"},
+    {"equity_research", "financials", QT_TRANSLATE_NOOP("CommandSeed", "Financials"),
+     "gf, fa, income statement, balance sheet, cash flow"},
     {"equity_research", "filings", QT_TRANSLATE_NOOP("CommandSeed", "Filings"), "sec, 10-k"},
     {"equity_research", "analysis", QT_TRANSLATE_NOOP("CommandSeed", "Analysis"), "ratios"},
     {"equity_research", "technicals", QT_TRANSLATE_NOOP("CommandSeed", "Technicals"), "indicators, rsi, macd"},
@@ -322,7 +323,7 @@ const SectionRow kSections[] = {
     {"equity_research", "valuation", QT_TRANSLATE_NOOP("CommandSeed", "Valuation"), "dcf, fair value"},
     {"equity_research", "dividends", QT_TRANSLATE_NOOP("CommandSeed", "Dividends"), "yield"},
     {"equity_research", "earnings", QT_TRANSLATE_NOOP("CommandSeed", "Earnings"), "eps"},
-    {"equity_research", "options", QT_TRANSLATE_NOOP("CommandSeed", "Options"), "option chain"},
+    {"equity_research", "options", QT_TRANSLATE_NOOP("CommandSeed", "Options"), "omon, option chain"},
     {"equity_research", "analyst", QT_TRANSLATE_NOOP("CommandSeed", "Analyst ratings"), "targets, recommendations"},
     {"equity_research", "ownership", QT_TRANSLATE_NOOP("CommandSeed", "Ownership"), "institutional, insiders"},
     // AI Quant Lab modules

@@ -499,6 +499,12 @@ fincept_add_test(tst_command_phrase
     tst_command_phrase.cpp
     "${PROJECT_SOURCE_DIR}/src/core/command/CommandPhrase.cpp")
 
+# src/core/command/CommandSeed — the static command catalogue must keep stable,
+# unique ids and the terminal mnemonics users rely on to discover research tools.
+fincept_add_test(tst_command_seed
+    tst_command_seed.cpp
+    "${PROJECT_SOURCE_DIR}/src/core/command/CommandSeed.cpp")
+
 # src/core/instrument — the symbol system's normaliser, venue / provider table and
 # ranking (Qt Core only). All three read tests/data/symbol_vectors.json (located with
 # QFINDTESTDATA next to the test sources; override with FINCEPT_SYMBOL_VECTORS), the

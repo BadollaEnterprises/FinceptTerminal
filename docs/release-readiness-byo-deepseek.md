@@ -14,7 +14,7 @@ third-party data or platform services can be replaced by an LLM.
 | Fincept credits are not consumed by AI workflows | Pass | The guarded live smoke completed chat, tool use, news analysis, and analytics explanation with the configured DeepSeek key and recorded zero Fincept-credit use. |
 | Provider request limits are enforced | Pass | `LlmBudgetSettings.h` enforces the persisted history, input, output, summary-context, and summary-output budgets. The controls are exposed under Settings > LLM Configuration > Providers. |
 | Cache accounting survives restart | Pass | Provider cache-hit usage is written through local usage metrics and covered by the live smoke diagnostic. |
-| Native regression suite | Pass | 145 of 145 tests passed after the symbol-first workflow was added. |
+| Native regression suite | Pass | 146 of 146 tests passed after the command-catalog regression was added. |
 | Analytics regression suite | Pass | 246 of 246 tests passed. |
 | Packaged application diagnostics | Pass | All 10 packaged CI self-tests passed with the bundled Qt offscreen plugin. |
 | macOS bundle integrity | Pass for local distribution | `codesign --verify --deep --strict` passed after the final release rebuild. The bundle is ad-hoc signed. OpenSSL 3.5.9 is bundle-relative, arm64, and built for macOS 13.0. |
@@ -59,6 +59,7 @@ existing first-party research views. Representative commands are:
 | `OMON AAPL` | Equity Research > Options |
 | `TAS MSFT` | Trading workspace |
 | `HMS AAPL MSFT` | Multi-security comparison |
+| `WCDS` | Derivatives > Credit (CDS analytics) |
 
 Aliases are intentionally mapped to Fincept's own screens and data contracts.
 No Godel Terminal code, licensed feed, or proprietary UI asset is included.
