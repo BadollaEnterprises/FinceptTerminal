@@ -29,6 +29,9 @@ def main() -> int:
         root / ".github" / "scripts" / "build_macos_openssl.sh"
     ).read_text(encoding="utf-8")
     universal_script = root / ".github" / "scripts" / "create_macos_universal_app.sh"
+    python_framework_script = (
+        root / ".github" / "scripts" / "embed_macos_python_framework.sh"
+    )
     failures: list[str] = []
 
     require(
@@ -155,6 +158,28 @@ def main() -> int:
         "macOS Universal job must merge the complete application bundle",
         failures,
     )
+    require(
+        text,
+        '../.github/scripts/embed_macos_python_framework.sh "${APP_BUNDLE}" 3.12',
+        "macOS matrix packaging must use the canonical Python framework embedder",
+        failures,
+    )
+    if not python_framework_script.is_file():
+        failures.append("macOS Python framework embedder must exist")
+    else:
+        python_framework_text = python_framework_script.read_text(encoding="utf-8")
+        require(
+            python_framework_text,
+            'Pruning extra Python version from bundle:',
+            "macOS Python embedder must remove extra framework versions",
+            failures,
+        )
+        require(
+            python_framework_text,
+            'fix_framework_symlinks',
+            "macOS Python embedder must rebuild framework symlink layers",
+            failures,
+        )
     if not universal_script.is_file():
         failures.append("macOS universal application merge script must exist")
     else:

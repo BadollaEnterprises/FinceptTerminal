@@ -758,27 +758,7 @@ jobs:
 
           # ── Embed Python.framework (tag builds only — skip on push) ───────
           if [ "$IS_TAG" = "true" ]; then
-            PY_FRAMEWORK=""
-            for candidate in \
-              "/Library/Frameworks/Python.framework" \
-              "$(brew --prefix python@3.12 2>/dev/null)/Frameworks/Python.framework" \
-              "$(brew --prefix python3 2>/dev/null)/Frameworks/Python.framework"; do
-              [ -d "${candidate}/Versions" ] && { PY_FRAMEWORK="${candidate}"; break; }
-            done
-            BUNDLE_FRAMEWORKS="${APP_BUNDLE}/Contents/Frameworks"
-            mkdir -p "${BUNDLE_FRAMEWORKS}"
-            if [ -n "${PY_FRAMEWORK}" ]; then
-              echo "Embedding Python.framework from: ${PY_FRAMEWORK}"
-              rsync -a --copy-unsafe-links "${PY_FRAMEWORK}/" "${BUNDLE_FRAMEWORKS}/Python.framework/" 2>/dev/null || \
-                cp -R "${PY_FRAMEWORK}" "${BUNDLE_FRAMEWORKS}/" 2>/dev/null || true
-              find "${BUNDLE_FRAMEWORKS}/Python.framework" -name "PrivateHeaders" -type l \
-                ! -exec test -e {} \; -delete 2>/dev/null || true
-              PY_VER="$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
-              ln -sf "../Frameworks/Python.framework/Versions/${PY_VER}/bin/python${PY_VER}" \
-                     "${APP_BUNDLE}/Contents/MacOS/python3" 2>/dev/null || true
-            else
-              echo "::warning::Python.framework not found — bundle will rely on system python"
-            fi
+            ../.github/scripts/embed_macos_python_framework.sh "${APP_BUNDLE}" 3.12
           fi
 
           # ── Run macdeployqt on the fully staged bundle (tag builds only) ──
