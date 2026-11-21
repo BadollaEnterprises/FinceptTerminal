@@ -47,7 +47,9 @@ existing first-party research views. Representative commands are:
 | Command | Destination |
 | --- | --- |
 | `AAPL DES` | Equity Research > Overview |
+| `HP AAPL` | Chart / price history |
 | `MSFT financials` | Equity Research > Financials |
+| `AAPL GF` | Equity Research > Financials |
 | `CF NVDA` | Equity Research > Filings |
 | `TSLA technicals` | Equity Research > Technicals |
 | `valuation AMZN` | Equity Research > Valuation |
@@ -55,6 +57,8 @@ existing first-party research views. Representative commands are:
 | `HDS GOOG` | Equity Research > Ownership |
 | `NFLX ERN` | Equity Research > Earnings |
 | `OMON AAPL` | Equity Research > Options |
+| `TAS MSFT` | Trading workspace |
+| `HMS AAPL MSFT` | Multi-security comparison |
 
 Aliases are intentionally mapped to Fincept's own screens and data contracts.
 No Godel Terminal code, licensed feed, or proprietary UI asset is included.

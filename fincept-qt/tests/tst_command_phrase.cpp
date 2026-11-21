@@ -11,6 +11,7 @@ class TestCommandPhrase : public QObject {
     void symbol_research_views_data();
     void symbol_research_views();
     void keeps_existing_symbol_views();
+    void historical_multi_security_code();
 };
 
 void TestCommandPhrase::symbol_research_views_data() {
@@ -20,8 +21,12 @@ void TestCommandPhrase::symbol_research_views_data() {
 
     QTest::newRow("description-code") << QStringLiteral("AAPL DES") << QStringLiteral("AAPL")
                                        << QStringLiteral("research:overview");
+    QTest::newRow("historical-prices-code") << QStringLiteral("HP AAPL") << QStringLiteral("AAPL")
+                                             << QStringLiteral("chart");
     QTest::newRow("financials") << QStringLiteral("MSFT financials") << QStringLiteral("MSFT")
                                  << QStringLiteral("research:financials");
+    QTest::newRow("graph-fundamentals-code") << QStringLiteral("AAPL GF") << QStringLiteral("AAPL")
+                                              << QStringLiteral("research:financials");
     QTest::newRow("filings-code") << QStringLiteral("CF NVDA") << QStringLiteral("NVDA")
                                    << QStringLiteral("research:filings");
     QTest::newRow("technical") << QStringLiteral("TSLA technicals") << QStringLiteral("TSLA")
@@ -36,6 +41,8 @@ void TestCommandPhrase::symbol_research_views_data() {
                                      << QStringLiteral("research:overview");
     QTest::newRow("earnings-code") << QStringLiteral("NFLX ERN") << QStringLiteral("NFLX")
                                     << QStringLiteral("research:earnings");
+    QTest::newRow("time-sales-code") << QStringLiteral("TAS MSFT") << QStringLiteral("MSFT")
+                                      << QStringLiteral("trade");
 }
 
 void TestCommandPhrase::symbol_research_views() {
@@ -67,6 +74,13 @@ void TestCommandPhrase::keeps_existing_symbol_views() {
         QCOMPARE(parsed.first().kind, phrase::Kind::SymbolView);
         QCOMPARE(parsed.first().view, QString::fromLatin1(c.view));
     }
+}
+
+void TestCommandPhrase::historical_multi_security_code() {
+    const QList<phrase::Phrase> parsed = phrase::parse(QStringLiteral("HMS AAPL MSFT"));
+    QCOMPARE(parsed.size(), 1);
+    QCOMPARE(parsed.first().kind, phrase::Kind::Compare);
+    QCOMPARE(parsed.first().symbols, (QStringList{QStringLiteral("AAPL"), QStringLiteral("MSFT")}));
 }
 
 QTEST_GUILESS_MAIN(TestCommandPhrase)

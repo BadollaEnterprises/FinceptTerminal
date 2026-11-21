@@ -68,6 +68,7 @@ QString cph_view_of(const QString& lower) {
         {QStringLiteral("charts"), QStringLiteral("chart")},
         {QStringLiteral("graph"), QStringLiteral("chart")},
         {QStringLiteral("price"), QStringLiteral("chart")},
+        {QStringLiteral("hp"), QStringLiteral("chart")},
         {QStringLiteral("news"), QStringLiteral("news")},
         {QStringLiteral("headlines"), QStringLiteral("news")},
         {QStringLiteral("research"), QStringLiteral("research:overview")},
@@ -80,6 +81,7 @@ QString cph_view_of(const QString& lower) {
         {QStringLiteral("financials"), QStringLiteral("research:financials")},
         {QStringLiteral("statements"), QStringLiteral("research:financials")},
         {QStringLiteral("fa"), QStringLiteral("research:financials")},
+        {QStringLiteral("gf"), QStringLiteral("research:financials")},
         {QStringLiteral("filings"), QStringLiteral("research:filings")},
         {QStringLiteral("sec"), QStringLiteral("research:filings")},
         {QStringLiteral("cf"), QStringLiteral("research:filings")},
@@ -118,6 +120,7 @@ QString cph_view_of(const QString& lower) {
         {QStringLiteral("trade"), QStringLiteral("trade")},
         {QStringLiteral("ticket"), QStringLiteral("trade")},
         {QStringLiteral("order"), QStringLiteral("trade")},
+        {QStringLiteral("tas"), QStringLiteral("trade")},
         {QStringLiteral("backtest"), QStringLiteral("backtest")},
         {QStringLiteral("peers"), QStringLiteral("peers")},
         {QStringLiteral("comps"), QStringLiteral("peers")},
@@ -308,7 +311,9 @@ bool cph_compare(const QStringList& tokens, const QStringList& lower, Phrase* ou
     QStringList syms;
     int start = 0;
     bool keyword = false;
-    if (!lower.isEmpty() && (lower[0] == QLatin1String("compare") || lower[0] == QLatin1String("cmp"))) {
+    if (!lower.isEmpty()
+        && (lower[0] == QLatin1String("compare") || lower[0] == QLatin1String("cmp")
+            || lower[0] == QLatin1String("hms"))) {
         start = 1;
         keyword = true;
     }
