@@ -83,6 +83,7 @@
 #include "services/instruments/InstrumentSync.h"
 #include "services/instruments/InstrumentIndex.h"
 #include "services/llm/LlmService.h"
+#include "services/llm/DeepSeekLiveSmoke.h"
 #include "services/ma_analytics/MAAnalyticsService.h"
 #include "services/maritime/MaritimeService.h"
 #include "services/maritime/PortsCatalog.h"
@@ -1384,7 +1385,8 @@ int main(int argc, char* argv[]) {
 #endif
     const bool db_headless = [argc, argv]() {
         for (int i = 1; i < argc; ++i) {
-            if (qstrcmp(argv[i], "--smoke-test") == 0 || qstrncmp(argv[i], "--selftest", 10) == 0 ||
+            if (qstrcmp(argv[i], "--smoke-test") == 0 || qstrcmp(argv[i], "--live-deepseek-smoke") == 0 ||
+                qstrncmp(argv[i], "--selftest", 10) == 0 ||
                 qstrcmp(argv[i], "--dump-tools") == 0)
                 return true;
         }
@@ -1712,7 +1714,8 @@ int main(int argc, char* argv[]) {
         // because smoke_mode is not computed until much later in main().
         const bool headless_run = [argc, argv]() {
             for (int i = 1; i < argc; ++i) {
-                if (qstrcmp(argv[i], "--smoke-test") == 0 || qstrncmp(argv[i], "--selftest", 10) == 0)
+                if (qstrcmp(argv[i], "--smoke-test") == 0 || qstrcmp(argv[i], "--live-deepseek-smoke") == 0 ||
+                    qstrncmp(argv[i], "--selftest", 10) == 0)
                     return true;
             }
             return false;
@@ -1870,7 +1873,7 @@ int main(int argc, char* argv[]) {
         bool tools_needed_synchronously = false;
         for (int i = 1; i < argc; ++i) {
             if (qstrcmp(argv[i], "--selftest-tools") == 0 || qstrcmp(argv[i], "--selftest-llm-tools") == 0 ||
-                qstrcmp(argv[i], "--dump-tools") == 0)
+                qstrcmp(argv[i], "--live-deepseek-smoke") == 0 || qstrcmp(argv[i], "--dump-tools") == 0)
                 tools_needed_synchronously = true;
         }
         if (tools_needed_synchronously)
@@ -1917,6 +1920,17 @@ int main(int argc, char* argv[]) {
     };
 
     for (int i = 1; i < argc; ++i) {
+        // Paid and intentionally absent from --selftest-list: both the flag and
+        // an explicit environment guard are required, preventing CI or a typo
+        // from spending the user's provider quota.
+        if (qstrcmp(argv[i], "--live-deepseek-smoke") == 0) {
+            if (qEnvironmentVariable("FINCEPT_ALLOW_LIVE_DEEPSEEK_SMOKE") != QLatin1String("1")) {
+                std::fprintf(stderr,
+                             "live DeepSeek smoke refused: set FINCEPT_ALLOW_LIVE_DEEPSEEK_SMOKE=1 explicitly\n");
+                return 2;
+            }
+            return fincept::ai_chat::run_deepseek_live_smoke();
+        }
         // Machine-readable suite enumeration for CI: one flag per line, exit 0.
         if (qstrcmp(argv[i], "--selftest-list") == 0) {
             for (const auto& suite : kSelftestSuites)

@@ -140,6 +140,11 @@ fincept_add_test(tst_llm_usage
 fincept_add_test(tst_llm_summary_policy
     tst_llm_summary_policy.cpp)
 
+# The paid live DeepSeek diagnostic is opt-in and never part of CTest. Its
+# request plan remains pure and unit-tested so route coverage cannot drift.
+fincept_add_test(tst_deepseek_live_smoke_plan
+    tst_deepseek_live_smoke_plan.cpp)
+
 # Chat Mode prompt optimisation is a BYO-model feature in the community build.
 # Keep the request contract and response cleanup pure so it cannot regress back
 # to the disabled hosted /chat/optimize-prompt route.

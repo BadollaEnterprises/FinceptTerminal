@@ -1129,6 +1129,7 @@ set(PYTHON_SOURCES
 
 # LLM service — provider-neutral chat / streaming / tools layer
 set(LLM_SERVICE_SOURCES
+    src/services/llm/DeepSeekLiveSmoke.cpp
     src/services/llm/LlmService.cpp
     src/services/llm/LlmContentExtractors.cpp
     src/services/llm/LlmHttpHelpers.cpp
