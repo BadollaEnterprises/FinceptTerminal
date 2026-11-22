@@ -9,6 +9,17 @@ from dataclasses import dataclass
 from enum import Enum
 import numpy as np
 
+try:
+    from quant.runtime_limits import bounded_positive_int
+except ImportError:  # run by hand without PYTHONPATH=scripts/Analytics
+    import os
+    import sys
+    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+    from quant.runtime_limits import bounded_positive_int
+
+
+MAX_RAMP_YEARS = 20
+
 class RevenueSynergyType(Enum):
     CROSS_SELL = "cross_sell"
     MARKET_EXPANSION = "market_expansion"
@@ -42,6 +53,8 @@ class RevenueSynergyAnalyzer:
                                      cross_sell_rate: float,
                                      ramp_years: int = 3) -> Dict[str, Any]:
         """Calculate cross-selling revenue synergy"""
+
+        ramp_years = bounded_positive_int(ramp_years, "ramp_years", MAX_RAMP_YEARS)
 
         acquirer_to_target = target_customers * cross_sell_rate * acquirer_arpu
         target_to_acquirer = acquirer_customers * cross_sell_rate * target_arpu
@@ -88,6 +101,8 @@ class RevenueSynergyAnalyzer:
                                           ramp_years: int = 4) -> Dict[str, Any]:
         """Calculate geographic/market expansion synergy"""
 
+        ramp_years = bounded_positive_int(ramp_years, "ramp_years", MAX_RAMP_YEARS)
+
         addressable_revenue = target_revenue_new_markets * acquirer_product_penetration
         annual_synergy = addressable_revenue * market_share_gain
 
@@ -129,6 +144,8 @@ class RevenueSynergyAnalyzer:
                                           churn_reduction: float,
                                           ramp_years: int = 2) -> Dict[str, Any]:
         """Calculate product bundling synergy"""
+
+        ramp_years = bounded_positive_int(ramp_years, "ramp_years", MAX_RAMP_YEARS)
 
         total_standalone_revenue = sum(p['revenue'] for p in standalone_products)
 
@@ -179,6 +196,8 @@ class RevenueSynergyAnalyzer:
                                        ramp_years: int = 3) -> Dict[str, Any]:
         """Calculate pricing power synergy from reduced competition"""
 
+        ramp_years = bounded_positive_int(ramp_years, "ramp_years", MAX_RAMP_YEARS)
+
         volume_impact = -1 * price_increase * volume_elasticity
 
         net_revenue_impact = combined_revenue * (price_increase + volume_impact)
@@ -223,6 +242,8 @@ class RevenueSynergyAnalyzer:
                                       incremental_reach: float,
                                       ramp_years: int = 3) -> Dict[str, Any]:
         """Calculate distribution channel synergy"""
+
+        ramp_years = bounded_positive_int(ramp_years, "ramp_years", MAX_RAMP_YEARS)
 
         addressable_revenue = target_revenue * incremental_reach
 

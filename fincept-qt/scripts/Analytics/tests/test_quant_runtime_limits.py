@@ -14,6 +14,9 @@ ECONOMICS_ENGINE = ANALYTICS / "economics" / "analytics_engine.py"
 PORTFOLIO_RISK = ANALYTICS / "portfolioManagement" / "risk_management.py"
 FUNCTIME_SERVICE = ANALYTICS / "functime_wrapper" / "functime_service.py"
 LBO_MODEL = ANALYTICS / "corporateFinance" / "lbo" / "lbo_model.py"
+REVENUE_SYNERGIES = (
+    ANALYTICS / "corporateFinance" / "synergies" / "revenue_synergies.py"
+)
 
 
 def load_limits_module():
@@ -148,6 +151,24 @@ class QuantRuntimeLimitsTest(unittest.TestCase):
         self.assertLess(
             build.index("bounded_positive_int("), build.index("self._project("),
         )
+
+    def test_revenue_synergies_bound_every_ramp_projection(self):
+        source = REVENUE_SYNERGIES.read_text(encoding="utf-8")
+        methods = (
+            "calculate_cross_sell_synergy",
+            "calculate_market_expansion_synergy",
+            "calculate_product_bundling_synergy",
+            "calculate_pricing_power_synergy",
+            "calculate_distribution_synergy",
+        )
+        for index, name in enumerate(methods):
+            with self.subTest(method=name):
+                start = source.index(f"def {name}(")
+                end = source.index("\n    def ", start + 1) if index + 1 < len(methods) else source.index("\n    def ", start + 1)
+                method = source[start:end]
+                guard = 'bounded_positive_int(ramp_years, "ramp_years", MAX_RAMP_YEARS)'
+                self.assertIn(guard, method)
+                self.assertLess(method.index(guard), method.index("for year in range("))
 
 
 if __name__ == "__main__":
