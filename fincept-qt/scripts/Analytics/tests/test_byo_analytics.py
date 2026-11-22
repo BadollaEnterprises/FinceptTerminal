@@ -67,6 +67,11 @@ class ByoAnalyticsTest(unittest.TestCase):
         self.assertAlmostEqual(result["diversification_ratio"], 1.0, places=7)
         self.assertEqual(result["correlation_matrix"]["ALPHA"]["ALPHA"], 1.0)
 
+    def test_portfolio_risk_rejects_returns_below_total_loss(self):
+        mod = load_module()
+        with self.assertRaisesRegex(ValueError, "cannot be below -100%"):
+            mod.portfolio_risk({"returns": {"ALPHA": [0.02, -1.2, 0.01]}})
+
     def test_technical_rating_detects_a_persistent_uptrend(self):
         mod = load_module()
         closes = [100 + i * 0.4 + (i % 5) * 0.03 for i in range(240)]

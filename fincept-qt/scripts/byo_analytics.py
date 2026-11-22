@@ -76,6 +76,9 @@ def portfolio_risk(payload: Mapping[str, Any]) -> Dict[str, Any]:
     if not isinstance(raw, Mapping) or not raw:
         raise ValueError("returns must be a non-empty object of asset return arrays")
     series = {str(name): _numbers(values, f"returns[{name}]") for name, values in raw.items()}
+    for name, values in series.items():
+        if any(value < -1.0 for value in values):
+            raise ValueError(f"returns[{name}] cannot be below -100% for a price return series")
     lengths = {len(values) for values in series.values()}
     if len(lengths) != 1 or next(iter(lengths)) < 2:
         raise ValueError("all return arrays must have the same length of at least two")
