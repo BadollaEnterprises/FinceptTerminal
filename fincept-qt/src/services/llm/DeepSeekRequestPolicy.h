@@ -11,9 +11,12 @@ namespace fincept::ai_chat {
 // higher levels opt into thinking and progressively larger reasoning budgets.
 inline void apply_deepseek_thinking(QJsonObject& body, const QString& effort) {
     const QString normalized = effort.trimmed().toLower();
-    if (normalized.isEmpty())
-        return;
 
+    // Scheduled/background features do not expose an effort picker and pass an
+    // empty value. DeepSeek currently defaults an omitted control to expensive
+    // high-effort thinking, so unspecified (and unknown) values must follow the
+    // same non-thinking path as low/medium. Explicit high/xhigh/max remain
+    // opt-ins below.
     QString provider_effort = QStringLiteral("none");
     QString thinking_type = QStringLiteral("disabled");
     if (normalized == QLatin1String("high") || normalized == QLatin1String("xhigh")) {

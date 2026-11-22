@@ -39,6 +39,12 @@ void TestAiChatEffortPolicy::metered_fincept_high_effort_mentions_fincept_credit
 
 void TestAiChatEffortPolicy::deepseek_effort_builds_current_thinking_fields() {
     QJsonObject request;
+    apply_deepseek_thinking(request, QString());
+    QCOMPARE(request.value(QStringLiteral("reasoning_effort")).toString(), QStringLiteral("none"));
+    QCOMPARE(request.value(QStringLiteral("thinking")).toObject().value(QStringLiteral("type")).toString(),
+             QStringLiteral("disabled"));
+
+    request = {};
     apply_deepseek_thinking(request, QStringLiteral("medium"));
     QCOMPARE(request.value(QStringLiteral("reasoning_effort")).toString(), QStringLiteral("none"));
     QCOMPARE(request.value(QStringLiteral("thinking")).toObject().value(QStringLiteral("type")).toString(),
