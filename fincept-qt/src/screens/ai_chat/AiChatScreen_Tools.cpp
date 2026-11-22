@@ -468,7 +468,14 @@ void AiChatScreen::delete_saved_prompt(int index) {
     if (index < 0 || index >= saved_prompts_.size())
         return;
     saved_prompts_.removeAt(index);
-    aichat::store_saved_prompts(saved_prompts_);
+    if (!aichat::store_saved_prompts(saved_prompts_)) {
+        status_->show_notice(tr("Could not delete the prompt."), QString(), {}, 5000,
+                             ui::ScreenStatusBar::Tone::Danger);
+        saved_prompts_ = aichat::load_saved_prompts();
+        context_rail_->set_saved_prompts(saved_prompts_);
+        composer_->set_saved_prompts(saved_prompts_);
+        return;
+    }
     saved_prompts_ = aichat::load_saved_prompts();
     context_rail_->set_saved_prompts(saved_prompts_);
     composer_->set_saved_prompts(saved_prompts_);

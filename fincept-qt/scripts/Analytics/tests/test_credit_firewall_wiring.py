@@ -237,6 +237,11 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertGreaterEqual(screen.count("Conversation could not be saved locally"), 3)
         self.assertGreaterEqual(screen.count("status_->show_notice"), 3)
 
+    def test_ai_chat_surfaces_saved_prompt_delete_failures(self):
+        tools = (ROOT / "src/screens/ai_chat/AiChatScreen_Tools.cpp").read_text(encoding="utf-8")
+        self.assertGreaterEqual(tools.count("if (!aichat::store_saved_prompts(saved_prompts_))"), 2)
+        self.assertIn("Could not delete the prompt.", tools)
+
     def test_llm_settings_diagnostics_scrub_storage_errors_and_profile_identity(self):
         providers = (ROOT / "src/screens/settings/LlmConfigSection_Providers.cpp").read_text(encoding="utf-8")
         profiles = (ROOT / "src/screens/settings/LlmConfigSection_Profiles.cpp").read_text(encoding="utf-8")
