@@ -10,6 +10,7 @@
 
 #include "core/config/AppConfig.h"
 #include "core/logging/Logger.h"
+#include "core/privacy/LogRedact.h"
 #include "mcp/McpProvider.h"
 #include "mcp/McpService.h"
 #include "mcp/ResultStore.h"
@@ -53,7 +54,7 @@ void emit_tool_done(const QString& display, const QJsonObject& args, const mcp::
         if (parallel)
             fields.append(LogField("parallel", true));
         if (!tr.success)
-            fields.append(LogField("error", tr.error.left(120)));
+            fields.append(LogField("error", privacy::redact_text(tr.error).left(120)));
         LOG_INFO(kLlmToolLoopTag, logf("LLM tool call finished", fields));
     }
     detail::emit_progress(tool_stream_prefix() +
@@ -543,7 +544,9 @@ std::optional<LlmResponse> LlmService::try_extract_and_execute_text_tool_calls(c
     // Raw tool JSON is NOT an answer — label it so the user can tell the
     // difference, and log the reason instead of silently passing it off as one.
     auto raw_fallback = [&](const QString& reason) -> LlmResponse {
-        LOG_WARN(kLlmToolLoopTag, "Text-tool follow-up unavailable (" + reason + ") — returning raw tool output");
+        LOG_WARN(kLlmToolLoopTag,
+                 "Text-tool follow-up unavailable (" + privacy::redact_text(reason) +
+                     ") — returning raw tool output");
         resp.content = "*(could not summarise — " + reason + ". Raw tool output below.)*\n" + tool_results;
         resp.success = true;
         return resp;

@@ -192,9 +192,12 @@ class CreditFirewallWiringTest(unittest.TestCase):
     def test_llm_diagnostics_redact_provider_errors(self):
         service = (ROOT / "src/services/llm/LlmService.cpp").read_text(encoding="utf-8")
         http = (ROOT / "src/services/llm/LlmHttpHelpers.cpp").read_text(encoding="utf-8")
+        tools = (ROOT / "src/services/llm/LlmToolLoop.cpp").read_text(encoding="utf-8")
         screen = (ROOT / "src/screens/ai_chat/AiChatScreen_Messaging.cpp").read_text(encoding="utf-8")
         self.assertGreaterEqual(service.count("privacy::redact_text"), 5)
         self.assertIn("privacy::redact_text(result.error)", http)
+        self.assertIn("privacy::redact_text(tr.error)", tools)
+        self.assertGreaterEqual(tools.count("privacy::redact_text"), 2)
         self.assertIn("privacy::redact_text(response.error)", screen)
 
     def test_macro_and_geopolitics_services_check_firewall(self):
