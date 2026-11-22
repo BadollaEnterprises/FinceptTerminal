@@ -9,6 +9,7 @@
 #include "storage/cache/CacheManager.h"
 
 #include <QFuture>
+#include <QHash>
 #include <QPointer>
 #include <QThreadPool>
 #include <QtConcurrent/QtConcurrentRun>
@@ -42,6 +43,25 @@ struct GovSvcLookup {
 
 bool gov_svc_cancelled(const GovDataService::CancelToken& token) {
     return token && token->load();
+}
+
+std::optional<QStringList> gov_svc_credentials_for_script(QString script) {
+    script.replace(QLatin1Char('\\'), QLatin1Char('/'));
+    const QString name = script.toLower().section(QLatin1Char('/'), -1);
+    static const QHash<QString, QStringList> kCredentials = {
+        {QStringLiteral("government_us_data.py"), {}},
+        {QStringLiteral("congress_gov_data.py"), {QStringLiteral("CONGRESS_GOV_API_KEY")}},
+        {QStringLiteral("canada_gov_api.py"), {QStringLiteral("CANADA_GOV_API_KEY")}},
+        {QStringLiteral("swiss_gov_api.py"), {QStringLiteral("SWISS_GOV_API_KEY")}},
+        {QStringLiteral("french_gov_api.py"), {QStringLiteral("ENTREPRISE_API_KEY")}},
+        {QStringLiteral("data_gov_hk_api.py"), {}},
+        {QStringLiteral("openafrica_api.py"), {QStringLiteral("AFRICA_API_KEY")}},
+        {QStringLiteral("universal_ckan_api.py"), {}},
+        {QStringLiteral("datagov_au_api.py"), {QStringLiteral("AUS_DATA_API_KEY")}},
+        {QStringLiteral("datagovuk_api.py"), {QStringLiteral("DATAGOVUK_API_KEY")}},
+    };
+    const auto it = kCredentials.constFind(name);
+    return it == kCredentials.cend() ? std::nullopt : std::optional<QStringList>(*it);
 }
 
 } // namespace
@@ -183,6 +203,7 @@ void GovDataService::execute(const QString& script, const QString& command, cons
 
         python::PythonRunner::RunOptions opts;
         opts.cancel_token = cancel;
+        opts.credential_allowlist = gov_svc_credentials_for_script(script);
         python::PythonRunner::instance().run_with_options(
             script, full_args, opts, [self, key, cancel, finish](python::PythonResult py_result) {
                 if (!self)

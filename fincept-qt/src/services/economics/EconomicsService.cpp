@@ -9,9 +9,12 @@
 #include "storage/cache/CacheManager.h"
 
 #include <QFuture>
+#include <QHash>
 #include <QPointer>
 #include <QThreadPool>
 #include <QtConcurrent/QtConcurrentRun>
+
+#include <optional>
 
 namespace fincept::services {
 
@@ -29,6 +32,63 @@ QThreadPool* econ_svc_decode_pool() {
         return p;
     }();
     return pool;
+}
+
+std::optional<QStringList> econ_svc_credentials_for_script(QString script) {
+    script.replace(QLatin1Char('\\'), QLatin1Char('/'));
+    script = script.toLower();
+    static const QHash<QString, QStringList> kCredentials = {
+        {QStringLiteral("analytics/economics/business_cycle.py"), {}},
+        {QStringLiteral("analytics/economics/equity_risk_premium.py"), {QStringLiteral("FRED_API_KEY")}},
+        {QStringLiteral("adb_data.py"), {}},
+        {QStringLiteral("akshare_economics_china.py"), {}},
+        {QStringLiteral("bcb_data.py"), {}},
+        {QStringLiteral("bea_data.py"), {QStringLiteral("BEA_API_KEY")}},
+        {QStringLiteral("bis_data.py"), {}},
+        {QStringLiteral("bls_data.py"), {QStringLiteral("BLS_API_KEY")}},
+        {QStringLiteral("bnm_data.py"), {}},
+        {QStringLiteral("bnr_data.py"), {}},
+        {QStringLiteral("boc_data.py"), {}},
+        {QStringLiteral("boe_data.py"), {}},
+        {QStringLiteral("boi_data.py"), {}},
+        {QStringLiteral("census_data.py"), {QStringLiteral("CENSUS_API_KEY")}},
+        {QStringLiteral("cftc_data.py"), {QStringLiteral("CFTC_APP_TOKEN")}},
+        {QStringLiteral("cnb_data.py"), {}},
+        {QStringLiteral("ecb_sdmx_data.py"), {}},
+        {QStringLiteral("econdb_data.py"), {}},
+        {QStringLiteral("economic_calendar.py"), {}},
+        {QStringLiteral("eia_data.py"), {QStringLiteral("EIA_API_KEY")}},
+        {QStringLiteral("eurostat_extra_data.py"), {QStringLiteral("EUROSTAT_API_KEY")}},
+        {QStringLiteral("federal_reserve_data.py"), {}},
+        {QStringLiteral("fiscal_data.py"), {}},
+        {QStringLiteral("fred_data.py"), {QStringLiteral("FRED_API_KEY")}},
+        {QStringLiteral("fred_economic_data.py"), {QStringLiteral("FRED_API_KEY")}},
+        {QStringLiteral("hnb_data.py"), {}},
+        {QStringLiteral("ilostat_data.py"), {}},
+        {QStringLiteral("imf_datamapper_data.py"), {QStringLiteral("IMF_API_KEY")}},
+        {QStringLiteral("mnb_data.py"), {}},
+        {QStringLiteral("nber_data.py"), {QStringLiteral("FRED_API_KEY"), QStringLiteral("NBER_API_KEY")}},
+        {QStringLiteral("nbp_data.py"), {}},
+        {QStringLiteral("norges_bank_data.py"), {}},
+        {QStringLiteral("oecd_data.py"), {}},
+        {QStringLiteral("ons_data.py"), {}},
+        {QStringLiteral("owid_data.py"), {}},
+        {QStringLiteral("rba_data.py"), {}},
+        {QStringLiteral("riksbank_data.py"), {}},
+        {QStringLiteral("snb_data.py"), {}},
+        {QStringLiteral("statcan_data.py"), {}},
+        {QStringLiteral("tcmb_data.py"), {}},
+        {QStringLiteral("trading_economics_data.py"), {QStringLiteral("TRADING_ECONOMICS_API_KEY")}},
+        {QStringLiteral("un_comtrade_data.py"), {QStringLiteral("UN_COMTRADE_API_KEY")}},
+        {QStringLiteral("unesco_data.py"), {}},
+        {QStringLiteral("worldbank_data.py"), {}},
+        {QStringLiteral("worldbank_health_data.py"), {QStringLiteral("WORLDBANK_API_KEY")}},
+        {QStringLiteral("wto_data.py"), {QStringLiteral("WTO_API_KEY")}},
+    };
+    auto it = kCredentials.constFind(script);
+    if (it == kCredentials.cend())
+        it = kCredentials.constFind(script.section(QLatin1Char('/'), -1));
+    return it == kCredentials.cend() ? std::nullopt : std::optional<QStringList>(*it);
 }
 
 } // namespace
@@ -129,6 +189,7 @@ void EconomicsService::start_script(const QString& source_id, const QString& scr
 
     python::PythonRunner::RunOptions opts;
     opts.cancel_token = token;
+    opts.credential_allowlist = econ_svc_credentials_for_script(script);
 
     QPointer<EconomicsService> self = this;
     python::PythonRunner::instance().run_with_options(
