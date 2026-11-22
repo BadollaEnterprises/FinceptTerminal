@@ -6,6 +6,7 @@
 #include "core/policy/CommunityPolicy.h"
 #include "services/alpha_arena/HarnessArenaClient.h"
 #include "services/llm/LlmBudgetSettings.h"
+#include "services/llm/DeepSeekRequestPolicy.h"
 #include "services/llm/LlmErrors.h"
 #include "services/llm/ModelCatalog.h"
 #include "services/llm/ProviderCatalog.h"
@@ -54,6 +55,14 @@ QByteArray ArenaLlmClient::build_body(const ArenaLlmRequest& req) {
             else
                 body["max_tokens"] = max_tokens;
         }
+        // Arena decisions run on a schedule and require short, deterministic
+        // JSON rather than a long chain of thought. DeepSeek currently enables
+        // high-effort thinking by default when both controls are omitted, which
+        // silently multiplies BYO output usage on every round. Keep the arena's
+        // default on the explicit low-cost path; interactive AI Chat still lets
+        // the user choose higher effort.
+        if (p == QLatin1String("deepseek"))
+            fincept::ai_chat::apply_deepseek_thinking(body, QStringLiteral("low"));
     }
     return QJsonDocument(body).toJson(QJsonDocument::Compact);
 }

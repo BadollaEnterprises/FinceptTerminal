@@ -477,8 +477,11 @@ int run_arena_selftest() {
         check("llm: openai body uses max_completion_tokens",
               obody.contains("max_completion_tokens") && obody.value("messages").toArray().size() == 2);
         rq.provider = "deepseek";
-        check("llm: openai-compat body uses max_tokens",
-              QJsonDocument::fromJson(ArenaLlmClient::build_body(rq)).object().contains("max_tokens"));
+        const auto deepseek_body = QJsonDocument::fromJson(ArenaLlmClient::build_body(rq)).object();
+        check("llm: openai-compat body uses max_tokens", deepseek_body.contains("max_tokens"));
+        check("llm: arena deepseek decisions default to the low-cost non-thinking path",
+              deepseek_body.value("reasoning_effort").toString() == "none" &&
+                  deepseek_body.value("thinking").toObject().value("type").toString() == "disabled");
         rq.model_id = "deepseek-flash";
         rq.max_tokens = 0;
         check("llm: non-positive arena allowance uses the cost-conscious default",
