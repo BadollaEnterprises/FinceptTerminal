@@ -37,6 +37,8 @@ void TestCommandPhrase::symbol_research_views_data() {
                                        << QStringLiteral("research:analyst");
     QTest::newRow("holders-code") << QStringLiteral("HDS GOOG") << QStringLiteral("GOOG")
                                    << QStringLiteral("research:ownership");
+    QTest::newRow("transactions-code") << QStringLiteral("AAPL TRAN") << QStringLiteral("AAPL")
+                                        << QStringLiteral("research:ownership");
     QTest::newRow("short-interest") << QStringLiteral("GME short interest") << QStringLiteral("GME")
                                      << QStringLiteral("research:overview");
     QTest::newRow("earnings-code") << QStringLiteral("NFLX ERN") << QStringLiteral("NFLX")

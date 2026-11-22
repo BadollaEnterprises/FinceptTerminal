@@ -39,6 +39,29 @@ void TestCommandSeed::terminal_aliases_are_discoverable() {
     const auto* financials = find(QStringLiteral("equity_research.financials"));
     QVERIFY(financials);
     QVERIFY(financials->keywords.contains(QStringLiteral("gf")));
+    QVERIFY(financials->keywords.contains(QStringLiteral("fa")));
+
+    const auto* overview = find(QStringLiteral("equity_research.overview"));
+    QVERIFY(overview);
+    QVERIFY(overview->keywords.contains(QStringLiteral("des")));
+    QVERIFY(overview->keywords.contains(QStringLiteral("hp")));
+
+    const auto* filings = find(QStringLiteral("equity_research.filings"));
+    QVERIFY(filings);
+    QVERIFY(filings->keywords.contains(QStringLiteral("cf")));
+
+    const auto* dividends = find(QStringLiteral("equity_research.dividends"));
+    QVERIFY(dividends);
+    QVERIFY(dividends->keywords.contains(QStringLiteral("dvd")));
+
+    const auto* earnings = find(QStringLiteral("equity_research.earnings"));
+    QVERIFY(earnings);
+    QVERIFY(earnings->keywords.contains(QStringLiteral("ern")));
+
+    const auto* ownership = find(QStringLiteral("equity_research.ownership"));
+    QVERIFY(ownership);
+    QVERIFY(ownership->keywords.contains(QStringLiteral("hds")));
+    QVERIFY(ownership->keywords.contains(QStringLiteral("tran")));
 
     const auto* options = find(QStringLiteral("equity_research.options"));
     QVERIFY(options);

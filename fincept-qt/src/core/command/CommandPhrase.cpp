@@ -112,6 +112,7 @@ QString cph_view_of(const QString& lower) {
         {QStringLiteral("holders"), QStringLiteral("research:ownership")},
         {QStringLiteral("institutional"), QStringLiteral("research:ownership")},
         {QStringLiteral("hds"), QStringLiteral("research:ownership")},
+        {QStringLiteral("tran"), QStringLiteral("research:ownership")},
         {QStringLiteral("options"), QStringLiteral("options")},
         {QStringLiteral("option"), QStringLiteral("options")},
         {QStringLiteral("chain"), QStringLiteral("options")},
