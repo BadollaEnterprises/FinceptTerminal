@@ -688,6 +688,10 @@ void ConnectorService::start_on_service_thread(const QString& request_id, const 
     python::PythonRunner::RunOptions opts;
     opts.timeout_ms = options.timeout_ms > 0 ? options.timeout_ms : kRunTimeoutMs;
     opts.cancel_token = cancel_token;
+    // The catalogue is the source of truth for the credential names used by
+    // this connector. The wrapper process must not receive every key stored in
+    // Settings merely because it can launch any catalogue script.
+    opts.credential_allowlist = info->env_keys;
     const QStringList secrets = secret_values_for(name);
     LOG_DEBUG(kConnSvcTag, QString("Run %1 %2 (%3 arg(s))").arg(info->script, command).arg(args.size()));
 

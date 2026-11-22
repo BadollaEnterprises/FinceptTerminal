@@ -19,6 +19,14 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertIn("community_credit_firewall", data)
         self.assertIn("community credit firewall", maritime.lower())
 
+    def test_catalogue_connectors_receive_only_their_declared_credentials(self):
+        source = (ROOT / "src/services/connectors/ConnectorService.cpp").read_text(encoding="utf-8")
+        run = source[
+            source.index("void ConnectorService::start_on_service_thread"):
+            source.index("void ConnectorService::finish")
+        ]
+        self.assertIn("opts.credential_allowlist = info->env_keys", run)
+
     def test_macro_and_geopolitics_services_check_firewall(self):
         geopolitics = (ROOT / "src/services/geopolitics/GeopoliticsService.cpp").read_text(encoding="utf-8")
         macro = (ROOT / "src/services/economics/FinceptMacroService.cpp").read_text(encoding="utf-8")
