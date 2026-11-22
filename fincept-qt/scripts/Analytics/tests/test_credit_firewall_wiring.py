@@ -251,6 +251,18 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertIn("privacy::redact_text(error)", remove)
         self.assertNotRegex(remove, r"(?m)^\s*LlmConfigRepository::instance\(\)\.delete_provider\(provider\);$")
 
+    def test_llm_config_deletion_preserves_secret_when_database_delete_fails(self):
+        source = (ROOT / "src/storage/repositories/LlmConfigRepository.cpp").read_text(encoding="utf-8")
+        provider_delete = source[source.index("Result<void> LlmConfigRepository::delete_provider"):
+                                 source.index("Result<LlmGlobalSettings>")]
+        model_delete = source[source.index("Result<void> LlmConfigRepository::delete_model"):]
+        for name, body in (("provider", provider_delete), ("model", model_delete)):
+            with self.subTest(config=name):
+                self.assertIn("auto deleted = exec_write", body)
+                self.assertIn("if (deleted.is_err())", body)
+                self.assertLess(body.index("if (deleted.is_err())"), body.index("SecureStorage::instance().remove"))
+                self.assertIn("return deleted", body)
+
     def test_local_chat_mode_diagnostics_scrub_conversation_storage_errors(self):
         source = (ROOT / "src/screens/chat_mode/ChatModeScreen.cpp").read_text(encoding="utf-8")
         self.assertIn('#include "core/privacy/LogRedact.h"', source)

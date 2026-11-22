@@ -103,8 +103,14 @@ Result<void> LlmConfigRepository::set_active(const QString& provider) {
 }
 
 Result<void> LlmConfigRepository::delete_provider(const QString& provider) {
-    SecureStorage::instance().remove(provider_secret_key(provider)); // drop the encrypted key too
-    return exec_write("DELETE FROM llm_configs WHERE provider = ?", {provider});
+    // Never erase the only usable key while the config row may remain. The SQL
+    // database and encrypted credential store cannot share a transaction, so a
+    // failed SQL delete must leave both parts of the provider usable.
+    auto deleted = exec_write("DELETE FROM llm_configs WHERE provider = ?", {provider});
+    if (deleted.is_err())
+        return deleted;
+    (void)SecureStorage::instance().remove(provider_secret_key(provider));
+    return deleted;
 }
 
 Result<LlmGlobalSettings> LlmConfigRepository::get_global_settings() {
@@ -180,8 +186,13 @@ Result<void> LlmConfigRepository::save_model(const LlmModelConfig& m) {
 }
 
 Result<void> LlmConfigRepository::delete_model(const QString& id) {
-    SecureStorage::instance().remove(model_secret_key(id));
-    return exec_write("DELETE FROM llm_model_configs WHERE id = ?", {id});
+    // Match provider deletion: preserve the encrypted key whenever the model
+    // row could not be removed.
+    auto deleted = exec_write("DELETE FROM llm_model_configs WHERE id = ?", {id});
+    if (deleted.is_err())
+        return deleted;
+    (void)SecureStorage::instance().remove(model_secret_key(id));
+    return deleted;
 }
 
 } // namespace fincept
