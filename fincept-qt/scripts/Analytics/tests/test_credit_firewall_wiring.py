@@ -424,6 +424,15 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertLess(body.index("cfg.is_active = was_active"), body.index("save_provider(cfg)"))
         self.assertLess(body.index("save_provider(cfg)"), body.index("set_active(provider)"))
 
+    def test_deleting_active_provider_selects_deterministic_byo_fallback(self):
+        source = (ROOT / "src/screens/settings/LlmConfigSection_Providers.cpp").read_text(encoding="utf-8")
+        body = source[source.index("void LlmConfigSection::on_delete_provider()"):
+                      source.index("void LlmConfigSection::on_save_global()")]
+        self.assertIn("const bool was_active", body)
+        self.assertIn("policy::default_llm_provider()", body)
+        self.assertIn("provider_is_visible_in_community", body)
+        self.assertIn("set_active(fallback)", body)
+
     def test_local_chat_mode_diagnostics_scrub_conversation_storage_errors(self):
         source = (ROOT / "src/screens/chat_mode/ChatModeScreen.cpp").read_text(encoding="utf-8")
         self.assertIn('#include "core/privacy/LogRedact.h"', source)

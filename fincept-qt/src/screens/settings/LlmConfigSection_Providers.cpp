@@ -883,7 +883,9 @@ void LlmConfigSection::on_delete_provider() {
     if (row < 0)
         return;
 
-    QString provider = provider_list_->item(row)->data(Qt::UserRole).toString();
+    auto* selected_item = provider_list_->item(row);
+    QString provider = selected_item->data(Qt::UserRole).toString();
+    const bool was_active = selected_item->data(Qt::UserRole + 1).toBool();
 
     if (provider.toLower() == "fincept") {
         show_status(tr("Cannot remove built-in Fincept provider"), true);
@@ -903,6 +905,43 @@ void LlmConfigSection::on_delete_provider() {
         LOG_ERROR(TAG_PROVIDERS,
                   "delete_provider failed for " + provider + ": " + privacy::redact_text(error));
         return;
+    }
+
+    if (was_active) {
+        const auto remaining = LlmConfigRepository::instance().list_providers();
+        if (remaining.is_err()) {
+            const QString error = QString::fromStdString(remaining.error());
+            show_status(tr("Provider removed, but remaining providers could not be read: ") + error, true);
+            LOG_ERROR(TAG_PROVIDERS,
+                      "list_providers failed after delete: " + privacy::redact_text(error));
+        } else {
+            QString fallback;
+            const QString preferred = policy::default_llm_provider();
+            for (const auto& candidate : remaining.value()) {
+                if (provider_is_visible_in_community(candidate.provider) &&
+                    candidate.provider.compare(preferred, Qt::CaseInsensitive) == 0) {
+                    fallback = candidate.provider;
+                    break;
+                }
+            }
+            if (fallback.isEmpty()) {
+                for (const auto& candidate : remaining.value()) {
+                    if (provider_is_visible_in_community(candidate.provider)) {
+                        fallback = candidate.provider;
+                        break;
+                    }
+                }
+            }
+            if (!fallback.isEmpty()) {
+                const auto activated = LlmConfigRepository::instance().set_active(fallback);
+                if (activated.is_err()) {
+                    const QString error = QString::fromStdString(activated.error());
+                    show_status(tr("Provider removed, but fallback activation failed: ") + error, true);
+                    LOG_ERROR(TAG_PROVIDERS,
+                              "Fallback activation failed after delete: " + privacy::redact_text(error));
+                }
+            }
+        }
     }
     load_providers();
     emit config_changed();
