@@ -44,6 +44,7 @@ from sri_funds import SRIFundAnalyzer
 from leveraged_funds import LeveragedFundAnalyzer
 from structured_products import StructuredProductAnalyzer
 from variable_annuities import VariableAnnuityAnalyzer
+from runtime_limits import validate_year_fields
 
 
 def decimal_default(obj):
@@ -117,6 +118,7 @@ def run_command(command: str, data: Dict[str, Any], method: str) -> Dict[str, An
     """One analyzer call as the screen makes it: alias the form keys, run, mark guides."""
     fn = _SCREEN_ANALYZERS[command]
     data = _apply_screen_aliases(command, data)
+    data = validate_year_fields(data)
     if command == 'asset-location':
         result = fn(data, method, Decimal(str(data.get('tax_bracket', 0.24))))
     else:

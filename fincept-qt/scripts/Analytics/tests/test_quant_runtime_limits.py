@@ -18,6 +18,8 @@ REVENUE_SYNERGIES = (
     ANALYTICS / "corporateFinance" / "synergies" / "revenue_synergies.py"
 )
 DCF_MODEL = ANALYTICS / "corporateFinance" / "valuation" / "dcf_model.py"
+ALTERNATE_LIMITS = ANALYTICS / "alternateInvestment" / "runtime_limits.py"
+ALTERNATE_CLI = ANALYTICS / "alternateInvestment" / "cli.py"
 
 
 def load_limits_module():
@@ -30,7 +32,32 @@ def load_limits_module():
     return module
 
 
+def load_alternate_limits_module():
+    if not ALTERNATE_LIMITS.exists():
+        raise AssertionError(f"alternative-investment runtime limits are missing: {ALTERNATE_LIMITS}")
+    spec = importlib.util.spec_from_file_location("alternate_runtime_limits", ALTERNATE_LIMITS)
+    module = importlib.util.module_from_spec(spec)
+    assert spec and spec.loader
+    spec.loader.exec_module(module)
+    return module
+
+
 class QuantRuntimeLimitsTest(unittest.TestCase):
+    def test_alternative_investment_year_inputs_are_bounded_at_the_cli_boundary(self):
+        limits = load_alternate_limits_module()
+        original = {"years": 50, "maturity_years": 0.5, "unrelated": 10**12}
+        self.assertEqual(limits.validate_year_fields(original), original)
+        self.assertIsNot(limits.validate_year_fields(original), original)
+        for invalid in (-1, 101, float("nan"), float("inf"), "bad"):
+            with self.subTest(invalid=invalid):
+                with self.assertRaises(ValueError):
+                    limits.validate_year_fields({"hold_period_years": invalid})
+
+        source = ALTERNATE_CLI.read_text(encoding="utf-8")
+        run = source[source.index("def run_command("):source.index("def main(")]
+        self.assertIn("validate_year_fields(data)", run)
+        self.assertLess(run.index("validate_year_fields(data)"), run.index("fn(data"))
+
     def test_positive_counts_are_integral_and_bounded(self):
         limits = load_limits_module()
         self.assertEqual(limits.bounded_positive_int(10_000, "horizon", 10_000), 10_000)
