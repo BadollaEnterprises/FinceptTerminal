@@ -18,6 +18,7 @@ EMBEDDER_REGISTRY = MODULE.parent / "registries" / "embedder_registry.py"
 FINCEPT_MODEL = MODULE.parent / "registries" / "fincept_model.py"
 SUPER_AGENT = MODULE.parent / "super_agent.py"
 CORE_AGENT = MODULE.parent / "core_agent.py"
+FINAGENT_RUNTIME_LIMITS = MODULE.parent / "runtime_limits.py"
 AGENT_SERVICE = MODULE.parents[3] / "src" / "services" / "agents" / "AgentService.cpp"
 AGENT_SERVICE_HEADER = AGENT_SERVICE.with_suffix(".h")
 AGENT_SERVICE_DISCOVERY = AGENT_SERVICE.with_name("AgentService_Discovery.cpp")
@@ -76,6 +77,25 @@ def load_agent_main():
 
 
 class AgentProviderPolicyTest(unittest.TestCase):
+    def test_finagent_step_limits_bound_imported_agent_configs(self):
+        limits = load_path("finagent_runtime_limits", FINAGENT_RUNTIME_LIMITS)
+
+        self.assertEqual(limits.bounded_agent_steps(None), 10)
+        self.assertEqual(limits.bounded_agent_steps("bad"), 10)
+        self.assertEqual(limits.bounded_agent_steps(-5), 10)
+        self.assertEqual(limits.bounded_agent_steps(1), 1)
+        self.assertEqual(limits.bounded_agent_steps(999), 20)
+
+        self.assertEqual(limits.bounded_reasoning_steps({}), (None, None))
+        self.assertEqual(limits.bounded_reasoning_steps({"min_steps": 4, "max_steps": 999}), (4, 20))
+        self.assertEqual(limits.bounded_reasoning_steps({"min_steps": 15, "max_steps": 5}), (5, 5))
+        self.assertEqual(limits.bounded_reasoning_steps({"max_steps": "bad"}), (None, 10))
+
+        source = CORE_AGENT.read_text(encoding="utf-8")
+        self.assertIn("bounded_agent_steps(config.get(\"max_iterations\"))", source)
+        self.assertIn("bounded_reasoning_steps(reasoning_config)", source)
+        self.assertNotIn('min(int(config.get("max_iterations", 10)), 20)', source)
+
     def test_agent_requests_share_the_terminal_input_budget(self):
         main = load_agent_main()
         self.assertIsNone(main._input_budget_error({"query": "short"}, {}, 48_000))

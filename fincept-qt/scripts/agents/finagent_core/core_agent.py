@@ -12,6 +12,7 @@ import json
 import os
 
 from finagent_core.provider_policy import normalize_byo_model_config, resolve_byo_model_config
+from finagent_core.runtime_limits import bounded_agent_steps, bounded_reasoning_steps
 
 logger = logging.getLogger(__name__)
 
@@ -885,10 +886,11 @@ class CoreAgent:
 
             # Optional: separate reasoning model
             if isinstance(reasoning_config, dict):
-                if reasoning_config.get("min_steps"):
-                    agent_kwargs["reasoning_min_steps"] = reasoning_config["min_steps"]
-                if reasoning_config.get("max_steps"):
-                    agent_kwargs["reasoning_max_steps"] = reasoning_config["max_steps"]
+                reasoning_min_steps, reasoning_max_steps = bounded_reasoning_steps(reasoning_config)
+                if reasoning_min_steps is not None:
+                    agent_kwargs["reasoning_min_steps"] = reasoning_min_steps
+                if reasoning_max_steps is not None:
+                    agent_kwargs["reasoning_max_steps"] = reasoning_max_steps
 
                 # Create reasoning model if specified
                 if reasoning_config.get("model"):
@@ -922,7 +924,7 @@ class CoreAgent:
         # =================================================================
         if all_tools:
             # Cap tool call iterations — default 10, max 20
-            max_iter = min(int(config.get("max_iterations", 10)), 20)
+            max_iter = bounded_agent_steps(config.get("max_iterations"))
             agent_kwargs["tool_call_limit"] = max_iter
 
         # =================================================================
