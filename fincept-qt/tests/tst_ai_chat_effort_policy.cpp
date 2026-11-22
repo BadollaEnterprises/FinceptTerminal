@@ -53,6 +53,35 @@ void TestAiChatEffortPolicy::deepseek_effort_builds_current_thinking_fields() {
     request = {};
     apply_deepseek_thinking(request, QStringLiteral("max"));
     QCOMPARE(request.value(QStringLiteral("reasoning_effort")).toString(), QStringLiteral("max"));
+
+    // DeepSeek requires every prior assistant reasoning_content to be replayed
+    // when thinking and tools are combined. Persisted Fincept chat history
+    // intentionally contains only the visible answer, so a resumed/high-effort
+    // conversation must fall back to non-thinking rather than receive HTTP 400.
+    request = {
+        {QStringLiteral("messages"),
+         QJsonArray{QJsonObject{{QStringLiteral("role"), QStringLiteral("assistant")},
+                                {QStringLiteral("content"), QStringLiteral("visible answer")}}}},
+        {QStringLiteral("tools"), QJsonArray{QJsonObject{{QStringLiteral("type"), QStringLiteral("function")}}}},
+    };
+    apply_deepseek_thinking(request, QStringLiteral("high"));
+    QCOMPARE(request.value(QStringLiteral("reasoning_effort")).toString(), QStringLiteral("none"));
+    QCOMPARE(request.value(QStringLiteral("thinking")).toObject().value(QStringLiteral("type")).toString(),
+             QStringLiteral("disabled"));
+
+    // Within the live tool loop the complete provider message is available,
+    // including reasoning_content, so thinking remains enabled.
+    request = {
+        {QStringLiteral("messages"),
+         QJsonArray{QJsonObject{{QStringLiteral("role"), QStringLiteral("assistant")},
+                                {QStringLiteral("content"), QStringLiteral("working")},
+                                {QStringLiteral("reasoning_content"), QStringLiteral("private reasoning")}}}},
+        {QStringLiteral("tools"), QJsonArray{QJsonObject{{QStringLiteral("type"), QStringLiteral("function")}}}},
+    };
+    apply_deepseek_thinking(request, QStringLiteral("high"));
+    QCOMPARE(request.value(QStringLiteral("reasoning_effort")).toString(), QStringLiteral("high"));
+    QCOMPARE(request.value(QStringLiteral("thinking")).toObject().value(QStringLiteral("type")).toString(),
+             QStringLiteral("enabled"));
 }
 
 QTEST_GUILESS_MAIN(TestAiChatEffortPolicy)

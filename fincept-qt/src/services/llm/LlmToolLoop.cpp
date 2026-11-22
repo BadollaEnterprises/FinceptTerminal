@@ -103,13 +103,13 @@ LlmResponse LlmService::do_tool_loop(QJsonArray loop_messages, const QString& ur
         fu["messages"] = loop_messages;
         // Temperature intentionally omitted — provider default.
         apply_openai_token_limit(fu);
-        if (provider_ == QLatin1String("deepseek"))
-            apply_deepseek_thinking(fu, detail::t_reasoning_effort);
 
         QJsonArray tools =
             mcp::McpService::instance().format_tools_for_openai(detail::apply_request_policy(tool_filter_));
         if (!tools.isEmpty())
             fu["tools"] = tools;
+        if (provider_ == QLatin1String("deepseek"))
+            apply_deepseek_thinking(fu, detail::t_reasoning_effort);
 
         auto http = blocking_post(url, fu, headers);
         if (!http.success) {
@@ -300,8 +300,6 @@ LlmResponse LlmService::do_tool_loop(QJsonArray loop_messages, const QString& ur
             fu[QStringLiteral("max_completion_tokens")] = summary_limit;
         else
             fu[QStringLiteral("max_tokens")] = summary_limit;
-        if (provider_ == QLatin1String("deepseek"))
-            apply_deepseek_thinking(fu, detail::t_reasoning_effort);
         // Once either provider-reported token budget is spent, this request must
         // be a final answer: advertising tools invites another paid round and
         // also resends the schema block. Round/time exhaustion keeps the old
@@ -313,6 +311,8 @@ LlmResponse LlmService::do_tool_loop(QJsonArray loop_messages, const QString& ur
             if (!tools.isEmpty())
                 fu["tools"] = tools;
         }
+        if (provider_ == QLatin1String("deepseek"))
+            apply_deepseek_thinking(fu, detail::t_reasoning_effort);
 
         auto http = blocking_post(url, fu, headers);
         if (http.success) {

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QJsonArray>
 #include <QJsonObject>
 #include <QString>
 
@@ -21,6 +22,26 @@ inline void apply_deepseek_thinking(QJsonObject& body, const QString& effort) {
     } else if (normalized == QLatin1String("max")) {
         provider_effort = QStringLiteral("max");
         thinking_type = QStringLiteral("enabled");
+    }
+
+    // DeepSeek requires reasoning_content from every earlier assistant turn
+    // when thinking and tools are combined; omitting it makes the API return
+    // HTTP 400. Fincept deliberately persists only visible answer text, not
+    // private chain of thought. A resumed conversation can therefore lack this
+    // provider-only field. Use non-thinking mode for that request so it remains
+    // reliable without storing hidden reasoning. Fresh turns and live tool-loop
+    // turns retain thinking because the latter carry the complete API message.
+    if (thinking_type == QLatin1String("enabled") && !body.value(QStringLiteral("tools")).toArray().isEmpty()) {
+        const QJsonArray messages = body.value(QStringLiteral("messages")).toArray();
+        for (const QJsonValue& value : messages) {
+            const QJsonObject message = value.toObject();
+            if (message.value(QStringLiteral("role")).toString() == QLatin1String("assistant") &&
+                !message.contains(QStringLiteral("reasoning_content"))) {
+                provider_effort = QStringLiteral("none");
+                thinking_type = QStringLiteral("disabled");
+                break;
+            }
+        }
     }
 
     body[QStringLiteral("reasoning_effort")] = provider_effort;

@@ -58,8 +58,6 @@ QJsonObject LlmService::build_openai_request(const QString& user_message,
     req["messages"] = messages;
     // Temperature omitted — each provider's default.
     apply_openai_token_limit(req);
-    if (provider_ == QLatin1String("deepseek"))
-        apply_deepseek_thinking(req, detail::t_reasoning_effort);
     if (stream) {
         req["stream"] = true;
         // OpenAI/xAI (and OpenAI-family models via AIHubMix) omit usage on streamed
@@ -88,6 +86,10 @@ QJsonObject LlmService::build_openai_request(const QString& user_message,
                                       .arg(tools_effectively_on ? "true" : "false")
                                       .arg(groq_no_tools ? "true" : "false"));
     }
+    // DeepSeek's history compatibility depends on whether tools are attached,
+    // so apply its thinking policy after constructing the complete request.
+    if (provider_ == QLatin1String("deepseek"))
+        apply_deepseek_thinking(req, detail::t_reasoning_effort);
     return req;
 }
 
