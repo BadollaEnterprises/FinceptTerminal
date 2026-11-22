@@ -310,6 +310,8 @@ def technical_rating(payload: Mapping[str, Any]) -> Dict[str, Any]:
         volumes = _numbers(payload.get("volumes", []), "volumes")
         if len(volumes) != len(closes):
             raise ValueError("volumes must have the same length as closes")
+        if any(value < 0 for value in volumes):
+            raise ValueError("volumes cannot be negative")
         average20 = _mean(volumes[-20:])
         volume = {"latest": volumes[-1], "average_20": average20,
                   "relative_to_average": volumes[-1] / average20 if average20 > 1e-15 else 0.0}
