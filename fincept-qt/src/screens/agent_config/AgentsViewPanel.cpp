@@ -2,6 +2,7 @@
 #include "screens/agent_config/AgentsViewPanel.h"
 
 #include "core/logging/Logger.h"
+#include "core/privacy/LogRedact.h"
 #include "screens/agent_config/AgentProfileRows.h"
 #include "screens/agent_config/AgentResultFormat.h"
 #include "services/agents/AgentService.h"
@@ -1543,25 +1544,26 @@ QJsonObject AgentsViewPanel::build_config_from_editor() const {
 
     ResolvedLlmProfile resolved;
     if (!profile_id.isEmpty()) {
-        // Explicit profile selection: look it up by ID
-        const auto pr3 = LlmProfileRepository::instance().list_profiles();
-        const auto profiles = pr3.is_ok() ? pr3.value() : QVector<LlmProfile>{};
-        for (const auto& p : profiles) {
-            if (p.id == profile_id) {
-                resolved.profile_id = p.id;
-                resolved.profile_name = p.name;
-                resolved.provider = p.provider;
-                resolved.model_id = p.model_id;
-                resolved.api_key = p.api_key;
-                resolved.base_url = p.base_url;
-                resolved.temperature = p.temperature;
-                resolved.max_tokens = p.max_tokens;
-                resolved.system_prompt = p.system_prompt;
-                break;
-            }
+        // An explicit selection must either load or block. Falling back to the
+        // inherited profile here can silently change the provider/billing path.
+        const auto selected = LlmProfileRepository::instance().get_profile(profile_id);
+        if (selected.is_err()) {
+            resolved.config_error = QStringLiteral("Could not read selected LLM profile: %1")
+                                        .arg(privacy::redact_text(QString::fromStdString(selected.error())));
+        } else {
+            const auto& p = selected.value();
+            resolved.profile_id = p.id;
+            resolved.profile_name = p.name;
+            resolved.provider = p.provider;
+            resolved.model_id = p.model_id;
+            resolved.api_key = p.api_key;
+            resolved.base_url = p.base_url;
+            resolved.temperature = p.temperature;
+            resolved.max_tokens = p.max_tokens;
+            resolved.system_prompt = p.system_prompt;
         }
     }
-    if (resolved.provider.isEmpty())
+    if (resolved.provider.isEmpty() && resolved.config_error.isEmpty())
         resolved = ai_chat::LlmService::instance().resolve_profile("agent", agent_id);
 
     config["model"] = ai_chat::LlmService::profile_to_json(resolved);

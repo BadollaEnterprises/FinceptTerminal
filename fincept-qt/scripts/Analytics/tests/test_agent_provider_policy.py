@@ -22,6 +22,9 @@ LLM_SERVICE_HEADER = MODULE.parents[3] / "src" / "services" / "llm" / "LlmServic
 LLM_SERVICE_SOURCE = LLM_SERVICE_HEADER.with_suffix(".cpp")
 AGENT_MAIN = MODULE.with_name("main.py")
 LOCAL_AGENT_ENGINE = MODULE.parents[3] / "src" / "services" / "agent_tasks" / "LocalAgentEngine.cpp"
+AGENTS_PANEL = MODULE.parents[3] / "src" / "screens" / "agent_config" / "AgentsViewPanel.cpp"
+TEAMS_PANEL = MODULE.parents[3] / "src" / "screens" / "agent_config" / "TeamsViewPanel.cpp"
+AGENT_NODES = MODULE.parents[3] / "src" / "services" / "workflow" / "nodes" / "AgentNodes.cpp"
 RDAGENT_CLI = MODULE.parent.parent / "rdagents" / "cli.py"
 RDAGENT_LOOPS = RDAGENT_CLI.with_name("loops.py")
 
@@ -126,6 +129,29 @@ class AgentProviderPolicyTest(unittest.TestCase):
                         payload.index("configured_model_allowed"))
         self.assertLess(payload.index("!configured_configuration_error.isEmpty()"),
                         payload.index("if (configured_model_allowed)"))
+
+    def test_agent_execution_surfaces_selected_profile_read_errors(self):
+        agents = AGENTS_PANEL.read_text(encoding="utf-8")
+        build_start = agents.index("QJsonObject AgentsViewPanel::build_config_from_editor")
+        build = agents[build_start:agents.index("// ── Actions", build_start)]
+        self.assertIn("get_profile(profile_id)", build)
+        self.assertIn("resolved.config_error", build)
+        self.assertIn("privacy::redact_text", build)
+        self.assertIn("resolved.config_error.isEmpty()", build)
+
+        nodes = AGENT_NODES.read_text(encoding="utf-8")
+        resolve = nodes[nodes.index("// Resolve LLM profile"):
+                        nodes.index("// Build config", nodes.index("// Resolve LLM profile"))]
+        self.assertIn("get_profile(profile_id)", resolve)
+        self.assertIn("resolved.config_error", resolve)
+        self.assertIn("resolved.config_error.isEmpty()", resolve)
+
+        teams = TEAMS_PANEL.read_text(encoding="utf-8")
+        run = teams[teams.index("void TeamsViewPanel::run_team"):
+                    teams.index("void TeamsViewPanel::", teams.index("void TeamsViewPanel::run_team") + 1)]
+        self.assertIn("get_profile(coord_profile_id)", run)
+        self.assertIn("coord.config_error", run)
+        self.assertIn("member_profile.config_error.isEmpty()", run)
 
     def test_super_agent_normalizes_saved_legacy_model_before_llm_routing(self):
         source = SUPER_AGENT.read_text(encoding="utf-8")

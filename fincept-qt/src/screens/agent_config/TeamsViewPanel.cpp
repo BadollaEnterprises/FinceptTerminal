@@ -2,6 +2,7 @@
 #include "screens/agent_config/TeamsViewPanel.h"
 
 #include "core/logging/Logger.h"
+#include "core/privacy/LogRedact.h"
 #include "screens/agent_config/AgentProfileRows.h"
 #include "screens/agent_config/AgentResultFormat.h"
 #include "services/agents/AgentService.h"
@@ -599,22 +600,22 @@ void TeamsViewPanel::run_team() {
     const QString coord_profile_id = team_profile_combo_->currentData().toString();
     ResolvedLlmProfile coord;
     if (!coord_profile_id.isEmpty()) {
-        const auto pr3 = LlmProfileRepository::instance().list_profiles();
-        const auto profiles3 = pr3.is_ok() ? pr3.value() : QVector<LlmProfile>{};
-        for (const auto& p : profiles3) {
-            if (p.id == coord_profile_id) {
-                coord.profile_id = p.id;
-                coord.provider = p.provider;
-                coord.model_id = p.model_id;
-                coord.api_key = p.api_key;
-                coord.base_url = p.base_url;
-                coord.temperature = p.temperature;
-                coord.max_tokens = p.max_tokens;
-                break;
-            }
+        const auto selected = LlmProfileRepository::instance().get_profile(coord_profile_id);
+        if (selected.is_err()) {
+            coord.config_error = QStringLiteral("Could not read selected LLM profile: %1")
+                                     .arg(privacy::redact_text(QString::fromStdString(selected.error())));
+        } else {
+            const auto& p = selected.value();
+            coord.profile_id = p.id;
+            coord.provider = p.provider;
+            coord.model_id = p.model_id;
+            coord.api_key = p.api_key;
+            coord.base_url = p.base_url;
+            coord.temperature = p.temperature;
+            coord.max_tokens = p.max_tokens;
         }
     }
-    if (coord.provider.isEmpty())
+    if (coord.provider.isEmpty() && coord.config_error.isEmpty())
         coord = ai_chat::LlmService::instance().resolve_profile("team_coordinator", {});
 
     QJsonObject tc;
@@ -645,7 +646,7 @@ void TeamsViewPanel::run_team() {
         const ResolvedLlmProfile member_profile = ai_chat::LlmService::instance().resolve_profile("agent", m.id);
         QJsonObject mc = ai_chat::LlmService::profile_to_json(member_profile);
 
-        if (fresh_config.contains("model")) {
+        if (member_profile.config_error.isEmpty() && fresh_config.contains("model")) {
             QJsonObject saved = fresh_config["model"].toObject();
             if (!saved["api_key"].toString().isEmpty())
                 mc = saved;
