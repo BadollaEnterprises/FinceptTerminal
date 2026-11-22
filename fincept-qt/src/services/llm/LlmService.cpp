@@ -2176,8 +2176,11 @@ void LlmService::chat_streaming(const QString& user_message, const std::vector<C
                 if (!resp.success && resp.safe_automatic_retry && !*emitted_output &&
                     cfg.provider != QLatin1String("fincept") &&
                     !chain[idx].is_harness() && !detail::cancel_requested()) {
-                    LOG_WARN(kLlmSvcTag, logf("LLM stream failed before any output, retrying once",
-                                              {{"provider", cfg.provider}, {"model", cfg.model}, {"error", resp.error}}));
+                    LOG_WARN(kLlmSvcTag,
+                             logf("LLM stream failed before any output, retrying once",
+                                  {{"provider", cfg.provider},
+                                   {"model", cfg.model},
+                                   {"error", privacy::redact_text(resp.error)}}));
                     if (detail::cancellable_sleep(2000))
                         resp = request.do_streaming_request(user_message, trimmed_history, tracked_chunk);
                 }

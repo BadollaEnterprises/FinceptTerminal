@@ -64,6 +64,15 @@ class CommunityPolicyTest : public QObject {
         }
     }
 
+    void llm_retry_logs_redact_provider_errors() {
+        QFile source(QStringLiteral(FINCEPT_SOURCE_DIR "/src/services/llm/LlmService.cpp"));
+        QVERIFY2(source.open(QIODevice::ReadOnly), qPrintable(source.errorString()));
+        const QByteArray code = source.readAll();
+        QVERIFY2(!code.contains("{\"error\", resp.error}"),
+                 "Provider errors can include credentials, URLs, and response bodies; redact them before logging");
+        QVERIFY(code.contains("{\"error\", privacy::redact_text(resp.error)}"));
+    }
+
     void fincept_cloud_sync_is_disabled() {
         QCOMPARE(fincept::policy::fincept_cloud_sync_enabled(), false);
     }
