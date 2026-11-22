@@ -7,6 +7,7 @@
 #include "services/alpha_arena/HarnessArenaClient.h"
 #include "services/llm/LlmBudgetSettings.h"
 #include "services/llm/DeepSeekRequestPolicy.h"
+#include "services/llm/LlmEndpointPolicy.h"
 #include "services/llm/LlmErrors.h"
 #include "services/llm/ModelCatalog.h"
 #include "services/llm/ProviderCatalog.h"
@@ -137,6 +138,20 @@ ArenaLlmResult ArenaLlmClient::parse_response(const QString& provider, const QBy
     return r;
 }
 
+bool ArenaLlmClient::endpoint_allowed(const QString& provider, const QString& base_url, const QString& endpoint) {
+    return !ProviderCatalog::is_blocked(provider, base_url) && !ProviderCatalog::is_blocked(provider, endpoint) &&
+           fincept::ai_chat::is_allowed_llm_endpoint(endpoint);
+}
+
+void ArenaLlmClient::apply_transport_policy(QNetworkRequest& request) {
+    // Arena requests carry a user-owned provider key. Never let Qt forward it
+    // to another origin through a redirect, and keep ambient web cookies out of
+    // this independent API client in both directions.
+    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::SameOriginRedirectPolicy);
+    request.setAttribute(QNetworkRequest::CookieLoadControlAttribute, QNetworkRequest::Manual);
+    request.setAttribute(QNetworkRequest::CookieSaveControlAttribute, QNetworkRequest::Manual);
+}
+
 void ArenaLlmClient::complete(const ArenaLlmRequest& req, std::function<void(ArenaLlmResult)> cb) {
     const QString p = req.provider.trimmed().toLower();
     if (fincept::policy::is_deprecated_llm_provider(p)) {
@@ -168,8 +183,15 @@ void ArenaLlmClient::complete(const ArenaLlmRequest& req, std::function<void(Are
         cb(r);
         return;
     }
+    if (!endpoint_allowed(p, req.base_url, url)) {
+        ArenaLlmResult r;
+        r.error = "refusing an insecure or blocked LLM endpoint";
+        cb(r);
+        return;
+    }
 
     QNetworkRequest nr{QUrl(url)};
+    apply_transport_policy(nr);
     nr.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
     if (p == "anthropic") {
         nr.setRawHeader("x-api-key", req.api_key.toUtf8());

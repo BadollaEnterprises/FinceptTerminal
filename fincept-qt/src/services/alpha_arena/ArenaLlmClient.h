@@ -3,6 +3,7 @@
 // One complete() call = one decision request. Parallel-safe: each call owns its
 // QNetworkReply. Response parsing is a pure static for selftest coverage.
 #include <QNetworkAccessManager>
+#include <QNetworkRequest>
 #include <QObject>
 
 #include <functional>
@@ -37,6 +38,8 @@ class ArenaLlmClient : public IArenaLlmClient {
     // Pure helpers (selftest-covered):
     static QByteArray build_body(const ArenaLlmRequest& req);
     static ArenaLlmResult parse_response(const QString& provider, const QByteArray& body);
+    static bool endpoint_allowed(const QString& provider, const QString& base_url, const QString& endpoint);
+    static void apply_transport_policy(QNetworkRequest& request);
 
   private:
     QNetworkAccessManager* nam_ = nullptr; // GUI-thread QNAM (like LlmService::models_nam_)

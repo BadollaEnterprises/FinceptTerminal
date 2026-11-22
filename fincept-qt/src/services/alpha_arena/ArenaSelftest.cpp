@@ -522,6 +522,23 @@ int run_arena_selftest() {
                       "https://my.proxy/v1/chat/completions" &&
                   fincept::ai_chat::ProviderCatalog::chat_endpoint("anthropic", "https://gw.corp", "m") ==
                       "https://gw.corp/v1/messages");
+        check("llm: arena rejects insecure or blocked API-key targets",
+              ArenaLlmClient::endpoint_allowed("deepseek", "", "https://api.deepseek.com/chat/completions") &&
+                  ArenaLlmClient::endpoint_allowed("deepseek", "http://127.0.0.1:8080/v1",
+                                                   "http://127.0.0.1:8080/v1/chat/completions") &&
+                  !ArenaLlmClient::endpoint_allowed("deepseek", "http://api.deepseek.com/v1",
+                                                    "http://api.deepseek.com/v1/chat/completions") &&
+                  !ArenaLlmClient::endpoint_allowed("openai", "https://api.atlascloud.ai/v1",
+                                                    "https://api.atlascloud.ai/v1/chat/completions"));
+        QNetworkRequest arena_request{QUrl("https://api.deepseek.com/chat/completions")};
+        ArenaLlmClient::apply_transport_policy(arena_request);
+        check("llm: arena API-key requests never follow cross-origin redirects or share cookies",
+              arena_request.attribute(QNetworkRequest::RedirectPolicyAttribute).toInt() ==
+                      QNetworkRequest::SameOriginRedirectPolicy &&
+                  arena_request.attribute(QNetworkRequest::CookieLoadControlAttribute).toInt() ==
+                      QNetworkRequest::Manual &&
+                  arena_request.attribute(QNetworkRequest::CookieSaveControlAttribute).toInt() ==
+                      QNetworkRequest::Manual);
     }
 
     // ── Section 9: market data parsers ──────────────────────────────────────
