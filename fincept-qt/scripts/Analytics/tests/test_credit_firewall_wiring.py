@@ -237,6 +237,20 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertNotIn("LLM profile saved: %1", profiles)
         self.assertNotIn('"LLM profile deleted: " + editing_profile_id_', profiles)
 
+    def test_llm_provider_add_remove_checks_persistence_results(self):
+        source = (ROOT / "src/screens/settings/LlmConfigSection_Providers.cpp").read_text(encoding="utf-8")
+        add = source[source.index("QWidget* LlmConfigSection::build_provider_list_panel()"):
+                     source.index("QWidget* LlmConfigSection::build_form_panel()")]
+        remove = source[source.index("void LlmConfigSection::on_delete_provider()"):
+                        source.index("void LlmConfigSection::on_save_global()")]
+        self.assertIn("auto saved = LlmConfigRepository::instance().save_provider(cfg)", add)
+        self.assertIn("if (saved.is_err())", add)
+        self.assertGreaterEqual(add.count("privacy::redact_text(error)"), 2)
+        self.assertIn("auto removed = LlmConfigRepository::instance().delete_provider(provider)", remove)
+        self.assertIn("if (removed.is_err())", remove)
+        self.assertIn("privacy::redact_text(error)", remove)
+        self.assertNotRegex(remove, r"(?m)^\s*LlmConfigRepository::instance\(\)\.delete_provider\(provider\);$")
+
     def test_local_chat_mode_diagnostics_scrub_conversation_storage_errors(self):
         source = (ROOT / "src/screens/chat_mode/ChatModeScreen.cpp").read_text(encoding="utf-8")
         self.assertIn('#include "core/privacy/LogRedact.h"', source)

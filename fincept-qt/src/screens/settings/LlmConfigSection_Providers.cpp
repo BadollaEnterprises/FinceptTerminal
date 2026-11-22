@@ -136,12 +136,16 @@ QWidget* LlmConfigSection::build_provider_list_panel() {
 
         // Check if already exists
         auto existing = LlmConfigRepository::instance().list_providers();
-        if (existing.is_ok()) {
-            for (const auto& p : existing.value()) {
-                if (p.provider.toLower() == provider.toLower()) {
-                    show_status(tr("Provider already configured"), true);
-                    return;
-                }
+        if (existing.is_err()) {
+            const QString error = QString::fromStdString(existing.error());
+            show_status(tr("Could not read provider settings: ") + error, true);
+            LOG_ERROR(TAG_PROVIDERS, "list_providers failed while adding: " + privacy::redact_text(error));
+            return;
+        }
+        for (const auto& p : existing.value()) {
+            if (p.provider.toLower() == provider.toLower()) {
+                show_status(tr("Provider already configured"), true);
+                return;
             }
         }
 
@@ -150,7 +154,14 @@ QWidget* LlmConfigSection::build_provider_list_panel() {
         cfg.provider = provider.toLower();
         cfg.model = "";
         cfg.is_active = false;
-        LlmConfigRepository::instance().save_provider(cfg);
+        auto saved = LlmConfigRepository::instance().save_provider(cfg);
+        if (saved.is_err()) {
+            const QString error = QString::fromStdString(saved.error());
+            show_status(tr("Could not add provider: ") + error, true);
+            LOG_ERROR(TAG_PROVIDERS,
+                      "save_provider failed while adding " + provider + ": " + privacy::redact_text(error));
+            return;
+        }
         load_providers();
 
         // Select newly added provider
@@ -892,7 +903,14 @@ void LlmConfigSection::on_delete_provider() {
     if (reply != QMessageBox::Yes)
         return;
 
-    LlmConfigRepository::instance().delete_provider(provider);
+    auto removed = LlmConfigRepository::instance().delete_provider(provider);
+    if (removed.is_err()) {
+        const QString error = QString::fromStdString(removed.error());
+        show_status(tr("Could not remove provider: ") + error, true);
+        LOG_ERROR(TAG_PROVIDERS,
+                  "delete_provider failed for " + provider + ": " + privacy::redact_text(error));
+        return;
+    }
     load_providers();
     emit config_changed();
 }
