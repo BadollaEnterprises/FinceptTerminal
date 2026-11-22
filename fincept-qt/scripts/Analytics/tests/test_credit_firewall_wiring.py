@@ -304,6 +304,15 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertNotIn('"refresh: no stream for " + topic', source)
         self.assertNotIn('"refresh: throttled " + topic', source)
 
+    def test_trading_screen_diagnostics_mask_ids_and_external_errors(self):
+        source = (ROOT / "src/screens/equity_trading/EquityTradingScreen_Handlers.cpp").read_text(encoding="utf-8")
+        self.assertGreaterEqual(source.count("log_mask(order_id)"), 5)
+        self.assertGreaterEqual(source.count("log_mask(result.order_id)"), 2)
+        self.assertGreaterEqual(source.count("log_scrub("), 8)
+        self.assertIn("log_mask(account.paper_portfolio_id)", source)
+        self.assertNotIn('QString("Order failed: %1").arg(result.message)', source)
+        self.assertNotIn('{"order_id", order_id}', source)
+
     def test_exchange_process_diagnostics_redact_external_errors(self):
         pool = (ROOT / "src/trading/ExchangeDaemonPool.cpp").read_text(encoding="utf-8")
         session = (ROOT / "src/trading/ExchangeSession.cpp").read_text(encoding="utf-8")

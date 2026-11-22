@@ -427,7 +427,7 @@ void EquityTradingScreen::handle_token_expired(const QString& account_id) {
     if (!token_expired_shown_.compare_exchange_strong(expected, true))
         return;
 
-    LOG_WARN(TAG, QString("Access token expired for account %1 — user must re-authenticate").arg(account_id));
+    LOG_WARN(TAG, QString("Access token expired for account %1 — user must re-authenticate").arg(log_mask(account_id)));
     // Sets the label (TOKEN EXPIRED, or the public-feed variant) — a text set here
     // first was overwritten by this call straight away.
     update_connection_status();
@@ -635,7 +635,7 @@ void EquityTradingScreen::on_order_submitted(const UnifiedOrder& order) {
                                                       {"symbol", order.symbol},
                                                       {"side", side},
                                                       {"qty", order.quantity},
-                                                      {"error", e.what()}}));
+                                                      {"error", log_scrub(QString::fromUtf8(e.what()))}}));
             order_entry_->show_order_status(tr("Order failed: %1").arg(e.what()), false);
             return;
         }
@@ -718,7 +718,8 @@ void EquityTradingScreen::on_order_submitted(const UnifiedOrder& order) {
                     if (!self)
                         return;
                     if (result.success) {
-                        LOG_DEBUG(TAG, QString("Order placed: %1").arg(result.order_id)); // audited by UnifiedTrading
+                        LOG_DEBUG(TAG,
+                                  QString("Order placed: %1").arg(log_mask(result.order_id))); // audited by UnifiedTrading
                         self->order_entry_->show_order_status(self->tr("Order placed: %1").arg(result.order_id), true);
                         // A native-paper blotter lives at the broker and otherwise only
                         // refreshes on the 5-min poll — pull it now (async, stream-owned).
@@ -727,7 +728,8 @@ void EquityTradingScreen::on_order_submitted(const UnifiedOrder& order) {
                         if (result.mode == QLatin1String("paper"))
                             DataStreamManager::instance().refresh_portfolio(acct_id);
                     } else {
-                        LOG_DEBUG(TAG, QString("Order failed: %1").arg(result.message)); // audited by UnifiedTrading
+                        LOG_DEBUG(TAG,
+                                  QString("Order failed: %1").arg(log_scrub(result.message))); // audited by UnifiedTrading
                         self->order_entry_->show_order_status(result.message, false);
                     }
                 },
@@ -1010,7 +1012,9 @@ void EquityTradingScreen::on_cancel_order(const QString& order_id) {
                           : tr("Paper order %1 was not cancelled — it is no longer open (filled?)").arg(short_id),
                 cancelled);
         } catch (const std::exception& e) {
-            LOG_ERROR(TAG, logf("Paper order cancel failed", {{"order_id", order_id}, {"error", e.what()}}));
+            LOG_ERROR(TAG, logf("Paper order cancel failed",
+                                {{"order_id", log_mask(order_id)},
+                                 {"error", log_scrub(QString::fromUtf8(e.what()))}}));
             order_entry_->show_status_message(tr("Cancel failed: %1").arg(QString::fromUtf8(e.what())), false);
         }
         // Refresh paper data
@@ -1032,11 +1036,12 @@ void EquityTradingScreen::on_cancel_order(const QString& order_id) {
                     // A rejected cancel (already filled, market closed, expired token) used to
                     // vanish silently — the trader could not tell whether a REAL order was pulled.
                     if (result.success) {
-                        LOG_DEBUG(TAG, QString("Order cancelled: %1").arg(order_id)); // audited by UnifiedTrading
+                        LOG_DEBUG(TAG, QString("Order cancelled: %1").arg(log_mask(order_id))); // audited by UnifiedTrading
                         self->order_entry_->show_status_message(
                             self->tr("Order %1 cancelled").arg(order_id.left(12)), true);
                     } else {
-                        LOG_DEBUG(TAG, QString("Order cancel failed: %1 — %2").arg(order_id, result.message)); // audited
+                        LOG_DEBUG(TAG, QString("Order cancel failed: %1 — %2")
+                                           .arg(log_mask(order_id), log_scrub(result.message))); // audited
                         self->order_entry_->show_status_message(
                             self->tr("Cancel of order %1 failed: %2")
                                 .arg(order_id.left(12),
@@ -1076,7 +1081,9 @@ void EquityTradingScreen::async_modify_order(const QString& order_id, double qty
                     tr("Paper order modified (re-placed as %1; it loses its time priority)").arg(repl.id.left(8)), true);
             } catch (const std::exception& e) {
                 // The refusal is audited by the paper engine (Order modify rejected).
-                LOG_WARN(TAG, logf("Paper order modify refused", {{"order_id", order_id}, {"error", e.what()}}));
+                LOG_WARN(TAG, logf("Paper order modify refused",
+                                   {{"order_id", log_mask(order_id)},
+                                    {"error", log_scrub(QString::fromUtf8(e.what()))}}));
                 order_entry_->show_status_message(tr("Modify refused: %1").arg(QString::fromUtf8(e.what())), false);
             }
             PaperMarkService::instance().resync();
@@ -1110,11 +1117,13 @@ void EquityTradingScreen::async_modify_order(const QString& order_id, double qty
                 // be logged only: the dialog closed and the trader could not tell whether a
                 // REAL order was changed. Say what happened and repaint the blotter.
                 if (result.success) {
-                    LOG_DEBUG(TAG, QString("Order modified: %1").arg(result.order_id)); // audited by UnifiedTrading
+                    LOG_DEBUG(TAG, QString("Order modified: %1")
+                                       .arg(log_mask(result.order_id))); // audited by UnifiedTrading
                     self->order_entry_->show_status_message(
                         self->tr("Order %1 modified").arg(order_id.left(12)), true);
                 } else {
-                    LOG_DEBUG(TAG, QString("Order modify failed: %1").arg(result.message)); // audited by UnifiedTrading
+                    LOG_DEBUG(TAG, QString("Order modify failed: %1 — %2")
+                                       .arg(log_mask(order_id), log_scrub(result.message))); // audited by UnifiedTrading
                     self->order_entry_->show_status_message(
                         self->tr("Modify of order %1 failed: %2")
                             .arg(order_id.left(12),
@@ -1303,7 +1312,7 @@ void EquityTradingScreen::refresh_paper_panels() {
         // Paper accounting trace (debug level: this runs on every mark refresh).
         LOG_DEBUG(TAG, QString("[paper-stats] acct=%1 opening=%2 balance=%3 used_margin=%4 holdings_value=%5 "
                                      "mis_unreal=%6 total_equity=%7 #pos=%8 #holdings=%9 realized=%10 unreal=%11")
-                                 .arg(account.paper_portfolio_id)
+                                 .arg(log_mask(account.paper_portfolio_id))
                                  .arg(portfolio.initial_balance, 0, 'f', 2)
                                  .arg(portfolio.balance, 0, 'f', 2)
                                  .arg(used_margin, 0, 'f', 2)
@@ -1344,10 +1353,10 @@ void EquityTradingScreen::on_convert_position(const QString& position_id, const 
         pt_convert_position_product(position_id, new_product);
         order_entry_->show_order_status(tr("%1 converted to %2").arg(symbol, new_product), true);
     } catch (const std::exception& e) {
-        LOG_WARN(TAG, logf("Paper position convert failed", {{"position_id", position_id},
+        LOG_WARN(TAG, logf("Paper position convert failed", {{"position_id", log_mask(position_id)},
                                                              {"symbol", symbol},
                                                              {"product", new_product},
-                                                             {"error", e.what()}}));
+                                                             {"error", log_scrub(QString::fromUtf8(e.what()))}}));
         order_entry_->show_order_status(tr("Convert failed: %1").arg(e.what()), false);
     }
     refresh_paper_panels();
@@ -2023,7 +2032,7 @@ void EquityTradingScreen::on_square_off_all_holdings(const QVector<trading::Brok
                                                           {"exchange", t.exchange},
                                                           {"qty", t.quantity},
                                                           {"ok", r.success},
-                                                          {"error", r.error}}));
+                                                          {"error", log_scrub(r.error)}}));
             if (r.success) {
                 ++ok;
             } else {
