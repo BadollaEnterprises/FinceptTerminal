@@ -224,6 +224,8 @@ class CreditFirewallWiringTest(unittest.TestCase):
         for relative, minimum in (
             ("src/trading/brokers/angelone/AngelOneBroker.cpp", 2),
             ("src/trading/brokers/zerodha/ZerodhaBroker.cpp", 2),
+            ("src/trading/brokers/upstox/UpstoxBroker.cpp", 2),
+            ("src/trading/brokers/kotak/KotakBroker.cpp", 4),
         ):
             with self.subTest(broker=relative):
                 source = (ROOT / relative).read_text(encoding="utf-8")

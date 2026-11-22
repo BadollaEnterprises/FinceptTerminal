@@ -25,6 +25,7 @@
 
 #include "core/crypto/Totp.h"
 #include "core/logging/Logger.h"
+#include "core/privacy/LogRedact.h"
 #include "trading/brokers/BrokerHttp.h"
 #include "trading/brokers/BrokerTokenUtil.h"
 #include "trading/instruments/InstrumentService.h"
@@ -281,14 +282,14 @@ TokenExchangeResponse KotakBroker::exchange_token(const QString& api_key, const 
 
     auto r1 = http.post_json(LOGIN_BASE + "/login/1.0/tradeApiLogin", step1_body, step1_hdrs);
     if (!r1.success) {
-        LOG_ERROR(TAG, "Step1 login HTTP error: " + r1.error);
+        LOG_ERROR(TAG, "Step1 login HTTP error: " + privacy::redact_text(r1.error));
         return {.success = false, .error = "TOTP login failed: " + r1.error};
     }
 
     const auto d1 = r1.json.value("data").toObject();
     if (d1.value("status").toString() != "success") {
         const QString err = r1.json.value("errMsg").toString(r1.json.value("message").toString("TOTP login failed"));
-        LOG_ERROR(TAG, "Step1 login error: " + err);
+        LOG_ERROR(TAG, "Step1 login error: " + privacy::redact_text(err));
         return {.success = false, .error = "TOTP login error: " + err};
     }
 
@@ -308,7 +309,7 @@ TokenExchangeResponse KotakBroker::exchange_token(const QString& api_key, const 
 
     auto r2 = http.post_json(LOGIN_BASE + "/login/1.0/tradeApiValidate", step2_body, step2_hdrs);
     if (!r2.success) {
-        LOG_ERROR(TAG, "Step2 MPIN HTTP error: " + r2.error);
+        LOG_ERROR(TAG, "Step2 MPIN HTTP error: " + privacy::redact_text(r2.error));
         return {.success = false, .error = "MPIN validation failed: " + r2.error};
     }
 
@@ -316,7 +317,7 @@ TokenExchangeResponse KotakBroker::exchange_token(const QString& api_key, const 
     if (d2.value("status").toString() != "success") {
         const QString err =
             r2.json.value("errMsg").toString(r2.json.value("message").toString("MPIN validation failed"));
-        LOG_ERROR(TAG, "Step2 MPIN error: " + err);
+        LOG_ERROR(TAG, "Step2 MPIN error: " + privacy::redact_text(err));
         return {.success = false, .error = "MPIN validation error: " + err};
     }
 

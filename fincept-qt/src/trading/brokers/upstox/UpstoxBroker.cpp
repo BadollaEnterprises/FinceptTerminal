@@ -1,6 +1,7 @@
 #include "trading/brokers/upstox/UpstoxBroker.h"
 
 #include "core/logging/Logger.h"
+#include "core/privacy/LogRedact.h"
 #include "trading/adapter/BrokerEnumMap.h"
 #include "trading/brokers/BrokerClientOrderId.h"
 #include "trading/brokers/BrokerHttp.h"
@@ -170,7 +171,7 @@ TokenExchangeResponse UpstoxBroker::exchange_token(const QString& api_key, const
     auto resp = http.post_form("https://api.upstox.com/v2/login/authorization/token", form, {});
 
     if (!resp.success) {
-        LOG_ERROR("Upstox", "exchange_token HTTP error: " + resp.error);
+        LOG_ERROR("Upstox", "exchange_token HTTP error: " + privacy::redact_text(resp.error));
         return {.success = false, .error = resp.error};
     }
 
@@ -190,7 +191,7 @@ TokenExchangeResponse UpstoxBroker::exchange_token(const QString& api_key, const
     }
 
     const QString err = checked_error(resp, "Token exchange failed");
-    LOG_ERROR("Upstox", "exchange_token failed: " + err);
+    LOG_ERROR("Upstox", "exchange_token failed: " + privacy::redact_text(err));
     return {.success = false, .error = err};
 }
 
