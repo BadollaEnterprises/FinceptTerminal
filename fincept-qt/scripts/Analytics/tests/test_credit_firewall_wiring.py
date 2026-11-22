@@ -58,6 +58,20 @@ class CreditFirewallWiringTest(unittest.TestCase):
         backtesting = (ROOT / "src/services/backtesting/BacktestingService.cpp").read_text(encoding="utf-8")
         self.assertNotIn("PythonRunner::instance().run(", backtesting)
 
+    def test_market_analytics_subprocesses_are_secretless(self):
+        for relative in (
+            "src/services/options/CurveDataService.cpp",
+            "src/services/options/FreeOptionChainService.cpp",
+            "src/services/screener/ScreenerService.cpp",
+            "src/services/company_snapshot/CompanySnapshotService.cpp",
+        ):
+            with self.subTest(service=relative):
+                source = (ROOT / relative).read_text(encoding="utf-8")
+                self.assertIn("credential_allowlist = QStringList{}", source)
+
+        chain = (ROOT / "src/services/options/OptionChainService.cpp").read_text(encoding="utf-8")
+        self.assertGreaterEqual(chain.count("credential_allowlist = QStringList{}"), 2)
+
     def test_macro_and_geopolitics_services_check_firewall(self):
         geopolitics = (ROOT / "src/services/geopolitics/GeopoliticsService.cpp").read_text(encoding="utf-8")
         macro = (ROOT / "src/services/economics/FinceptMacroService.cpp").read_text(encoding="utf-8")

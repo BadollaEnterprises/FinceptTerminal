@@ -196,6 +196,7 @@ QString ScreenerService::run(const ScreenerQuery& q_in, bool force) {
     QStringList args;
     python::PythonRunner::RunOptions opts;
     opts.timeout_ms = screener_svc_d::kScreenerRunTimeoutMs;
+    opts.credential_allowlist = QStringList{};
     if (q.is_predefined()) {
         args = {QStringLiteral("predefined"), q.predefined_id, QString::number(q.count), QString::number(q.offset)};
     } else {
@@ -253,6 +254,7 @@ void ScreenerService::load_catalog() {
     catalog_loading_ = true;
     python::PythonRunner::RunOptions opts;
     opts.timeout_ms = screener_svc_d::kScreenerCatalogTimeoutMs;
+    opts.credential_allowlist = QStringList{};
     QPointer<ScreenerService> self = this;
     python::PythonRunner::instance().run_with_options(
         screener_svc_d::kScreenerScript, {QStringLiteral("fields")}, opts, [self](const python::PythonResult& res) {

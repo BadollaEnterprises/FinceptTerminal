@@ -306,6 +306,7 @@ void OptionChainService::list_databento_expiries(const QString& underlying, std:
     // read a command line (Win32_Process.CommandLine, /proc/<pid>/cmdline).
     fincept::python::PythonRunner::RunOptions opts;
     opts.stdin_data = QJsonDocument(json_args).toJson(QJsonDocument::Compact);
+    opts.credential_allowlist = QStringList{};
     QPointer<OptionChainService> self = this;
     fincept::python::PythonRunner::instance().run_with_options(
         kDatabentoScript, {QStringLiteral("list_expiries"), QStringLiteral("--stdin")}, opts,
@@ -594,6 +595,7 @@ void OptionChainService::refresh_chain_databento(const QString& underlying, cons
     // API key on stdin, never argv — see list_databento_expiries().
     fincept::python::PythonRunner::RunOptions opts;
     opts.stdin_data = QJsonDocument(json_args).toJson(QJsonDocument::Compact);
+    opts.credential_allowlist = QStringList{};
 
     QPointer<OptionChainService> self = this;
     fincept::python::PythonRunner::instance().run_with_options(

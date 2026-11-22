@@ -471,6 +471,7 @@ void CompanySnapshotService::start_sec(const QString& symbol) {
     const quint64 serial = it->serial;
     python::PythonRunner::RunOptions opts;
     opts.timeout_ms = kSnapSecTimeoutMs;
+    opts.credential_allowlist = QStringList{};
     QPointer<CompanySnapshotService> self = this;
     python::PythonRunner::instance().run_with_options(
         kSnapSecScript, {QStringLiteral("snapshot"), symbol}, opts, [self, symbol, serial](python::PythonResult result) {

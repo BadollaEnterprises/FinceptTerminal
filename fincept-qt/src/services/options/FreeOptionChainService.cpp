@@ -166,6 +166,7 @@ void FreeOptionChainService::run_script(quint64 id, const QString& symbol, const
     python::PythonRunner::RunOptions opts;
     opts.timeout_ms = kTimeoutMs;
     opts.cancel_token = it->cancel;
+    opts.credential_allowlist = QStringList{};
     opts.max_output_bytes = kMaxOutputBytes;
     const QString key = key_of(symbol);
     const QString src = source.isEmpty() ? QStringLiteral("auto") : source;

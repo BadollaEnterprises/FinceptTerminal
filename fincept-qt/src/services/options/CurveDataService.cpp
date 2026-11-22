@@ -127,6 +127,7 @@ quint64 CurveDataService::treasury_curve(bool force, QObject* ctx, TreasuryCallb
     python::PythonRunner::RunOptions opts;
     opts.timeout_ms = kScriptTimeoutMs;
     opts.cancel_token = token;
+    opts.credential_allowlist = QStringList{};
     opts.max_output_bytes = 1024 * 1024;
     python::PythonRunner::instance().run_with_options(
         QString::fromLatin1(kCurveScript), {QStringLiteral("treasury_curve")}, opts,
@@ -192,6 +193,7 @@ quint64 CurveDataService::futures_curve(const QString& root_in, int months, bool
     python::PythonRunner::RunOptions opts;
     opts.timeout_ms = kScriptTimeoutMs;
     opts.cancel_token = token;
+    opts.credential_allowlist = QStringList{};
     opts.max_output_bytes = 1024 * 1024;
     python::PythonRunner::instance().run_with_options(
         QString::fromLatin1(kCurveScript),
