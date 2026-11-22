@@ -556,6 +556,8 @@ def fixed_income(payload: Mapping[str, Any]) -> Dict[str, Any]:
     years = _finite(payload.get("years"), "years")
     yield_rate = _finite(payload.get("yield_rate"), "yield_rate")
     frequency_value = _finite(payload.get("frequency", 2), "frequency")
+    if coupon_rate < 0:
+        raise ValueError("coupon_rate must be non-negative")
     if frequency_value <= 0 or not frequency_value.is_integer():
         raise ValueError("frequency must be a positive integer")
     frequency = int(frequency_value)
@@ -573,13 +575,21 @@ def fixed_income(payload: Mapping[str, Any]) -> Dict[str, Any]:
     coupon = face * coupon_rate / frequency
     cashflows = [coupon] * periods
     cashflows[-1] += face
-    present_values = [cashflow / (1 + periodic_yield) ** period for period, cashflow in enumerate(cashflows, 1)]
+    try:
+        present_values = [
+            cashflow / (1 + periodic_yield) ** period
+            for period, cashflow in enumerate(cashflows, 1)
+        ]
+    except OverflowError as exc:
+        raise ValueError("fixed-income inputs must produce a positive finite price") from exc
     price = sum(present_values)
+    if not math.isfinite(price) or price <= 0:
+        raise ValueError("fixed-income inputs must produce a positive finite price")
     macaulay = sum((period / frequency) * pv for period, pv in enumerate(present_values, 1)) / price
     modified = macaulay / (1 + periodic_yield)
     convexity = sum(
-        cashflow * period * (period + 1) / (1 + periodic_yield) ** (period + 2)
-        for period, cashflow in enumerate(cashflows, 1)
+        pv * period * (period + 1) / (1 + periodic_yield) ** 2
+        for period, pv in enumerate(present_values, 1)
     ) / (price * frequency**2)
     return {
         "kind": "fixed_income",

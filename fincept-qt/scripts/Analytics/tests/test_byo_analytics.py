@@ -248,6 +248,10 @@ class ByoAnalyticsTest(unittest.TestCase):
             mod.fixed_income({"years": 2, "yield_rate": 0.05, "frequency": 2.5})
         with self.assertRaisesRegex(ValueError, "at most 10000 periods"):
             mod.fixed_income({"years": 10001, "yield_rate": 0.05, "frequency": 1})
+        with self.assertRaisesRegex(ValueError, "coupon_rate must be non-negative"):
+            mod.fixed_income({"years": 1, "yield_rate": 0.05, "coupon_rate": -1, "frequency": 1})
+        with self.assertRaisesRegex(ValueError, "positive finite price"):
+            mod.fixed_income({"years": 100, "yield_rate": 1e100, "frequency": 1})
 
     def test_cli_capabilities_is_machine_readable_and_marks_data_limits(self):
         if not SCRIPT.exists():
