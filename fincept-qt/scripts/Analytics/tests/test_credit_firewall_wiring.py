@@ -463,6 +463,16 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertIn("usage.persistence_error", panel)
         self.assertIn("Usage totals are only available for this session", panel)
 
+    def test_byo_streams_only_auto_retry_explicit_rate_limit_rejections(self):
+        header = (ROOT / "src/services/llm/LlmService.h").read_text(encoding="utf-8")
+        source = (ROOT / "src/services/llm/LlmService.cpp").read_text(encoding="utf-8")
+        self.assertIn("bool safe_automatic_retry", header)
+        self.assertIn("resp.safe_automatic_retry = accumulated.isEmpty() && status == 429", source)
+        retry = source[source.index("// Retry ONCE only when the provider explicitly rejected"):]
+        condition = retry[retry.index("if (!resp.success"):retry.index("LOG_WARN", retry.index("if (!resp.success"))]
+        self.assertIn("resp.safe_automatic_retry", condition)
+        self.assertNotIn("resp.retryable &&", condition)
+
     def test_llm_settings_diagnostics_scrub_storage_errors_and_profile_identity(self):
         providers = (ROOT / "src/screens/settings/LlmConfigSection_Providers.cpp").read_text(encoding="utf-8")
         profiles = (ROOT / "src/screens/settings/LlmConfigSection_Profiles.cpp").read_text(encoding="utf-8")

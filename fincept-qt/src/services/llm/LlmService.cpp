@@ -1853,6 +1853,7 @@ LlmResponse LlmService::do_streaming_request(const QString& user_message,
         resp.content = strip_think_blocks(accumulated);
         resp.retryable = accumulated.isEmpty() &&
                          (transient_status(status) || reply->error() == QNetworkReply::RemoteHostClosedError);
+        resp.safe_automatic_retry = accumulated.isEmpty() && status == 429;
         LOG_ERROR(kLlmSvcTag, "Stream request failed: " + privacy::redact_text(resp.error));
     } else if (status >= 200 && status < 300) {
         if (!stream_error.isEmpty()) {
@@ -2153,10 +2154,11 @@ void LlmService::chat_streaming(const QString& user_message, const std::vector<C
             detail::ToolPolicyGuard guard(policy);
             detail::ChatSessionGuard session_guard(chat_session_id);
 
-            // Retry ONCE when the provider rejected the request as transient (429 / 5xx /
-            // connection dropped) before a single chunk reached the UI. Anything that
-            // already produced output — including tool-progress chunks — is never
-            // replayed: a retry there would show duplicate text or, worse, re-run tools.
+            // Retry ONCE only when the provider explicitly rejected the request
+            // before inference (HTTP 429). A timeout, disconnect or 5xx can happen
+            // after a paid generation started, so resubmitting it automatically can
+            // double-charge the user's BYO key. Anything that already produced output
+            // — including tool progress — is never replayed either.
             // The same rule decides a harness fallback (ModelRouter::decide_fallback).
             // An attempt's own "done" is held back: a fallback attempt may follow, and
             // the consumer gets exactly one at the end.
@@ -2180,7 +2182,8 @@ void LlmService::chat_streaming(const QString& user_message, const std::vector<C
                 request.adopt_config_snapshot(cfg);
                 resp = request.do_streaming_request(user_message, trimmed_history, tracked_chunk);
                 // (Fincept already resubmits once inside fincept_async_request; a harness falls back instead.)
-                if (!resp.success && resp.retryable && !*emitted_output && cfg.provider != QLatin1String("fincept") &&
+                if (!resp.success && resp.safe_automatic_retry && !*emitted_output &&
+                    cfg.provider != QLatin1String("fincept") &&
                     !chain[idx].is_harness() && !detail::cancel_requested()) {
                     LOG_WARN(kLlmSvcTag, logf("LLM stream failed before any output, retrying once",
                                               {{"provider", cfg.provider}, {"model", cfg.model}, {"error", resp.error}}));

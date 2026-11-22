@@ -78,8 +78,12 @@ struct LlmResponse {
     int cached_prompt_tokens = 0; ///< subset of prompt_tokens served from provider cache
     bool success = false;
     /// Failure looks transient (upstream/model error, not a malformed request),
-    /// so the caller may resubmit the identical prompt once.
+    /// so the UI may offer a user-initiated retry.
     bool retryable = false;
+    /// The provider explicitly rejected the request before inference (HTTP 429),
+    /// so one automatic retry cannot duplicate a billable generation. Ambiguous
+    /// timeouts, disconnects and 5xx responses remain user-initiated retries.
+    bool safe_automatic_retry = false;
     /// The request was stopped by cancel_active_request(). `content` then holds
     /// whatever had streamed so far (possibly empty).
     bool cancelled = false;
