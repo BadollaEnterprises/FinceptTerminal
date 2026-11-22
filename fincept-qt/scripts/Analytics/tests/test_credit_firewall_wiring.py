@@ -155,6 +155,9 @@ class CreditFirewallWiringTest(unittest.TestCase):
         source = (ROOT / "src/mcp/McpClient.cpp").read_text(encoding="utf-8")
         self.assertGreaterEqual(source.count("process::strip_unmanaged_credentials"), 2)
         self.assertIn("config_.env.keys()", source)
+        self.assertGreaterEqual(source.count("safe_process_log_line"), 2)
+        self.assertNotIn('append_log("[stdout] "', source)
+        self.assertNotIn('append_log("[stderr] "', source)
 
     def test_mcp_self_check_only_passes_its_declared_token(self):
         source = (ROOT / "src/mcp/server/McpServerSelfCheck.cpp").read_text(encoding="utf-8")

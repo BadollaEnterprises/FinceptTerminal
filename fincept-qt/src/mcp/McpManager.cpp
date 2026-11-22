@@ -3,6 +3,7 @@
 #include "mcp/McpManager.h"
 
 #include "core/logging/Logger.h"
+#include "core/privacy/LogRedact.h"
 #include "storage/repositories/McpServerRepository.h"
 
 #include <QJsonArray>
@@ -37,7 +38,8 @@ void McpManager::initialize() {
 
     auto result = McpServerRepository::instance().list_all();
     if (result.is_err()) {
-        LOG_WARN(TAG, "Failed to load MCP server configs: " + QString::fromStdString(result.error()));
+        LOG_WARN(TAG, "Failed to load MCP server configs: " +
+                          privacy::redact_text(QString::fromStdString(result.error())));
         return;
     }
 
@@ -208,7 +210,8 @@ Result<void> McpManager::start_server(const QString& id) {
     if (start_result.is_err()) {
         LOG_ERROR(TAG, logf("MCP server failed to start", {{"server", cfg.name},
                                                            {"stage", "start"},
-                                                           {"error", QString::fromStdString(start_result.error())}}));
+                                                           {"error", privacy::redact_text(
+                                                                         QString::fromStdString(start_result.error()))}}));
         const QStringList failed_log = client->get_logs(); // read before the client goes out of scope
         QMutexLocker lock(&mutex_);
         last_start_log_.insert(id, failed_log);
@@ -223,7 +226,8 @@ Result<void> McpManager::start_server(const QString& id) {
     if (init_result.is_err()) {
         LOG_ERROR(TAG, logf("MCP server failed to start", {{"server", cfg.name},
                                                            {"stage", "initialize"},
-                                                           {"error", QString::fromStdString(init_result.error())}}));
+                                                           {"error", privacy::redact_text(
+                                                                         QString::fromStdString(init_result.error()))}}));
         client->stop();
         const QStringList failed_log = client->get_logs(); // includes whatever the process printed before dying
         QMutexLocker lock(&mutex_);
@@ -302,7 +306,8 @@ void McpManager::start_auto_servers() {
     for (const auto& id : to_start) {
         auto r = start_server(id);
         if (r.is_err())
-            LOG_WARN(TAG, "Auto-start failed for " + id + ": " + QString::fromStdString(r.error()));
+            LOG_WARN(TAG, "Auto-start failed for " + id + ": " +
+                              privacy::redact_text(QString::fromStdString(r.error())));
     }
 }
 
@@ -467,7 +472,8 @@ void McpManager::refresh_tools_for(const QString& id) {
 
     auto result = client->list_tools();
     if (result.is_err()) {
-        LOG_WARN(TAG, "Failed to list tools for " + id + ": " + QString::fromStdString(result.error()));
+        LOG_WARN(TAG, "Failed to list tools for " + id + ": " +
+                          privacy::redact_text(QString::fromStdString(result.error())));
         return;
     }
 

@@ -2,6 +2,7 @@
 // (core/logging/LogRedact.h, defined in Logger.cpp). These are the forwarded rules as the
 // call sites see them; tst_logger covers the logger's own helpers in depth.
 #include "core/privacy/LogRedact.h"
+#include "mcp/McpLogPolicy.h"
 
 #include <QtTest>
 
@@ -88,6 +89,32 @@ class TestLogRedact : public QObject {
                  QStringLiteral("Script failed script=x.py exit=1 duration_ms=420 tokens_in=12"));
         // Another account's folder is hidden too.
         QVERIFY(!redact_text(QStringLiteral("at /home/bob/x")).contains(QStringLiteral("bob")));
+    }
+
+    void mcp_json_rpc_logs_never_retain_payloads() {
+        const QString response = QStringLiteral(
+            R"({"jsonrpc":"2.0","id":7,"result":{"account":"alice","api_key":"sk-secret-value"}})");
+        const QString safe_response = fincept::mcp::safe_process_log_line(response, false);
+        QVERIFY(safe_response.contains(QStringLiteral("JSON-RPC response")));
+        QVERIFY(safe_response.contains(QStringLiteral("bytes=")));
+        QVERIFY(!safe_response.contains(QStringLiteral("alice")));
+        QVERIFY(!safe_response.contains(QStringLiteral("sk-secret-value")));
+
+        const QString error = QStringLiteral(
+            R"({"jsonrpc":"2.0","id":7,"error":{"code":-32000,"message":"token=secret-token"}})");
+        const QString safe_error = fincept::mcp::safe_process_log_line(error, false);
+        QVERIFY(safe_error.contains(QStringLiteral("JSON-RPC error")));
+        QVERIFY(safe_error.contains(QStringLiteral("code=-32000")));
+        QVERIFY(!safe_error.contains(QStringLiteral("secret-token")));
+    }
+
+    void mcp_plain_process_logs_are_redacted() {
+        const QString safe = fincept::mcp::safe_process_log_line(
+            QStringLiteral("request failed token=super-secret at https://api.example.com/v1/private?key=value"),
+            true);
+        QVERIFY(safe.startsWith(QStringLiteral("[stderr] ")));
+        QVERIFY(!safe.contains(QStringLiteral("super-secret")));
+        QVERIFY(!safe.contains(QStringLiteral("/v1/private")));
     }
 };
 

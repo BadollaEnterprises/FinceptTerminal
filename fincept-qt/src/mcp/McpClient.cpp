@@ -3,7 +3,9 @@
 #include "mcp/McpClient.h"
 
 #include "core/logging/Logger.h"
+#include "core/privacy/LogRedact.h"
 #include "core/process/ProcessEnvironment.h"
+#include "mcp/McpLogPolicy.h"
 #include "python/PythonSetupManager.h"
 
 #include <QCoreApplication>
@@ -74,7 +76,7 @@ Result<void> McpClient::start() {
             for (const QByteArray& raw : chunk.split('\n')) {
                 const QString line = QString::fromUtf8(raw).trimmed();
                 if (!line.isEmpty())
-                    append_log("[stderr] " + line);
+                    append_log(safe_process_log_line(line, true));
             }
         },
         Qt::DirectConnection);
@@ -126,7 +128,7 @@ Result<void> McpClient::start() {
 
     if (!started_ok) {
         const QString err = process_->errorString();
-        LOG_ERROR(TAG, "Failed to start MCP server: " + config_.name + " — " + err);
+        LOG_ERROR(TAG, "Failed to start MCP server: " + config_.name + " — " + privacy::redact_text(err));
         worker_thread_->quit();
         worker_thread_->wait(3000);
         cleanup_process();
@@ -369,7 +371,7 @@ Result<QJsonObject> McpClient::send_request(const QString& method, const QJsonOb
         LOG_WARN(TAG, logf("RPC failed", {{"server", config_.name},
                                           {"method", method},
                                           {"id", id},
-                                          {"error", pending.error.left(200)},
+                                          {"error", privacy::redact_text(pending.error).left(200)},
                                           {"elapsed_ms", timer.elapsed()}}));
         return Result<QJsonObject>::err(pending.error.toStdString());
     }
@@ -433,7 +435,7 @@ void McpClient::handle_line(const QByteArray& line) {
 void McpClient::on_ready_read() {
     while (process_ && process_->canReadLine()) {
         QByteArray line = process_->readLine();
-        append_log("[stdout] " + QString::fromUtf8(line).trimmed());
+        append_log(safe_process_log_line(QString::fromUtf8(line).trimmed(), false));
         handle_line(line);
     }
 }

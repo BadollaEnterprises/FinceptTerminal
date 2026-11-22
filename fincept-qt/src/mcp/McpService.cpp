@@ -4,6 +4,7 @@
 
 #include "core/config/AppConfig.h"
 #include "core/logging/Logger.h"
+#include "core/privacy/LogRedact.h"
 #include "mcp/GeminiSchema.h"
 #include "mcp/McpManager.h"
 #include "mcp/McpProvider.h"
@@ -72,7 +73,8 @@ void McpService::initialize() {
                 LOG_INFO("McpService", "Auto-starting MCP server: " + id);
                 auto r = McpManager::instance().start_server(id);
                 if (r.is_err())
-                    LOG_WARN("McpService", "Auto-start failed for " + id + ": " + QString::fromStdString(r.error()));
+                    LOG_WARN("McpService", "Auto-start failed for " + id + ": " +
+                                               privacy::redact_text(QString::fromStdString(r.error())));
             }
             LOG_DEBUG("McpService", "All external MCP servers started");
         });
