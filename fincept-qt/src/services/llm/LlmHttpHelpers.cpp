@@ -53,6 +53,9 @@ QNetworkAccessManager* LlmService::thread_nam() {
 void LlmService::prepare_thread_nam_request(QNetworkRequest& req) {
     req.setAttribute(QNetworkRequest::CookieLoadControlAttribute, QNetworkRequest::Manual);
     req.setAttribute(QNetworkRequest::CookieSaveControlAttribute, QNetworkRequest::Manual);
+    // LLM requests carry user-owned API keys. A cross-origin redirect must not
+    // be allowed to replay those headers to a different host.
+    req.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::SameOriginRedirectPolicy);
 }
 
 // ── Provider error-body → message ──────────────────────────────────────────

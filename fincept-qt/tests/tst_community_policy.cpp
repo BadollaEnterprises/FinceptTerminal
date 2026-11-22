@@ -1,5 +1,6 @@
 #include "core/policy/CommunityPolicy.h"
 #include "core/metrics/LocalUsageMetrics.h"
+#include "services/llm/LlmEndpointPolicy.h"
 #include "services/llm/ModelRouter.h"
 
 #include <QFile>
@@ -73,6 +74,19 @@ class CommunityPolicyTest : public QObject {
 
     void fincept_chat_api_is_disabled() {
         QCOMPARE(fincept::policy::fincept_chat_api_enabled(), false);
+    }
+
+    void llm_api_keys_only_use_secure_or_loopback_endpoints() {
+        using fincept::ai_chat::is_allowed_llm_endpoint;
+        QVERIFY(is_allowed_llm_endpoint(QStringLiteral("https://api.deepseek.com/v1")));
+        QVERIFY(is_allowed_llm_endpoint(QStringLiteral("http://localhost:8080/v1")));
+        QVERIFY(is_allowed_llm_endpoint(QStringLiteral("http://worker.localhost:8080/v1")));
+        QVERIFY(is_allowed_llm_endpoint(QStringLiteral("http://127.4.3.2:8080/v1")));
+        QVERIFY(is_allowed_llm_endpoint(QStringLiteral("http://[::1]:8080/v1")));
+        QVERIFY(!is_allowed_llm_endpoint(QStringLiteral("http://api.deepseek.com/v1")));
+        QVERIFY(!is_allowed_llm_endpoint(QStringLiteral("http://192.168.1.10:8080/v1")));
+        QVERIFY(!is_allowed_llm_endpoint(QStringLiteral("ftp://localhost/models")));
+        QVERIFY(!is_allowed_llm_endpoint(QStringLiteral("not a URL")));
     }
 
     void explicit_fincept_llm_is_blocked_by_credit_firewall() {

@@ -17,6 +17,7 @@
 #include "mcp/McpProvider.h"
 #include "mcp/McpService.h"
 #include "services/llm/LlmContentExtractors.h"
+#include "services/llm/LlmEndpointPolicy.h"
 #include "services/llm/LlmErrors.h"
 #include "services/llm/LlmRequestPolicy.h"
 #include "services/llm/LlmSummaryPolicy.h"
@@ -827,6 +828,11 @@ LlmResponse LlmService::do_request(const QString& user_message, const std::vecto
         resp.error = "No endpoint URL for provider: " + provider_;
         return resp;
     }
+    if (!is_allowed_llm_endpoint(url)) {
+        resp.error = QStringLiteral(
+            "Refusing an insecure LLM endpoint. Use https://, or http:// only for a loopback address.");
+        return resp;
+    }
 
     auto hdr = get_headers();
     QJsonObject req_body;
@@ -1445,6 +1451,12 @@ LlmResponse LlmService::do_streaming_request(const QString& user_message,
     QString url = get_endpoint_url();
     if (url.isEmpty()) {
         resp.error = "No endpoint URL for provider: " + provider_;
+        on_chunk("", true);
+        return resp;
+    }
+    if (!is_allowed_llm_endpoint(url)) {
+        resp.error = QStringLiteral(
+            "Refusing an insecure LLM endpoint. Use https://, or http:// only for a loopback address.");
         on_chunk("", true);
         return resp;
     }

@@ -8,6 +8,7 @@
 #include "core/logging/Logger.h"
 #include "core/policy/CommunityPolicy.h"
 #include "services/llm/LlmContentExtractors.h"
+#include "services/llm/LlmEndpointPolicy.h"
 #include "services/llm/LlmService.h"
 #include "services/llm/ModelListParse.h"
 #include "services/llm/ProviderCatalog.h"
@@ -181,13 +182,20 @@ void LlmService::fetch_models(const QString& provider, const QString& api_key, c
         emit models_fetched(provider, {}, "Unknown provider: " + provider);
         return;
     }
+    if (!is_allowed_llm_endpoint(url)) {
+        emit models_fetched(provider, {},
+                            QStringLiteral("Refusing an insecure model endpoint. Use https://, or http:// only for "
+                                           "a loopback address."));
+        return;
+    }
 
     // NAM must live on the main thread — its DNS/TLS path needs a pumping event loop.
     if (!models_nam_)
         models_nam_ = new QNetworkAccessManager(this);
 
     QNetworkRequest req{QUrl(url)};
-    req.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
+    // Never forward an API-key header to another origin through a redirect.
+    req.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::SameOriginRedirectPolicy);
     auto headers = get_models_headers(provider, api_key);
     for (auto it = headers.constBegin(); it != headers.constEnd(); ++it)
         req.setRawHeader(it.key().toUtf8(), it.value().toUtf8());

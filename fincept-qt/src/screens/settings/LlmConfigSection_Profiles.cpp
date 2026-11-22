@@ -11,6 +11,7 @@
 #include "screens/settings/LlmConfigSection.h"
 #include "services/harness/HarnessRegistry.h"
 #include "services/harness/IHarnessAdapter.h"
+#include "services/llm/LlmEndpointPolicy.h"
 #include "services/llm/LlmService.h"
 #include "services/llm/ModelCatalog.h"
 #include "services/llm/ProviderCatalog.h"
@@ -35,7 +36,6 @@ constexpr int kLlmProfilesTokensMax = 128000;
 #include <QScrollArea>
 #include <QSplitter>
 #include <QTimer>
-#include <QUrl>
 #include <QUuid>
 #include <QVBoxLayout>
 
@@ -659,13 +659,9 @@ void LlmConfigSection::on_save_profile() {
     // A custom endpoint must be a real http(s) URL — a typo otherwise only surfaces
     // as an opaque connection error the first time an agent uses the profile.
     const QString base_url = is_harness ? QString() : profile_base_url_edit_->text().trimmed();
-    if (!base_url.isEmpty()) {
-        const QUrl u(base_url, QUrl::StrictMode);
-        const QString scheme = u.scheme().toLower();
-        if (!u.isValid() || u.host().isEmpty() || (scheme != QLatin1String("http") && scheme != QLatin1String("https"))) {
-            show_profile_status(tr("Base URL must be a full http:// or https:// address"), true);
-            return;
-        }
+    if (!base_url.isEmpty() && !ai_chat::is_allowed_llm_endpoint(base_url)) {
+        show_profile_status(tr("Base URL must use https://; http:// is allowed only for a loopback address"), true);
+        return;
     }
 
     // Carry is_default over from the stored row: hard-coding false silently

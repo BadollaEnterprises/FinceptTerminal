@@ -13,6 +13,7 @@
 #include "core/privacy/LogRedact.h"
 #include "screens/settings/LlmConfigSection.h"
 #include "services/llm/LlmBudgetSettings.h"
+#include "services/llm/LlmEndpointPolicy.h"
 #include "services/llm/LlmService.h"
 #include "services/llm/ModelCatalog.h"
 #include "storage/repositories/LlmConfigRepository.h"
@@ -51,7 +52,6 @@ bool provider_is_visible_in_community(const QString& provider) {
 #include <QScrollArea>
 #include <QSplitter>
 #include <QTimer>
-#include <QUrl>
 #include <QVBoxLayout>
 
 #include <memory>
@@ -862,13 +862,9 @@ void LlmConfigSection::on_save_provider() {
     }
     // The base URL feeds straight into the request endpoint — reject typos here
     // rather than as an opaque connection error on the first chat message.
-    if (!cfg.base_url.isEmpty()) {
-        const QUrl u(cfg.base_url, QUrl::StrictMode);
-        const QString scheme = u.scheme().toLower();
-        if (!u.isValid() || u.host().isEmpty() || (scheme != QLatin1String("http") && scheme != QLatin1String("https"))) {
-            show_status(tr("Base URL must be a full http:// or https:// address"), true);
-            return;
-        }
+    if (!cfg.base_url.isEmpty() && !ai_chat::is_allowed_llm_endpoint(cfg.base_url)) {
+        show_status(tr("Base URL must use https://; http:// is allowed only for a loopback address"), true);
+        return;
     }
 
     // Save without changing activation, THEN atomically deactivate the old row
@@ -1033,6 +1029,11 @@ void LlmConfigSection::on_test_connection() {
         show_status(tr("API key required for test"), true);
         return;
     }
+    const QString base_url = base_url_edit_->text().trimmed();
+    if (!base_url.isEmpty() && !ai_chat::is_allowed_llm_endpoint(base_url)) {
+        show_status(tr("Base URL must use https://; http:// is allowed only for a loopback address"), true);
+        return;
+    }
 
     show_status(tr("Testing connection..."), false);
     test_btn_->setEnabled(false);
@@ -1053,8 +1054,7 @@ void LlmConfigSection::on_test_connection() {
                         disconnect(*conn);
                     });
 
-    ai_chat::LlmService::instance().fetch_models(provider, api_key_edit_->text().trimmed(),
-                                                 base_url_edit_->text().trimmed());
+    ai_chat::LlmService::instance().fetch_models(provider, api_key_edit_->text().trimmed(), base_url);
 }
 
 void LlmConfigSection::on_fetch_models() {
@@ -1065,6 +1065,12 @@ void LlmConfigSection::on_fetch_models() {
     }
     if (!policy::is_ai_backend_selectable(provider)) {
         show_status(tr("This AI backend is no longer available. Choose DeepSeek or another BYO provider."), true);
+        return;
+    }
+
+    const QString base_url = base_url_edit_->text().trimmed();
+    if (!base_url.isEmpty() && !ai_chat::is_allowed_llm_endpoint(base_url)) {
+        show_status(tr("Base URL must use https://; http:// is allowed only for a loopback address"), true);
         return;
     }
 
@@ -1081,8 +1087,7 @@ void LlmConfigSection::on_fetch_models() {
     show_status(tr("Fetching models..."), false);
     fetch_btn_->setEnabled(false);
 
-    ai_chat::LlmService::instance().fetch_models(provider, api_key_edit_->text().trimmed(),
-                                                 base_url_edit_->text().trimmed());
+    ai_chat::LlmService::instance().fetch_models(provider, api_key_edit_->text().trimmed(), base_url);
 }
 
 void LlmConfigSection::on_models_fetched(const QString& provider, const QStringList& models, const QString& error) {

@@ -516,6 +516,19 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertIn("config_error_ = snap.config_error", source)
         self.assertGreaterEqual(source.count("if (!config_error_.isEmpty())"), 2)
 
+    def test_llm_api_keys_never_use_remote_plaintext_endpoints(self):
+        service = (ROOT / "src/services/llm/LlmService.cpp").read_text(encoding="utf-8")
+        models = (ROOT / "src/services/llm/LlmModelsApi.cpp").read_text(encoding="utf-8")
+        providers = (ROOT / "src/screens/settings/LlmConfigSection_Providers.cpp").read_text(encoding="utf-8")
+        profiles = (ROOT / "src/screens/settings/LlmConfigSection_Profiles.cpp").read_text(encoding="utf-8")
+        http = (ROOT / "src/services/llm/LlmHttpHelpers.cpp").read_text(encoding="utf-8")
+        self.assertGreaterEqual(service.count("is_allowed_llm_endpoint(url)"), 2)
+        self.assertIn("is_allowed_llm_endpoint(url)", models)
+        self.assertGreaterEqual(providers.count("is_allowed_llm_endpoint"), 3)
+        self.assertIn("is_allowed_llm_endpoint(base_url)", profiles)
+        self.assertIn("SameOriginRedirectPolicy", models)
+        self.assertIn("SameOriginRedirectPolicy", http)
+
     def test_deleting_active_provider_selects_deterministic_byo_fallback(self):
         source = (ROOT / "src/screens/settings/LlmConfigSection_Providers.cpp").read_text(encoding="utf-8")
         body = source[source.index("void LlmConfigSection::on_delete_provider()"):
