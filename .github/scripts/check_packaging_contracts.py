@@ -206,6 +206,12 @@ def main() -> int:
         failures,
     )
     require(
+        release_text,
+        "for zlib_dll in zlib1.dll; do",
+        "Windows release must not stage the debug zlibd1.dll runtime",
+        failures,
+    )
+    require(
         text,
         'ZLIB_TRIPLET="arm64-windows-static-md"',
         "Windows ARM64 must install the arm64-windows-static-md zlib triplet",

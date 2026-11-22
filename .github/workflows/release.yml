@@ -245,7 +245,7 @@ jobs:
           # dynamic zlib; if neither source provides one, that's expected. The
           # "Verify dependency closure" step is the real guarantee nothing is
           # missing. (ZLIB_ROOT is the static-md dir and has no bin/*.dll.)
-          for zlib_dll in zlib1.dll zlibd1.dll; do
+          for zlib_dll in zlib1.dll; do
             [ -n "${ZLIB_ROOT:-}" ] && [ -f "${ZLIB_ROOT}/bin/${zlib_dll}" ] && [ ! -f "${BUILD_DIR}/${zlib_dll}" ] && \
               cp "${ZLIB_ROOT}/bin/${zlib_dll}" "${BUILD_DIR}/" || true
             [ -f "${QT_BIN}/${zlib_dll}" ] && [ ! -f "${BUILD_DIR}/${zlib_dll}" ] && \
