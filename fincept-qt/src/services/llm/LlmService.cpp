@@ -286,6 +286,7 @@ void LlmService::ensure_config() const {
     }
 
     provider_ = model_ = api_key_ = base_url_ = system_prompt_ = {};
+    config_error_.clear();
     temperature_ = 0.7;
     // 0 means "no user override → ModelCatalog::output_cap()". The v15 migration reset legacy 2000 defaults.
     max_tokens_ = 0;
@@ -316,6 +317,10 @@ void LlmService::ensure_config() const {
                 break;
             }
         }
+    } else {
+        config_error_ = QStringLiteral("Could not read LLM configuration: %1")
+                            .arg(QString::fromStdString(providers.error()));
+        LOG_ERROR(kLlmSvcTag, privacy::redact_text(config_error_));
     }
 
     // Nothing configured — use the BYO DeepSeek route. Without the user's key
@@ -391,6 +396,7 @@ LlmService::ConfigSnapshot LlmService::snapshot_config_locked() const {
     s.base_url = base_url_;
     s.model = model_;
     s.system_prompt = system_prompt_;
+    s.config_error = config_error_;
     s.temperature = temperature_;
     s.max_tokens = max_tokens_;
     s.max_tool_rounds = max_tool_rounds_;
@@ -411,6 +417,7 @@ void LlmService::adopt_config_snapshot(const ConfigSnapshot& snap) {
     base_url_ = snap.base_url;
     model_ = snap.model;
     system_prompt_ = snap.system_prompt;
+    config_error_ = snap.config_error;
     temperature_ = snap.temperature;
     max_tokens_ = snap.max_tokens;
     max_tool_rounds_ = snap.max_tool_rounds;
@@ -500,6 +507,15 @@ LlmService::ConfigSnapshot LlmService::snapshot_for(const ModelChoice& choice, c
                         s.system_prompt = prof.system_prompt;
                     s.tools_enabled = true;
                     applied_profile = true;
+                } else {
+                    s.provider = choice.provider.toLower();
+                    s.model = choice.model;
+                    s.api_key.clear();
+                    s.base_url = ProviderCatalog::default_base_url(s.provider);
+                    s.tools_enabled = true;
+                    s.config_error = QStringLiteral("Could not read selected LLM profile: %1")
+                                         .arg(QString::fromStdString(p.error()));
+                    applied_profile = true;
                 }
             }
             // A route fallback can differ from the active settings row (for
@@ -508,7 +524,8 @@ LlmService::ConfigSnapshot LlmService::snapshot_for(const ModelChoice& choice, c
             // instead of accidentally executing the rejected active backend.
             if (!applied_profile && s.provider.compare(choice.provider, Qt::CaseInsensitive) != 0) {
                 bool found = false;
-                if (auto rows = LlmConfigRepository::instance().list_providers(); rows.is_ok()) {
+                auto rows = LlmConfigRepository::instance().list_providers();
+                if (rows.is_ok()) {
                     for (const LlmConfig& row : rows.value()) {
                         if (row.provider.compare(choice.provider, Qt::CaseInsensitive) != 0)
                             continue;
@@ -520,6 +537,9 @@ LlmService::ConfigSnapshot LlmService::snapshot_for(const ModelChoice& choice, c
                         found = true;
                         break;
                     }
+                } else {
+                    s.config_error = QStringLiteral("Could not read LLM configuration: %1")
+                                         .arg(QString::fromStdString(rows.error()));
                 }
                 if (!found) {
                     s.provider = choice.provider.toLower();
@@ -775,8 +795,10 @@ LlmResponse LlmService::do_request(const QString& user_message, const std::vecto
         return resp;
     }
     if (ProviderCatalog::requires_api_key(provider_) && api_key_.trimmed().isEmpty()) {
-        resp.error = QStringLiteral(
-            "No LLM provider configured: add your own API key in Settings › LLM Configuration.");
+        resp.error = config_error_.isEmpty()
+                         ? QStringLiteral(
+                               "No LLM provider configured: add your own API key in Settings › LLM Configuration.")
+                         : config_error_;
         return resp;
     }
 
@@ -1374,8 +1396,10 @@ LlmResponse LlmService::do_streaming_request(const QString& user_message,
     }
     if (ProviderCatalog::requires_api_key(provider_) && api_key_.trimmed().isEmpty()) {
         LlmResponse resp;
-        resp.error = QStringLiteral(
-            "No LLM provider configured: add your own API key in Settings › LLM Configuration.");
+        resp.error = config_error_.isEmpty()
+                         ? QStringLiteral(
+                               "No LLM provider configured: add your own API key in Settings › LLM Configuration.")
+                         : config_error_;
         on_chunk("", true);
         return resp;
     }

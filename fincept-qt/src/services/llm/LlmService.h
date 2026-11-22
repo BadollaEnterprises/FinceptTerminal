@@ -282,6 +282,7 @@ class LlmService : public QObject {
     mutable int max_tokens_ = 4096;
     mutable int max_tool_rounds_ = 40;
     mutable QString system_prompt_;
+    mutable QString config_error_;
     mutable bool tools_enabled_ = true;
     mutable bool config_loaded_ = false;
     // Harness route (provider_ "harness:<id>"); per-request instances only.
@@ -305,6 +306,7 @@ class LlmService : public QObject {
         QString base_url;
         QString model;
         QString system_prompt;
+        QString config_error;
         double temperature = 0.7;
         int max_tokens = 0;
         int max_tool_rounds = 40;

@@ -502,6 +502,19 @@ class CreditFirewallWiringTest(unittest.TestCase):
                 self.assertIn('#include "core/privacy/LogRedact.h"', source)
                 self.assertGreaterEqual(source.count("privacy::redact_text"), minimum)
 
+    def test_llm_requests_surface_configuration_read_failures(self):
+        header = (ROOT / "src/services/llm/LlmService.h").read_text(encoding="utf-8")
+        source = (ROOT / "src/services/llm/LlmService.cpp").read_text(encoding="utf-8")
+        self.assertIn("mutable QString config_error_", header)
+        snapshot = header[header.index("struct ConfigSnapshot"):header.index("snapshot_config_locked")]
+        self.assertIn("QString config_error", snapshot)
+        self.assertIn("config_error_.clear()", source)
+        self.assertIn("Could not read LLM configuration", source)
+        self.assertIn("Could not read selected LLM profile", source)
+        self.assertIn("s.config_error = config_error_", source)
+        self.assertIn("config_error_ = snap.config_error", source)
+        self.assertGreaterEqual(source.count("config_error_.isEmpty()"), 2)
+
     def test_deleting_active_provider_selects_deterministic_byo_fallback(self):
         source = (ROOT / "src/screens/settings/LlmConfigSection_Providers.cpp").read_text(encoding="utf-8")
         body = source[source.index("void LlmConfigSection::on_delete_provider()"):
