@@ -40,6 +40,7 @@ import warnings
 
 from .base_calculator import BaseCalculator, validate_inputs, timing_decorator
 from .exceptions import handle_calculation_error, DataValidationError, CalculationError
+from .runtime_limits import bounded_positive_int, bounded_workload
 
 # Forecasting methods offered by generate_forecasts (the CFA Quant panel offers the first six).
 FORECAST_METHODS = ('simple_exponential', 'holt', 'holt_winters', 'arima', 'naive', 'drift',
@@ -47,6 +48,16 @@ FORECAST_METHODS = ('simple_exponential', 'holt', 'holt_winters', 'arima', 'naiv
 
 REGRESSION_MODELS = ('ridge', 'lasso', 'elastic_net', 'svr', 'knn', 'decision_tree', 'random_forest')
 CLASSIFICATION_MODELS = ('logistic', 'ridge', 'svc', 'knn', 'decision_tree', 'random_forest')
+
+# These endpoints are callable from the UI and from AI tools. Keep local work
+# useful for research while preventing a malformed request from allocating an
+# enormous forecast or running billions of random draws on the user's machine.
+MAX_FORECAST_HORIZON = 10_000
+MAX_SIMULATION_COUNT = 100_000
+MAX_SAMPLE_SIZE = 1_000_000
+MAX_SAMPLE_SIZE_COUNT = 100
+MAX_METHOD_COUNT = 10
+MAX_SIMULATION_DRAWS = 5_000_000
 
 
 class AdvancedQuantAnalyzer(BaseCalculator):
@@ -430,7 +441,10 @@ class AdvancedQuantAnalyzer(BaseCalculator):
         data = self._validate_returns(data, "data")
         self._check_data_length(data, min_length=20)
 
-        horizon = int(self._validate_positive(horizon, "horizon"))
+        try:
+            horizon = bounded_positive_int(horizon, "horizon", MAX_FORECAST_HORIZON)
+        except ValueError as exc:
+            raise DataValidationError(str(exc), "horizon") from exc
         train_size = self._validate_probability(train_size, "train_size")
         if method not in FORECAST_METHODS:
             raise DataValidationError(
@@ -1151,8 +1165,15 @@ class AdvancedQuantAnalyzer(BaseCalculator):
         if population_params is None:
             population_params = {'scale': 1.0}
 
-        n_samples = int(self._validate_positive(n_samples, "n_samples"))
+        try:
+            n_samples = bounded_positive_int(n_samples, "n_samples", MAX_SIMULATION_COUNT)
+        except ValueError as exc:
+            raise DataValidationError(str(exc), "n_samples") from exc
         sample_sizes = self._validate_sample_sizes(sample_sizes)
+        try:
+            bounded_workload("simulation", [n_samples, sum(sample_sizes)], MAX_SIMULATION_DRAWS)
+        except ValueError as exc:
+            raise DataValidationError(str(exc), "sample_sizes") from exc
 
         # Generate population
         if population_dist == 'exponential':
@@ -1243,7 +1264,23 @@ class AdvancedQuantAnalyzer(BaseCalculator):
         data = self._validate_returns(data, "data")
         self._check_data_length(data, min_length=5)
 
-        n_resamples = int(self._validate_positive(n_resamples, "n_resamples"))
+        if not isinstance(methods, (list, tuple)) or not methods:
+            raise DataValidationError("methods must be a non-empty list", "methods")
+        if len(methods) > MAX_METHOD_COUNT:
+            raise DataValidationError(f"methods exceeds local limit of {MAX_METHOD_COUNT} entries", "methods")
+
+        try:
+            n_resamples = bounded_positive_int(n_resamples, "n_resamples", MAX_SIMULATION_COUNT)
+        except ValueError as exc:
+            raise DataValidationError(str(exc), "n_resamples") from exc
+
+        random_methods = sum(method in {'bootstrap', 'permutation'} for method in methods)
+        workload = random_methods * n_resamples * len(data)
+        workload += sum(method == 'jackknife' for method in methods) * len(data) * len(data)
+        try:
+            bounded_workload("resampling", [1, workload], MAX_SIMULATION_DRAWS)
+        except ValueError as exc:
+            raise DataValidationError(str(exc), "methods") from exc
 
         if not callable(statistic_func):
             raise DataValidationError("statistic_func must be callable", "statistic_func")
@@ -1361,8 +1398,15 @@ class AdvancedQuantAnalyzer(BaseCalculator):
         population_mean = self._validate_numeric_input(population_mean, "population_mean")
         population_std = self._validate_positive(population_std, "population_std")
         confidence_level = self._validate_probability(confidence_level, "confidence_level")
-        n_simulations = int(self._validate_positive(n_simulations, "n_simulations"))
+        try:
+            n_simulations = bounded_positive_int(n_simulations, "n_simulations", MAX_SIMULATION_COUNT)
+        except ValueError as exc:
+            raise DataValidationError(str(exc), "n_simulations") from exc
         sample_sizes = self._validate_sample_sizes(sample_sizes)
+        try:
+            bounded_workload("simulation", [n_simulations, sum(sample_sizes)], MAX_SIMULATION_DRAWS)
+        except ValueError as exc:
+            raise DataValidationError(str(exc), "sample_sizes") from exc
         if not 0 < confidence_level < 1:
             raise DataValidationError(f"confidence_level must be strictly between 0 and 1, got {confidence_level}",
                                       "confidence_level")
@@ -1432,14 +1476,15 @@ class AdvancedQuantAnalyzer(BaseCalculator):
         """A non-empty list of positive integer sample sizes."""
         if sample_sizes is None or isinstance(sample_sizes, (str, bytes)) or len(sample_sizes) == 0:
             raise DataValidationError("sample_sizes must be a non-empty list of positive integers", "sample_sizes")
+        if len(sample_sizes) > MAX_SAMPLE_SIZE_COUNT:
+            raise DataValidationError(
+                f"sample_sizes exceeds local limit of {MAX_SAMPLE_SIZE_COUNT} entries", "sample_sizes")
         sizes = []
         for s in sample_sizes:
             try:
-                v = int(s)
-            except (TypeError, ValueError):
-                raise DataValidationError(f"sample size {s!r} is not an integer", "sample_sizes")
-            if v < 1 or v != float(s):
-                raise DataValidationError(f"sample sizes must be positive integers, got {s!r}", "sample_sizes")
+                v = bounded_positive_int(s, "sample size", MAX_SAMPLE_SIZE)
+            except ValueError as exc:
+                raise DataValidationError(str(exc), "sample_sizes") from exc
             sizes.append(v)
         return sizes
 
