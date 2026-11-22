@@ -491,6 +491,7 @@ void LlmConfigSection::populate_profile_form(const LlmProfile& p) {
     profile_prompt_edit_->setPlainText(p.system_prompt);
 
     editing_profile_id_ = p.id;
+    profile_save_btn_->setEnabled(true);
     profile_delete_btn_->setEnabled(true);
     // A harness profile cannot be the default (that also serves Agent Studio).
     profile_default_btn_->setEnabled(!p.is_default && !is_harness);
@@ -506,6 +507,7 @@ void LlmConfigSection::clear_profile_form() {
     profile_tokens_spin_->setValue(4096);
     profile_prompt_edit_->clear();
     profile_list_->clearSelection();
+    profile_save_btn_->setEnabled(true);
     profile_delete_btn_->setEnabled(false);
     profile_default_btn_->setEnabled(false);
     editing_profile_id_.clear();
@@ -530,6 +532,13 @@ void LlmConfigSection::on_profile_selected(int row) {
     if (!item)
         return;
     QString id = item->data(Qt::UserRole).toString();
+    // Do not let an unreadable selection inherit the prior profile's identity
+    // or secret. Otherwise Save can overwrite the previously selected profile.
+    editing_profile_id_.clear();
+    profile_api_key_edit_->clear();
+    profile_save_btn_->setEnabled(false);
+    profile_delete_btn_->setEnabled(false);
+    profile_default_btn_->setEnabled(false);
     auto r = LlmProfileRepository::instance().get_profile(id);
     if (r.is_err()) {
         const QString error = QString::fromStdString(r.error());

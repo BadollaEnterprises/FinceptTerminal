@@ -515,6 +515,17 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertIn("if (r.is_err())", selected)
         self.assertIn("Could not load LLM profile", selected)
         self.assertIn("privacy::redact_text(error)", selected)
+        read = selected.index("get_profile(id)")
+        self.assertLess(selected.index("editing_profile_id_.clear()"), read)
+        self.assertLess(selected.index("profile_api_key_edit_->clear()"), read)
+        self.assertLess(selected.index("profile_save_btn_->setEnabled(false)"), read)
+
+        populate = source[source.index("void LlmConfigSection::populate_profile_form"):
+                          source.index("void LlmConfigSection::clear_profile_form")]
+        clear = source[source.index("void LlmConfigSection::clear_profile_form"):
+                       source.index("void LlmConfigSection::show_profile_status")]
+        self.assertIn("profile_save_btn_->setEnabled(true)", populate)
+        self.assertIn("profile_save_btn_->setEnabled(true)", clear)
 
         changed = source[source.index("void LlmConfigSection::on_profile_provider_changed"):
                          source.index("void LlmConfigSection::on_save_profile()")]
