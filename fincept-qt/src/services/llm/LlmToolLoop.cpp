@@ -103,6 +103,11 @@ LlmResponse LlmService::do_tool_loop(QJsonArray loop_messages, const QString& ur
         fu["messages"] = loop_messages;
         // Temperature intentionally omitted — provider default.
         apply_openai_token_limit(fu);
+        const int round_limit = budget.clamp_completion_allowance(resolved_max_tokens());
+        if (fu.contains(QStringLiteral("max_completion_tokens")))
+            fu[QStringLiteral("max_completion_tokens")] = round_limit;
+        else
+            fu[QStringLiteral("max_tokens")] = round_limit;
 
         QJsonArray tools =
             mcp::McpService::instance().format_tools_for_openai(detail::apply_request_policy(tool_filter_));

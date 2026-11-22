@@ -872,6 +872,16 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertNotIn("return catalog_cap", resolver)
         self.assertNotIn("constexpr int kFallback", resolver)
 
+    def test_tool_loops_reduce_each_call_to_the_remaining_output_budget(self):
+        policy = (ROOT / "src/services/llm/LlmRequestPolicy.h").read_text(encoding="utf-8")
+        openai_loop = (ROOT / "src/services/llm/LlmToolLoop.cpp").read_text(encoding="utf-8")
+        native_loops = (ROOT / "src/services/llm/LlmService.cpp").read_text(encoding="utf-8")
+
+        self.assertIn("int clamp_completion_allowance(int requested) const", policy)
+        self.assertIn("budget.clamp_completion_allowance(resolved_max_tokens())", openai_loop)
+        self.assertIn("ant_budget.clamp_completion_allowance(resolved_max_tokens())", native_loops)
+        self.assertIn("gem_budget.clamp_completion_allowance(resolved_max_tokens())", native_loops)
+
     def test_selected_agent_profiles_share_runtime_provider_policy(self):
         header = (ROOT / "src/storage/repositories/LlmProfileRepository.h").read_text(encoding="utf-8")
         source = (ROOT / "src/storage/repositories/LlmProfileRepository.cpp").read_text(encoding="utf-8")

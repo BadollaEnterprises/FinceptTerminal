@@ -271,6 +271,17 @@ int run_tool_selftest() {
             !output_budget.exhaustion_note().contains(QStringLiteral("12,000")))
             errs << QStringLiteral("the completion-budget explanation omitted used/limit counts: %1")
                         .arg(output_budget.exhaustion_note());
+        ai_chat::detail::ToolLoopBudget allowance_budget(/*max_rounds=*/10, /*prompt_token_limit=*/32000,
+                                                         /*completion_token_limit=*/12000);
+        allowance_budget.note_completion_tokens(9000);
+        if (allowance_budget.clamp_completion_allowance(4096) != 3000)
+            errs << QStringLiteral("the next request was not reduced to the remaining completion budget");
+        if (allowance_budget.clamp_completion_allowance(2000) != 2000)
+            errs << QStringLiteral("the remaining completion budget enlarged a smaller request");
+        ai_chat::detail::ToolLoopBudget unlimited_output(/*max_rounds=*/10, /*prompt_token_limit=*/32000,
+                                                         /*completion_token_limit=*/0);
+        if (unlimited_output.clamp_completion_allowance(4096) != 4096)
+            errs << QStringLiteral("a disabled completion budget changed the request allowance");
         if (ai_chat::detail::tool_loop_summary_max_tokens() != 1024)
             errs << QStringLiteral("the exhausted-loop summary allowance is not the safe 1,024-token default");
         // UI-changing tools must be barriers: two ui_act calls racing would

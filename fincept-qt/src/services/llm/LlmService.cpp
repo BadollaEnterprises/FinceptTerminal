@@ -964,7 +964,7 @@ LlmResponse LlmService::do_request(const QString& user_message, const std::vecto
                 QJsonObject fu;
                 fu["model"] = model_;
                 fu["messages"] = loop_msgs;
-                fu["max_tokens"] = resolved_max_tokens();
+                fu["max_tokens"] = ant_budget.clamp_completion_allowance(resolved_max_tokens());
                 if (!system_prompt_.isEmpty())
                     fu["system"] = system_prompt_;
                 if (!ant_tools.isEmpty())
@@ -1196,7 +1196,8 @@ LlmResponse LlmService::do_request(const QString& user_message, const std::vecto
                     QJsonObject fu_body;
                     fu_body["contents"] = fu_contents;
                     QJsonObject gen_cfg;
-                    gen_cfg["maxOutputTokens"] = resolved_max_tokens();
+                    gen_cfg["maxOutputTokens"] =
+                        gem_budget.clamp_completion_allowance(resolved_max_tokens());
                     fu_body["generationConfig"] = gen_cfg;
                     if (!system_prompt_.isEmpty())
                         fu_body["systemInstruction"] =

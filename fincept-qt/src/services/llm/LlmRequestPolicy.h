@@ -514,6 +514,17 @@ class ToolLoopBudget {
     int rounds_used() const { return rounds_; }
     int prompt_tokens_used() const { return prompt_tokens_used_; }
     int completion_tokens_used() const { return completion_tokens_used_; }
+    /// Keep the next provider request inside the unspent output budget. The
+    /// caller only knows actual usage after the response, so this is the last
+    /// point where a near-limit turn can be prevented from overshooting by a
+    /// full normal reply allowance.
+    int clamp_completion_allowance(int requested) const {
+        const int safe_requested = std::max(1, requested);
+        if (completion_token_limit_ <= 0)
+            return safe_requested;
+        const int remaining = std::max(1, completion_token_limit_ - completion_tokens_used_);
+        return std::min(safe_requested, remaining);
+    }
     bool prompt_tokens_exhausted() const {
         return prompt_token_limit_ > 0 && prompt_tokens_used_ >= prompt_token_limit_;
     }
