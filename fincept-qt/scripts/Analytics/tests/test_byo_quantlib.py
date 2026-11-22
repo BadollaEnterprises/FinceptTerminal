@@ -101,6 +101,15 @@ class ByoQuantLibTest(unittest.TestCase):
         self.assertAlmostEqual(root["data"]["root"], math.pi, places=8)
         self.assertEqual(convolution["data"]["values"], [0.0, 1.0, 2.5, 4.0, 1.5])
 
+    def test_ode_step_must_be_positive_and_finite(self):
+        mod = load_module()
+        body = {"t_span": [0, 1], "y0": [10, 5], "system": "lotka_volterra"}
+        for step in (0, -0.1, float("nan")):
+            with self.subTest(step=step):
+                answer = mod.execute("numerical/ode/solve", {**body, "h": step})
+                self.assertIn("h must be positive and finite", answer.get("error", ""))
+                self.assertEqual(answer["meta"]["fincept_credits"], 0)
+
     def test_financial_solver_module_is_available_without_cloud_entitlements(self):
         mod = load_module()
         expected = {

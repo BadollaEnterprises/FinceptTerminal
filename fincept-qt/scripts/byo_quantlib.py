@@ -1391,6 +1391,8 @@ def _ode_solve(body: Mapping[str, Any]) -> Dict[str, Any]:
     if end <= start:
         raise ValueError("t_span end must follow start")
     step = float(body.get("h", 0.01))
+    if not math.isfinite(step) or step <= 0:
+        raise ValueError("h must be positive and finite")
     count = max(1, min(100000, math.ceil((end - start) / step)))
     step = (end - start) / count
     system = str(body.get("system", "lotka_volterra"))
