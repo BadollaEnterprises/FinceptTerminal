@@ -770,6 +770,13 @@ class AgentProviderPolicyTest(unittest.TestCase):
             self.assertNotIn(stale_accessor, payload)
         self.assertIn("kFeatureAgent", payload)
 
+    def test_agent_processes_reap_per_run_mcp_descendants(self):
+        service = AGENT_SERVICE.read_text(encoding="utf-8")
+        cleanup = service[service.index("void AgentService::release_agent_tree"):
+                          service.index("void AgentService::kill_agent_processes_for_quit")]
+        self.assertIn("process::kill_tree(proc);", cleanup)
+        self.assertNotIn("process::release_tree(proc);", cleanup)
+
     def test_saved_agent_model_cannot_restore_a_retired_or_metered_backend(self):
         service = AGENT_SERVICE.read_text(encoding="utf-8")
         payload = service[service.index("QJsonObject AgentService::build_payload") :

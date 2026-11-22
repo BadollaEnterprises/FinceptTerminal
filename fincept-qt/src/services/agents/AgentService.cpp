@@ -700,11 +700,6 @@ QProcessEnvironment AgentService::agent_process_env() const {
     return env;
 }
 
-namespace {
-/// Set on an agent child this service killed (cancel / quit): its end is not "by itself".
-constexpr const char* kAgentProcKilledProp = "fincept_agent_killed";
-} // namespace
-
 QProcess* AgentService::new_agent_process() {
     auto* proc = new QProcess(this);
     // Share the standard Python env + cwd with PythonRunner so every finagent spawn
@@ -728,14 +723,17 @@ QProcess* AgentService::new_agent_process() {
 void AgentService::kill_agent_tree(QProcess* proc) {
     if (!proc)
         return;
-    proc->setProperty(kAgentProcKilledProp, true);
     process::kill_tree(proc);
 }
 
 void AgentService::release_agent_tree(QProcess* proc, QProcess::ExitStatus status) {
-    if (proc && status == QProcess::NormalExit && !proc->property(kAgentProcKilledProp).toBool())
-        process::release_tree(proc);
-    // Any other end: the tree's job (Windows) reaps what is left when `proc` is deleted.
+    Q_UNUSED(status);
+    // A successful one-shot agent may have started per-run MCP servers with
+    // their own credential environment. They are not shared daemons and must
+    // not outlive the run that authorized them. kill_tree() is also safe after
+    // cancellation, where the tree was already terminated.
+    if (proc)
+        process::kill_tree(proc);
 }
 
 void AgentService::kill_agent_processes_for_quit() {
