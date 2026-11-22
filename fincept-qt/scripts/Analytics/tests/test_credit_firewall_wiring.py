@@ -296,6 +296,14 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertNotIn(".arg(bid, acct_id, result.error)", source)
         self.assertNotIn('QString("WS error: %1").arg(e)', source)
 
+    def test_data_stream_manager_diagnostics_mask_accounts_and_topics(self):
+        source = (ROOT / "src/trading/DataStreamManager.cpp").read_text(encoding="utf-8")
+        self.assertGreaterEqual(source.count("log_mask(account_id)"), 6)
+        self.assertGreaterEqual(source.count("dsm_log_topic(topic)"), 3)
+        self.assertNotIn('"refresh: ignoring malformed topic: " + topic', source)
+        self.assertNotIn('"refresh: no stream for " + topic', source)
+        self.assertNotIn('"refresh: throttled " + topic', source)
+
     def test_exchange_process_diagnostics_redact_external_errors(self):
         pool = (ROOT / "src/trading/ExchangeDaemonPool.cpp").read_text(encoding="utf-8")
         session = (ROOT / "src/trading/ExchangeSession.cpp").read_text(encoding="utf-8")

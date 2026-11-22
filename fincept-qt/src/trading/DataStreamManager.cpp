@@ -87,6 +87,15 @@ QHash<QString, qint64>& dsm_last_channel_refresh() {
     static QHash<QString, qint64> last;
     return last;
 }
+
+// Preserve enough structure to diagnose DataHub routing without persisting the
+// account id or optional symbol carried by broker topics.
+QString dsm_log_topic(const QString& topic) {
+    const QStringList parts = topic.split(QLatin1Char(':'));
+    if (parts.size() < 4)
+        return QStringLiteral("<malformed broker topic>");
+    return QStringLiteral("broker:%1:%2:%3").arg(parts[1], log_mask(parts[2]), parts[3]);
+}
 } // namespace
 
 DataStreamManager& DataStreamManager::instance() {
@@ -114,7 +123,7 @@ DataStreamManager::DataStreamManager() {
             return;
         LOG_INFO(DSM_TAG, QString("Credentials changed for %1 — rebuilding stream "
                                   "with fresh token")
-                              .arg(account_id));
+                              .arg(log_mask(account_id)));
         restart_stream(account_id);
     });
 }
@@ -168,7 +177,7 @@ void DataStreamManager::start_stream(const QString& account_id) {
 
     // Verify account exists
     if (!AccountManager::instance().has_account(account_id)) {
-        LOG_WARN(DSM_TAG, QString("Cannot start stream: account %1 not found").arg(account_id));
+        LOG_WARN(DSM_TAG, QString("Cannot start stream: account %1 not found").arg(log_mask(account_id)));
         return;
     }
 
@@ -177,7 +186,7 @@ void DataStreamManager::start_stream(const QString& account_id) {
     streams_.insert(account_id, stream);
     stream->start();
 
-    LOG_DEBUG(DSM_TAG, QString("Started data stream for account %1").arg(account_id));
+    LOG_DEBUG(DSM_TAG, QString("Started data stream for account %1").arg(log_mask(account_id)));
 }
 
 void DataStreamManager::stop_stream(const QString& account_id) {
@@ -189,7 +198,7 @@ void DataStreamManager::stop_stream(const QString& account_id) {
     it.value()->deleteLater();
     streams_.erase(it);
 
-    LOG_DEBUG(DSM_TAG, QString("Stopped data stream for account %1").arg(account_id));
+    LOG_DEBUG(DSM_TAG, QString("Stopped data stream for account %1").arg(log_mask(account_id)));
 }
 
 void DataStreamManager::restart_stream(const QString& account_id) {
@@ -338,7 +347,7 @@ void DataStreamManager::refresh(const QStringList& topics) {
         // broker:<broker_id>:<account_id>:<channel>[:<symbol>]
         const QStringList parts = topic.split(QLatin1Char(':'));
         if (parts.size() < 4) {
-            LOG_DEBUG(DSM_TAG, "refresh: ignoring malformed topic: " + topic);
+            LOG_DEBUG(DSM_TAG, "refresh: ignoring malformed topic: " + dsm_log_topic(topic));
             continue;
         }
         const QString& account_id = parts[2];
@@ -348,7 +357,7 @@ void DataStreamManager::refresh(const QStringList& topics) {
 
         auto* stream = stream_for(account_id);
         if (!stream) {
-            LOG_DEBUG(DSM_TAG, "refresh: no stream for " + topic);
+            LOG_DEBUG(DSM_TAG, "refresh: no stream for " + dsm_log_topic(topic));
             continue;
         }
 
@@ -359,7 +368,7 @@ void DataStreamManager::refresh(const QStringList& topics) {
                                     : DSM_REFRESH_FLOOR_FAST_MS;
         qint64& last = dsm_last_channel_refresh()[account_id + QLatin1Char('|') + channel];
         if (last != 0 && now - last < floor_ms) {
-            LOG_DEBUG(DSM_TAG, "refresh: throttled " + topic);
+            LOG_DEBUG(DSM_TAG, "refresh: throttled " + dsm_log_topic(topic));
             continue;
         }
         last = now;
@@ -529,8 +538,7 @@ void DataStreamManager::open_quote_feed(QObject* owner, const QString& consumer_
                                                                                  Qt::QueuedConnection);
                                                                          });
             quote_feeds_.insert(consumer_id, QuoteFeed{account_id, topic, guard});
-            LOG_DEBUG(DSM_TAG,
-                      QString("Opened quote feed '%1' for %2 on account %3").arg(consumer_id, symbol, account_id));
+            LOG_DEBUG(DSM_TAG, QString("Opened quote feed for account %1").arg(log_mask(account_id)));
         },
         Qt::QueuedConnection);
 }
