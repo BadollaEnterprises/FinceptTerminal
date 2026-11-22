@@ -15,6 +15,7 @@
 
 #include "core/config/ProfileManager.h"
 #include "core/logging/Logger.h"
+#include "core/process/ProcessEnvironment.h"
 #include "services/updater/UpdateInstaller.h"
 #include "services/updater/UpdateInstallerPlatform.h"
 
@@ -254,6 +255,7 @@ class WindowsIfwInstaller final : public UpdateInstaller {
         // (and the new terminal it starts, which sets it again) must not
         // inherit it.
         QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+        process::strip_unmanaged_credentials(env);
         env.remove(QStringLiteral("QT_TLS_BACKEND"));
         proc.setProcessEnvironment(env);
         // installerbase is a console-subsystem program: give it its own

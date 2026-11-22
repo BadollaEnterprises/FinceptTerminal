@@ -1,6 +1,7 @@
 #include "screens/dashboard/widgets/VideoPlayerWidget.h"
 
 #include "core/logging/Logger.h"
+#include "core/process/ProcessEnvironment.h"
 #include "ui/theme/Theme.h"
 
 #include <QCoreApplication>
@@ -335,6 +336,9 @@ void VideoPlayerWidget::resolve_youtube_and_play(const QString& youtube_url, con
     // Use yt-dlp to get the best direct stream URL (no downloading, just URL extraction)
     auto* proc = new QProcess(this);
     ytdlp_proc_ = proc;
+    QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+    process::strip_unmanaged_credentials(env);
+    proc->setProcessEnvironment(env);
     connect(proc, &QProcess::finished, this, &VideoPlayerWidget::on_ytdlp_finished);
     connect(proc, &QProcess::finished, proc, &QProcess::deleteLater);
     connect(proc, &QProcess::errorOccurred, this, &VideoPlayerWidget::on_ytdlp_error);

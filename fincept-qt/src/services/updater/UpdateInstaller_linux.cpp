@@ -8,6 +8,7 @@
 // no installer exists for them.
 
 #include "core/logging/Logger.h"
+#include "core/process/ProcessEnvironment.h"
 #include "services/updater/UpdateInstaller.h"
 #include "services/updater/UpdateInstallerPlatform.h"
 
@@ -84,6 +85,9 @@ class PackageInstaller final : public UpdateInstaller {
         process_ = new QProcess(this);
         process_->setProgram(pkexec);
         process_->setArguments(args);
+        QProcessEnvironment process_env = QProcessEnvironment::systemEnvironment();
+        process::strip_unmanaged_credentials(process_env);
+        process_->setProcessEnvironment(process_env);
         process_->setProcessChannelMode(QProcess::MergedChannels);
         process_->setStandardInputFile(QProcess::nullDevice());
         connect(process_, &QProcess::readyRead, this, &PackageInstaller::read_output);

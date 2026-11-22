@@ -165,6 +165,23 @@ class CreditFirewallWiringTest(unittest.TestCase):
         source = (ROOT / "src/python/PythonEnvRelocation.cpp").read_text(encoding="utf-8")
         self.assertIn("process::strip_unmanaged_credentials", source)
 
+    def test_video_resolver_does_not_inherit_credentials(self):
+        source = (ROOT / "src/screens/dashboard/widgets/VideoPlayerWidget.cpp").read_text(encoding="utf-8")
+        self.assertIn("process::strip_unmanaged_credentials", source)
+        self.assertIn("setProcessEnvironment", source)
+
+    def test_updater_helpers_do_not_inherit_credentials(self):
+        paths = [
+            "src/services/updater/InstallContext.cpp",
+            "src/services/updater/UpdateInstaller_mac.cpp",
+            "src/services/updater/UpdateInstaller_linux.cpp",
+            "src/services/updater/UpdateInstaller_win.cpp",
+        ]
+        for path in paths:
+            with self.subTest(path=path):
+                source = (ROOT / path).read_text(encoding="utf-8")
+                self.assertIn("process::strip_unmanaged_credentials", source)
+
     def test_macro_and_geopolitics_services_check_firewall(self):
         geopolitics = (ROOT / "src/services/geopolitics/GeopoliticsService.cpp").read_text(encoding="utf-8")
         macro = (ROOT / "src/services/economics/FinceptMacroService.cpp").read_text(encoding="utf-8")

@@ -22,6 +22,7 @@
 
 #include "core/config/EditionIdentity.h"
 #include "core/logging/Logger.h"
+#include "core/process/ProcessEnvironment.h"
 #include "services/updater/UpdateInstaller.h"
 #include "services/updater/UpdateInstallerPlatform.h"
 
@@ -145,6 +146,9 @@ class MacBundleInstaller final : public UpdateInstaller {
         auto* proc = new QProcess(this);
         proc->setProgram(program);
         proc->setArguments(args);
+        QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+        process::strip_unmanaged_credentials(env);
+        proc->setProcessEnvironment(env);
         proc->setProcessChannelMode(QProcess::MergedChannels);
         proc->setStandardInputFile(QProcess::nullDevice());
         auto* timer = new QTimer(proc);
@@ -352,6 +356,9 @@ class MacBundleInstaller final : public UpdateInstaller {
         proc.setArguments({QStringLiteral("-c"), QString::fromUtf8(kHandOverScript), QStringLiteral("fincept-update"),
                            privileged_ ? QStringLiteral("open") : QStringLiteral("both"), pid, target_, staged_, old_,
                            privileged_ ? marker_ : QString()});
+        QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+        process::strip_unmanaged_credentials(env);
+        proc.setProcessEnvironment(env);
         proc.setWorkingDirectory(QDir::homePath());
         proc.setStandardInputFile(QProcess::nullDevice());
         proc.setStandardOutputFile(QProcess::nullDevice());

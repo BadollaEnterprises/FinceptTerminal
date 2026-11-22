@@ -2,6 +2,7 @@
 
 #include "core/config/EditionIdentity.h"
 #include "core/logging/Logger.h"
+#include "core/process/ProcessEnvironment.h"
 
 #include <QCoreApplication>
 #include <QDir>
@@ -80,6 +81,9 @@ bool install_query_succeeds(const QString& program, const QStringList& args) {
     if (exe.isEmpty())
         return false;
     QProcess proc;
+    QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+    process::strip_unmanaged_credentials(env);
+    proc.setProcessEnvironment(env);
     proc.setProcessChannelMode(QProcess::MergedChannels);
     proc.start(exe, args);
     if (!proc.waitForStarted(2000))
