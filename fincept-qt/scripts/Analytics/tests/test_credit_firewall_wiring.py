@@ -470,6 +470,18 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertIn("Could not reload profile before save", save)
         self.assertGreaterEqual(save.count("privacy::redact_text(error)"), 2)
 
+    def test_profile_save_reconciles_rows_committed_before_secret_failure(self):
+        source = (ROOT / "src/screens/settings/LlmConfigSection_Profiles.cpp").read_text(encoding="utf-8")
+        save = source[source.index("void LlmConfigSection::on_save_profile()"):
+                      source.index("void LlmConfigSection::on_delete_profile()")]
+        failed = save[save.index("if (r.is_err())"):save.index("show_profile_status(tr(\"Profile saved\")")]
+        self.assertIn("get_profile(profile.id)", failed)
+        self.assertIn("persisted_matches", failed)
+        self.assertIn("editing_profile_id_ = profile.id", failed)
+        self.assertIn("populate_profile_form(persisted.value())", failed)
+        self.assertIn("emit config_changed()", failed)
+        self.assertIn("privacy::redact_text(error)", failed)
+
     def test_local_chat_mode_diagnostics_scrub_conversation_storage_errors(self):
         source = (ROOT / "src/screens/chat_mode/ChatModeScreen.cpp").read_text(encoding="utf-8")
         self.assertIn('#include "core/privacy/LogRedact.h"', source)

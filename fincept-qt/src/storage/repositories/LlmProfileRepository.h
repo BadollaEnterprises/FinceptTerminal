@@ -88,7 +88,7 @@ class LlmProfileRepository : public BaseRepository<LlmProfile> {
     /// Single profile by id.
     Result<LlmProfile> get_profile(const QString& id) const;
 
-    /// Save (insert or replace).
+    /// Save by inserting or updating the same row in place.
     Result<void> save_profile(const LlmProfile& p);
 
     /// Delete profile and all its assignments.

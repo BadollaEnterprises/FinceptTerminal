@@ -687,7 +687,29 @@ void LlmConfigSection::on_save_profile() {
 
     auto r = LlmProfileRepository::instance().save_profile(profile);
     if (r.is_err()) {
-        show_profile_status(tr("Save failed: ") + QString::fromStdString(r.error()), true);
+        const QString error = QString::fromStdString(r.error());
+        // Credential hardening happens after the row is committed. Reconcile a
+        // matching row so a retry edits it instead of creating a second profile.
+        const auto persisted = LlmProfileRepository::instance().get_profile(profile.id);
+        if (persisted.is_ok()) {
+            const auto& saved = persisted.value();
+            const bool persisted_matches = saved.name == profile.name && saved.provider == profile.provider &&
+                                           saved.model_id == profile.model_id && saved.api_key == profile.api_key &&
+                                           saved.base_url == profile.base_url &&
+                                           saved.temperature == profile.temperature &&
+                                           saved.max_tokens == profile.max_tokens &&
+                                           saved.system_prompt == profile.system_prompt &&
+                                           saved.is_default == profile.is_default &&
+                                           saved.reasoning_effort == profile.reasoning_effort;
+            if (persisted_matches) {
+                editing_profile_id_ = profile.id;
+                populate_profile_form(persisted.value());
+                load_profiles();
+                emit config_changed();
+            }
+        }
+        show_profile_status(tr("Save failed: ") + error, true);
+        LOG_ERROR(TAG_PROFILES, "save_profile failed: " + privacy::redact_text(error));
         return;
     }
 
