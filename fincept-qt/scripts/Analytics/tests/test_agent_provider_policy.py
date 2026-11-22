@@ -510,6 +510,8 @@ class AgentProviderPolicyTest(unittest.TestCase):
             with self.subTest(provider=provider), mock.patch.dict(sys.modules, {module_name: fake_module}):
                 model = models.create_model(config)
                 self.assertEqual(model.kwargs[limit_key], 777)
+                retry_key = "retries" if provider == "google" else "max_retries"
+                self.assertEqual(model.kwargs[retry_key], 0)
 
     def test_deep_agents_reject_adapters_without_an_enforceable_output_ceiling(self):
         models = load_deepagent_models()
@@ -578,6 +580,8 @@ class AgentProviderPolicyTest(unittest.TestCase):
         source = MODEL_REGISTRY.read_text(encoding="utf-8")
         create = source[source.index("def create_model(") :]
         self.assertIn('max_tok = cls.output_token_limit(kwargs.pop("max_tokens", None))', create)
+        self.assertIn('model_kwargs["max_retries"] = 0', create)
+        self.assertIn('"max_retries": 0', create)
 
     def test_agent_model_registry_rejects_insecure_or_blocked_key_endpoints(self):
         models = load_path("finagent_models_registry_endpoints", MODEL_REGISTRY).ModelsRegistry
@@ -646,10 +650,14 @@ class AgentProviderPolicyTest(unittest.TestCase):
             self.assertEqual(values["LITELLM_CHAT_MAX_TOKENS"], "777")
             self.assertEqual(values["OPENAI_API_BASE"], "https://proxy.example/v1")
             self.assertEqual(values["DEEPSEEK_API_KEY"], "owned")
+            self.assertEqual(values["MAX_RETRY"], "1")
+            self.assertEqual(values["LITELLM_MAX_RETRY"], "1")
             config.clear_llm_config()
             self.assertNotIn("DEEPSEEK_API_KEY", os.environ)
             self.assertNotIn("OPENAI_API_BASE", os.environ)
             self.assertNotIn("CHAT_MAX_TOKENS", os.environ)
+            self.assertNotIn("MAX_RETRY", os.environ)
+            self.assertNotIn("LITELLM_MAX_RETRY", os.environ)
 
         with mock.patch.dict(os.environ, {}, clear=True):
             values = config.apply_llm_config({

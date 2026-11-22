@@ -140,6 +140,7 @@ def create_model(config: dict[str, Any]):
             "api_key":    api_key,
             "model_name": model or "claude-sonnet-4-5-20250514",
             "max_tokens": max_tokens,
+            "max_retries": 0,
         }
         if base_url:
             kwargs["anthropic_api_url"] = base_url
@@ -147,7 +148,12 @@ def create_model(config: dict[str, Any]):
 
     if provider == "openai":
         from langchain_openai import ChatOpenAI
-        kwargs = {"api_key": api_key, "model": model or "gpt-4o-mini", "max_tokens": max_tokens}
+        kwargs = {
+            "api_key": api_key,
+            "model": model or "gpt-4o-mini",
+            "max_tokens": max_tokens,
+            "max_retries": 0,
+        }
         if base_url:
             kwargs["base_url"] = base_url
         return ChatOpenAI(**kwargs)
@@ -158,6 +164,7 @@ def create_model(config: dict[str, Any]):
             google_api_key=api_key,
             model=model or "gemini-2.0-flash",
             max_output_tokens=max_tokens,
+            retries=0,
         )
 
     if provider == "groq":
@@ -166,6 +173,7 @@ def create_model(config: dict[str, Any]):
             api_key=api_key,
             model_name=model or "llama-3.3-70b-versatile",
             max_tokens=max_tokens,
+            max_retries=0,
         )
 
     if provider in _OPENAI_COMPAT:
@@ -178,6 +186,7 @@ def create_model(config: dict[str, Any]):
             model=model or "default",
             base_url=url,
             max_tokens=max_tokens,
+            max_retries=0,
         )
 
     raise ValueError(

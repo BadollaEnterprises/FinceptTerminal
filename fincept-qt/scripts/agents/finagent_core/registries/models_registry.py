@@ -448,7 +448,7 @@ class ModelsRegistry:
                     "model": "assistant",
                 }
                 oai_kwargs = {"id": final_model_id, "base_url": _cleaned_base_url,
-                              "role_map": _STANDARD_ROLE_MAP}
+                              "role_map": _STANDARD_ROLE_MAP, "max_retries": 0}
                 if final_api_key:
                     oai_kwargs["api_key"] = final_api_key
                 if "temperature" in kwargs:
@@ -481,6 +481,13 @@ class ModelsRegistry:
             for k, v in kwargs.items():
                 if v is not None:
                     model_kwargs[k] = v
+
+            # Provider SDKs commonly retry a failed HTTP request two or more
+            # times by default. Agent loops already surface failures and let the
+            # user retry deliberately; an SDK replay is hidden paid work. Keep
+            # OpenAI-protocol adapters (including DeepSeek) single-attempt.
+            if "openai" in class_path.lower() or "deepseek" in class_path.lower():
+                model_kwargs["max_retries"] = 0
 
             # Agno's OpenAI-protocol models default their role_map to
             # {"system": "developer", ...}, which is ONLY valid for OpenAI's

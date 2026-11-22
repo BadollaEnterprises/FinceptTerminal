@@ -129,6 +129,13 @@ def apply_llm_config(config: dict[str, Any]) -> dict[str, str]:
         env_vars[name] = token_text
         os.environ[name] = token_text
 
+    # RD-Agent wraps LiteLLM in its own retry loop. Its default is ten total
+    # attempts, which can multiply a single paid agent step even though the
+    # inner LiteLLM request already has max_retries=0. One means one attempt.
+    for name in ("MAX_RETRY", "LITELLM_MAX_RETRY"):
+        env_vars[name] = "1"
+        os.environ[name] = "1"
+
     # --- Embedding model ---
     embedding_model = config.get("llm_embedding_model", _DEFAULT_EMBEDDING)
     env_vars["EMBEDDING_MODEL"] = embedding_model
@@ -141,5 +148,6 @@ def clear_llm_config() -> None:
     """Remove rdagent LLM env vars (call between tasks if needed)."""
     for key in ("CHAT_MODEL", "OPENAI_API_KEY", "ANTHROPIC_API_KEY",
                 "CHAT_OPENAI_BASE_URL", "OPENAI_API_BASE", "CHAT_MAX_TOKENS",
-                "LITELLM_CHAT_MAX_TOKENS", "EMBEDDING_MODEL", *_PROVIDER_API_KEY_NAMES):
+                "LITELLM_CHAT_MAX_TOKENS", "MAX_RETRY", "LITELLM_MAX_RETRY",
+                "EMBEDDING_MODEL", *_PROVIDER_API_KEY_NAMES):
         os.environ.pop(key, None)
