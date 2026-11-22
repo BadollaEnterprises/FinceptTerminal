@@ -56,7 +56,7 @@ hex_to_bin() {
     for ((i = 0; i < ${#hex}; i += 2)); do
         fmt+="\\x${hex:i:2}"
     done
-    printf "$fmt"
+    printf '%b' "$fmt"
 }
 
 bin_to_hex() {

@@ -189,6 +189,12 @@ def main() -> int:
     )
     require(
         lint_text,
+        "python3 .github/scripts/test_sign_updates_manifest.py",
+        "packaging-metadata job must test updater-signing helpers",
+        failures,
+    )
+    require(
+        lint_text,
         "python3 .github/scripts/test_check_windows_dependency_closure.py",
         "packaging-metadata job must test the Windows dependency closure checker",
         failures,
