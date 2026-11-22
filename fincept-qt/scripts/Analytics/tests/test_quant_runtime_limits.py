@@ -11,6 +11,7 @@ ANALYTICS = Path(__file__).resolve().parents[1]
 LIMITS = ANALYTICS / "quant" / "runtime_limits.py"
 QUANT_MODULES = ANALYTICS / "quant" / "quant_modules_3042.py"
 ECONOMICS_ENGINE = ANALYTICS / "economics" / "analytics_engine.py"
+PORTFOLIO_RISK = ANALYTICS / "portfolioManagement" / "risk_management.py"
 
 
 def load_limits_module():
@@ -98,6 +99,17 @@ class QuantRuntimeLimitsTest(unittest.TestCase):
             source,
             r'bounded_workload\(\s*"monte_carlo", \[num_simulations, time_periods\], '
             r'MAX_SIMULATION_DRAWS\s*\)',
+        )
+
+    def test_portfolio_var_bounds_simulation_matrix_before_allocation(self):
+        source = PORTFOLIO_RISK.read_text(encoding="utf-8")
+        method = source[source.index("def monte_carlo_var("):
+                        source.index("def component_var(")]
+        self.assertIn(
+            "num_simulations, holding_period = _bounded_monte_carlo_shape(", method
+        )
+        self.assertLess(
+            method.index("_bounded_monte_carlo_shape("), method.index("rng.normal(")
         )
 
 

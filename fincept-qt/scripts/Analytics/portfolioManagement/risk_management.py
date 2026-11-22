@@ -14,6 +14,7 @@ VaR / ES are positive 1-day loss fractions; confidence 0.95 = the worst 5 % of d
 from datetime import datetime
 from typing import Dict, List, Optional, Union, Tuple, Callable
 from dataclasses import dataclass
+import math
 
 import numpy as np
 from scipy import stats
@@ -24,6 +25,40 @@ from config import (
     CliError, return_series, run_cli
 )
 from math_engine import RiskCalculations, StatisticalCalculations
+
+
+MAX_MONTE_CARLO_SIMULATIONS = 100_000
+MAX_MONTE_CARLO_HOLDING_PERIOD = 10_000
+MAX_MONTE_CARLO_DRAWS = 5_000_000
+
+
+def _bounded_count(value, name: str, limit: int) -> int:
+    if isinstance(value, bool):
+        raise ValueError(f"{name} must be a positive integer")
+    try:
+        numeric = float(value)
+        parsed = int(value)
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError(f"{name} must be a positive integer") from None
+    if not math.isfinite(numeric) or numeric != parsed or parsed < 1:
+        raise ValueError(f"{name} must be a positive integer")
+    if parsed > limit:
+        raise ValueError(f"{name} exceeds local limit of {limit}")
+    return parsed
+
+
+def _bounded_monte_carlo_shape(num_simulations, holding_period) -> Tuple[int, int]:
+    simulations = _bounded_count(
+        num_simulations, "num_simulations", MAX_MONTE_CARLO_SIMULATIONS
+    )
+    periods = _bounded_count(
+        holding_period, "holding_period", MAX_MONTE_CARLO_HOLDING_PERIOD
+    )
+    if simulations > MAX_MONTE_CARLO_DRAWS // periods:
+        raise ValueError(
+            f"Monte Carlo workload exceeds local limit of {MAX_MONTE_CARLO_DRAWS} draws"
+        )
+    return simulations, periods
 
 
 @dataclass
@@ -350,6 +385,9 @@ class VaRCalculations:
         Uses its own seeded generator (the global numpy RNG used to be re-seeded on every call).
         The simulated paths themselves are not returned (they were 10,000 numbers per level).
         """
+        num_simulations, holding_period = _bounded_monte_carlo_shape(
+            num_simulations, holding_period
+        )
         returns_array = np.array(returns, dtype=float)
 
         if distribution_params is None:
