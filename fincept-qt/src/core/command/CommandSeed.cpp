@@ -337,6 +337,8 @@ const SectionRow kSections[] = {
     {"equity_research", "overview", QT_TRANSLATE_NOOP("CommandSeed", "Company overview"), "chart, quote, des, hp"},
     {"equity_research", "financials", QT_TRANSLATE_NOOP("CommandSeed", "Financials"),
      "gf, fa, income statement, balance sheet, cash flow"},
+    {"equity_research", "segments", QT_TRANSLATE_NOOP("CommandSeed", "Revenue segments"),
+     "segment revenue, product revenue, geographic revenue, business lines, sec xbrl"},
     {"equity_research", "filings", QT_TRANSLATE_NOOP("CommandSeed", "Filings"), "sec, 10-k, cf"},
     {"equity_research", "analysis", QT_TRANSLATE_NOOP("CommandSeed", "Analysis"), "ratios"},
     {"equity_research", "technicals", QT_TRANSLATE_NOOP("CommandSeed", "Technicals"), "indicators, rsi, macd"},

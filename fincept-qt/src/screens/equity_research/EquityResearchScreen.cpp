@@ -22,6 +22,7 @@
 #include "screens/equity_research/EquityPeersTab.h"
 #include "screens/equity_research/EquityResearchFormat.h"
 #include "screens/equity_research/EquityResearchLinks.h"
+#include "screens/equity_research/EquitySegmentsTab.h"
 #include "screens/equity_research/EquitySentimentTab.h"
 #include "screens/equity_research/EquityTechnicalsTab.h"
 #include "screens/equity_research/EquityValuationTab.h"
@@ -107,6 +108,7 @@ struct ResearchTabSpec {
 static const ResearchTabSpec kResearchTabs[] = {
     {"overview", QT_TRANSLATE_NOOP("EquityResearchScreen", "Overview")},
     {"financials", QT_TRANSLATE_NOOP("EquityResearchScreen", "Financials")},
+    {"segments", QT_TRANSLATE_NOOP("EquityResearchScreen", "Segments")},
     {"filings", QT_TRANSLATE_NOOP("EquityResearchScreen", "Filings")},
     {"analysis", QT_TRANSLATE_NOOP("EquityResearchScreen", "Analysis")},
     {"technicals", QT_TRANSLATE_NOOP("EquityResearchScreen", "Technicals")},
@@ -325,6 +327,7 @@ void EquityResearchScreen::build_ui() {
     QWidget* const tabs[] = {
         overview_tab_,
         financials_tab_,
+        deferred([this](QWidget* p) -> QWidget* { return segments_tab_ = new EquitySegmentsTab(p); }),
         deferred([this](QWidget* p) -> QWidget* { return filings_tab_ = new EquityFilingsTab(p); }),
         deferred([this](QWidget* p) -> QWidget* { return analysis_tab_ = new EquityAnalysisTab(p); }),
         deferred([this](QWidget* p) -> QWidget* { return technicals_tab_ = new EquityTechnicalsTab(p); }),
@@ -664,6 +667,8 @@ void EquityResearchScreen::activate_tab(QWidget* tab) {
         overview_tab_->set_symbol(s);
     else if (tab == financials_tab_)
         financials_tab_->set_symbol(s);
+    else if (tab == segments_tab_)
+        segments_tab_->set_symbol(s);
     else if (tab == filings_tab_)
         filings_tab_->set_symbol(s);
     else if (tab == analysis_tab_)
@@ -1440,6 +1445,8 @@ QList<command::CommandItem> er_command_rows() {
          "overview, chart, quote, profile, company"},
         {"financials", QT_TRANSLATE_NOOP("fincept::screens::EquityResearchScreen", "Financial statements"),
          "financials, fundamentals, statements, annual report"},
+        {"segments", QT_TRANSLATE_NOOP("fincept::screens::EquityResearchScreen", "Revenue segments"),
+         "segments, segment revenue, product revenue, geographic revenue, business lines, sec xbrl"},
         {"filings", QT_TRANSLATE_NOOP("fincept::screens::EquityResearchScreen", "Company filings"),
          "filings, sec, 10-k, 10-q, 8-k, edgar, annual report"},
         {"analysis", QT_TRANSLATE_NOOP("fincept::screens::EquityResearchScreen", "Fundamental analysis"),

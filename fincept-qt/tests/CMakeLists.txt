@@ -1352,6 +1352,12 @@ fincept_add_test(tst_equity_research_format
 fincept_add_test(tst_equity_research_link_policy
     tst_equity_research_link_policy.cpp)
 
+# src/screens/equity_research/EquitySegmentsData.{h,cpp} — pure (Qt Core): the
+# source-attributed SEC inline-XBRL envelope used by the Equity Research Segments tab.
+fincept_add_test(tst_equity_segments_data
+    tst_equity_segments_data.cpp
+    "${PROJECT_SOURCE_DIR}/src/screens/equity_research/EquitySegmentsData.cpp")
+
 # One target that builds every suite and nothing of the app:
 #   cmake --build <build> --target fincept_unit_tests && ctest --test-dir <build>
 # (CI uses this, so a new suite is picked up without touching the workflow.)

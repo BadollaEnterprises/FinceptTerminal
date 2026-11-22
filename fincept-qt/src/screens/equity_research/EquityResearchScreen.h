@@ -44,6 +44,7 @@ class EquityAnalystTab;
 class EquityOwnershipTab;
 class EquityDividendsTab;
 class EquityEarningsTab;
+class EquitySegmentsTab;
 
 class EquityResearchScreen : public QWidget, public IStatefulScreen, public IGroupLinked, public ISectionLinked {
     Q_OBJECT
@@ -60,7 +61,7 @@ class EquityResearchScreen : public QWidget, public IStatefulScreen, public IGro
     void on_group_symbol_changed(const SymbolRef& ref) override;
     SymbolRef current_symbol() const override;
 
-    /// ISectionLinked — a tab by its key (overview financials filings analysis technicals peers news
+    /// ISectionLinked — a tab by its key (overview financials segments filings analysis technicals peers news
     /// sentiment valuation dividends earnings options analyst ownership; also "tab:<key>"), and
     /// "financials/<part>" (overview | income | balance | cashflow | ratios | peers; or the part as
     /// focus). The tab's own switch: it loads the symbol on screen as a click would.
@@ -159,6 +160,7 @@ class EquityResearchScreen : public QWidget, public IStatefulScreen, public IGro
     QTabWidget* tab_widget_ = nullptr;
     EquityOverviewTab* overview_tab_ = nullptr;
     EquityFinancialsTab* financials_tab_ = nullptr;
+    EquitySegmentsTab* segments_tab_ = nullptr;
     EquityFilingsTab* filings_tab_ = nullptr;
     EquityAnalysisTab* analysis_tab_ = nullptr;
     EquityTechnicalsTab* technicals_tab_ = nullptr;
@@ -173,7 +175,7 @@ class EquityResearchScreen : public QWidget, public IStatefulScreen, public IGro
     // Corporate events (equity_research_data.py events): load only when opened.
     EquityDividendsTab* dividends_tab_ = nullptr;
     EquityEarningsTab* earnings_tab_ = nullptr;
-    // Built on first show (materialize_tab): filings, analysis, technicals, sentiment,
+    // Built on first show (materialize_tab): segments, filings, analysis, technicals, sentiment,
     // valuation, dividends, earnings, options, analyst, ownership — their pointers above stay
     // null until then. Building all fourteen tabs up front was most of the 1.3–2.3 s stall of
     // opening the screen.

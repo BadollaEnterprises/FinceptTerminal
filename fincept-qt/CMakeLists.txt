@@ -2486,8 +2486,10 @@ set(SCREEN_SOURCES
     src/screens/ma_analytics/MaSensitivityWidgets.cpp
     src/screens/ma_analytics/MaCases.cpp
 
-    # Equity Research (7 tabs)
+    # Equity Research
     src/screens/equity_research/EquityResearchScreen.cpp
+    src/screens/equity_research/EquitySegmentsData.cpp
+    src/screens/equity_research/EquitySegmentsTab.cpp
     src/screens/equity_research/EquityStatementModel.cpp
     src/screens/equity_research/EquityResearchUi.cpp
     src/screens/equity_research/EquityValuationTab_Dcf.cpp
@@ -2986,6 +2988,8 @@ set_source_files_properties(
     src/screens/equity_research/EquityOptionsTab.cpp
     src/screens/equity_research/EquityAnalystTab.cpp
     src/screens/equity_research/EquityOwnershipTab.cpp
+    src/screens/equity_research/EquitySegmentsData.cpp
+    src/screens/equity_research/EquitySegmentsTab.cpp
     src/screens/calendars/CalendarsScreen.cpp
     src/screens/calendars/CalendarPanel.cpp
     src/screens/equity_research/EquityResearchScreen.cpp
