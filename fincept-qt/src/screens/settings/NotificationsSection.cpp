@@ -542,23 +542,32 @@ void NotificationsSection::build_ui() {
     connect(save_btn_, &QPushButton::clicked, this, [this]() {
         auto& repo = SettingsRepository::instance();
         auto b = [](bool v) { return v ? "1" : "0"; };
+        QStringList errors;
         if (property(kNotifTriggersReadFailedProp).toBool()) {
             LOG_WARN("Settings", logf("Alert triggers not saved: the stored triggers could not be read, so the "
                                       "checkboxes show defaults",
                                       {{"section", "notifications.triggers"},
                                        {"error", "read failed at load (logged then)"}}));
+            errors << tr("Alert triggers were not saved because their stored values could not be read.");
         } else {
-            repo.set("notifications.inapp", b(trigger_inapp_->isChecked()), "notifications");
-            repo.set("notifications.price_alerts", b(trigger_price_->isChecked()), "notifications");
-            repo.set("notifications.news_alerts", b(trigger_news_->isChecked()), "notifications");
-            repo.set("notifications.order_fills", b(trigger_orders_->isChecked()), "notifications");
-            repo.set("notifications.news_breaking", b(news_breaking_->isChecked()), "notifications");
-            repo.set("notifications.news_monitors", b(news_monitors_->isChecked()), "notifications");
-            repo.set("notifications.news_deviations", b(news_deviations_->isChecked()), "notifications");
-            repo.set("notifications.news_flash", b(news_flash_->isChecked()), "notifications");
+            const auto save_trigger = [&](const QString& key, bool checked) {
+                const auto saved = repo.set(key, b(checked), QStringLiteral("notifications"));
+                if (saved.is_err()) {
+                    const QString detail = privacy::redact_text(QString::fromStdString(saved.error()));
+                    errors << tr("Alert trigger %1 could not be saved: %2").arg(key, detail);
+                    LOG_WARN("Settings", QStringLiteral("Alert trigger setting was not saved: %1").arg(detail));
+                }
+            };
+            save_trigger(QStringLiteral("notifications.inapp"), trigger_inapp_->isChecked());
+            save_trigger(QStringLiteral("notifications.price_alerts"), trigger_price_->isChecked());
+            save_trigger(QStringLiteral("notifications.news_alerts"), trigger_news_->isChecked());
+            save_trigger(QStringLiteral("notifications.order_fills"), trigger_orders_->isChecked());
+            save_trigger(QStringLiteral("notifications.news_breaking"), news_breaking_->isChecked());
+            save_trigger(QStringLiteral("notifications.news_monitors"), news_monitors_->isChecked());
+            save_trigger(QStringLiteral("notifications.news_deviations"), news_deviations_->isChecked());
+            save_trigger(QStringLiteral("notifications.news_flash"), news_flash_->isChecked());
         }
 
-        QStringList errors;
         for (const auto& def : provider_defs()) {
             QString err;
             if (!save_provider_fields(def.id, provider_widgets_.value(def.id), &err) && !err.isEmpty())
@@ -568,9 +577,10 @@ void NotificationsSection::build_ui() {
         NotificationService::instance().reload_all_configs();
 
         if (!errors.isEmpty()) {
-            LOG_WARN("Settings", QString("Notification providers not saved (invalid input): %1").arg(errors.size()));
+            LOG_WARN("Settings", QString("Notification settings not saved: %1 error(s)").arg(errors.size()));
             QMessageBox::warning(this, tr("Notification Settings"),
-                                 tr("These providers were not saved:\n\n%1").arg(errors.join(QLatin1Char('\n'))));
+                                 tr("Some notification settings were not saved:\n\n%1")
+                                     .arg(errors.join(QLatin1Char('\n'))));
             return;
         }
 

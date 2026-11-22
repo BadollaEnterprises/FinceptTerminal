@@ -339,6 +339,23 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertIn("Could not save", save)
         self.assertIn("privacy::redact_text", save)
 
+    def test_notification_trigger_save_reports_every_settings_write_failure(self):
+        section = (ROOT / "src/screens/settings/NotificationsSection.cpp").read_text(encoding="utf-8")
+        save_handler = section[
+            section.index("connect(save_btn_, &QPushButton::clicked"):
+            section.index("void NotificationsSection::reload()")
+        ]
+        self.assertIn("const auto saved = repo.set", save_handler)
+        self.assertIn("if (saved.is_err())", save_handler)
+        self.assertIn("privacy::redact_text(QString::fromStdString(saved.error()))", save_handler)
+        self.assertIn("Alert triggers were not saved", save_handler)
+        for key in (
+            "notifications.inapp", "notifications.price_alerts", "notifications.news_alerts",
+            "notifications.order_fills", "notifications.news_breaking", "notifications.news_monitors",
+            "notifications.news_deviations", "notifications.news_flash",
+        ):
+            self.assertIn(key, save_handler)
+
     def test_llm_settings_diagnostics_scrub_storage_errors_and_profile_identity(self):
         providers = (ROOT / "src/screens/settings/LlmConfigSection_Providers.cpp").read_text(encoding="utf-8")
         profiles = (ROOT / "src/screens/settings/LlmConfigSection_Profiles.cpp").read_text(encoding="utf-8")
