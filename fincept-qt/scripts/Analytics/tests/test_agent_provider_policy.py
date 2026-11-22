@@ -74,6 +74,19 @@ class AgentProviderPolicyTest(unittest.TestCase):
         self.assertEqual(guard.max_wall_s, 900)
         self.assertEqual(guard.max_steps, 20)
 
+    def test_agentic_usage_metrics_cannot_reduce_spend(self):
+        budget = load_path("finagent_budget_normalization", AGENT_BUDGET)
+        guard = budget.BudgetGuard.from_config({"model": {"model_id": "deepseek-chat"}})
+
+        class Response:
+            metrics = {"input_tokens": -500, "output_tokens": -20}
+
+        guard.tokens_used = 100
+        guard.cost_used = 0.25
+        guard.record_llm_call("prompt", Response())
+        self.assertGreaterEqual(guard.tokens_used, 100)
+        self.assertGreaterEqual(guard.cost_used, 0.25)
+
     def test_deepseek_wins_over_legacy_and_other_keys(self):
         policy = load_module()
         keys = {"fincept": "hosted", "OLLAMA_API_KEY": "local", "ANTHROPIC_API_KEY": "claude",

@@ -106,6 +106,11 @@ class BudgetGuard:
         except Exception:
             pass
 
+        # Provider/gateway metrics are untrusted accounting input. Negative
+        # counts must never refund earlier usage or weaken a cumulative cap.
+        in_tok = max(0, in_tok)
+        out_tok = max(0, out_tok)
+
         if in_tok == 0 and out_tok == 0:
             # Best-effort estimation.
             content = ""
