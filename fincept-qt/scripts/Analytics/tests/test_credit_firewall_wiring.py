@@ -242,6 +242,15 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertGreaterEqual(tools.count("if (!aichat::store_saved_prompts(saved_prompts_))"), 2)
         self.assertIn("Could not delete the prompt.", tools)
 
+    def test_ai_chat_rolls_back_failed_pin_writes(self):
+        header = (ROOT / "src/screens/ai_chat/AiChatScreen.h").read_text(encoding="utf-8")
+        sessions = (ROOT / "src/screens/ai_chat/AiChatScreen_Sessions.cpp").read_text(encoding="utf-8")
+        self.assertIn("bool store_pins() const;", header)
+        self.assertIn("const bool was_pinned = pinned_.contains(id);", sessions)
+        self.assertIn("if (!store_pins())", sessions)
+        self.assertIn("Could not save pinned sessions.", sessions)
+        self.assertIn("if (was_pinned)", sessions)
+
     def test_llm_settings_diagnostics_scrub_storage_errors_and_profile_identity(self):
         providers = (ROOT / "src/screens/settings/LlmConfigSection_Providers.cpp").read_text(encoding="utf-8")
         profiles = (ROOT / "src/screens/settings/LlmConfigSection_Profiles.cpp").read_text(encoding="utf-8")

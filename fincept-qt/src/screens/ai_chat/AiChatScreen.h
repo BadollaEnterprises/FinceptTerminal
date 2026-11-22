@@ -235,7 +235,7 @@ class AiChatScreen : public QWidget,
     void delete_session(const QString& id);
     void set_pinned(const QString& id, bool pinned);
     void load_pins();
-    void store_pins() const;
+    bool store_pins() const;
     QString session_title(const QString& id) const;
     QString conversation_markdown(const QString& session_id) const;
     void export_markdown(const QString& session_id);

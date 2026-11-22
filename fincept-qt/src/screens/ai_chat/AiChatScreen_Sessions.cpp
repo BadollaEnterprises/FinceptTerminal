@@ -88,15 +88,20 @@ void AiChatScreen::load_pins() {
             pinned_.insert(v.toString());
 }
 
-void AiChatScreen::store_pins() const {
+bool AiChatScreen::store_pins() const {
     QJsonArray arr;
     for (const QString& id : pinned_)
         arr.append(id);
     const auto r = SettingsRepository::instance().set(QStringLiteral("ai_chat.pinned_sessions"),
                                                       QString::fromUtf8(QJsonDocument(arr).toJson(QJsonDocument::Compact)),
                                                       QStringLiteral("ai_chat"));
-    if (r.is_err())
-        LOG_WARN(kAicSessionsTag, "Could not store the pinned sessions");
+    if (r.is_err()) {
+        LOG_ERROR(kAicSessionsTag,
+                  "Could not store the pinned sessions: " +
+                      privacy::redact_text(QString::fromStdString(r.error())));
+        return false;
+    }
+    return true;
 }
 
 void AiChatScreen::load_sessions() {
@@ -397,8 +402,9 @@ void AiChatScreen::delete_session(const QString& id) {
         return;
     }
     snippets_.remove(id);
-    if (pinned_.remove(id))
-        store_pins();
+    if (pinned_.remove(id) && !store_pins())
+        status_->show_notice(tr("Session deleted, but its stale pin could not be removed."), QString(), {}, 6000,
+                             ui::ScreenStatusBar::Tone::Warn);
     if (id == active_session_id_) {
         active_session_id_.clear();
         active_session_title_.clear();
@@ -413,14 +419,22 @@ void AiChatScreen::delete_session(const QString& id) {
 void AiChatScreen::set_pinned(const QString& id, bool pinned) {
     if (id.isEmpty())
         return;
+    const bool was_pinned = pinned_.contains(id);
     if (pinned)
         pinned_.insert(id);
     else
         pinned_.remove(id);
-    store_pins();
+    if (!store_pins()) {
+        if (was_pinned)
+            pinned_.insert(id);
+        else
+            pinned_.remove(id);
+        status_->show_notice(tr("Could not save pinned sessions."), QString(), {}, 5000,
+                             ui::ScreenStatusBar::Tone::Danger);
+    }
     for (auto& s : sessions_cache_)
         if (s.id == id)
-            s.pinned = pinned;
+            s.pinned = pinned_.contains(id);
     if (sessions_) {
         sessions_->set_sessions(sessions_cache_);
         sessions_->set_active(active_session_id_);
