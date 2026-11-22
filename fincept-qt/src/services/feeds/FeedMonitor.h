@@ -1,4 +1,5 @@
 #pragma once
+#include "core/result/Result.h"
 #include "services/feeds/FeedScraper.h"
 #include "services/feeds/FeedTypes.h"
 
@@ -28,7 +29,7 @@ class FeedMonitor : public QObject {
     FeedStatus status(const QString& feed_id) const;
 
     // CRUD — persist + re-arm timers + emit subscriptions_changed().
-    void add_or_update(const FeedSubscription& sub);
+    Result<void> add_or_update(const FeedSubscription& sub);
     void remove(const QString& feed_id);
     void set_enabled(const QString& feed_id, bool enabled);
 

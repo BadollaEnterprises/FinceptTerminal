@@ -269,6 +269,21 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertIn("if (r.is_err())", delete_path)
         self.assertIn("privacy::redact_text(QString::fromStdString(r.error()))", delete_path)
 
+    def test_feed_save_stops_before_runtime_state_changes_when_storage_fails(self):
+        header = (ROOT / "src/services/feeds/FeedMonitor.h").read_text(encoding="utf-8")
+        service = (ROOT / "src/services/feeds/FeedMonitor.cpp").read_text(encoding="utf-8")
+        panel = (ROOT / "src/screens/common/feeds/FeedPanel.cpp").read_text(encoding="utf-8")
+        save_start = service.index("FeedMonitor::add_or_update") - 20
+        save_path = service[save_start:service.index("void FeedMonitor::remove")]
+        self.assertIn("Result<void> add_or_update", header)
+        self.assertIn("const auto saved = FeedSubscriptionRepository::instance().upsert(sub);", save_path)
+        self.assertIn("if (saved.is_err())", save_path)
+        self.assertLess(save_path.index("if (saved.is_err())"), save_path.index("arm_timer(sub)"))
+        self.assertIn("return saved;", save_path)
+        self.assertIn("const auto saved = FeedMonitor::instance().add_or_update(s);", panel)
+        self.assertIn("Could not save the feed", panel)
+        self.assertIn("privacy::redact_text", panel)
+
     def test_llm_settings_diagnostics_scrub_storage_errors_and_profile_identity(self):
         providers = (ROOT / "src/screens/settings/LlmConfigSection_Providers.cpp").read_text(encoding="utf-8")
         profiles = (ROOT / "src/screens/settings/LlmConfigSection_Profiles.cpp").read_text(encoding="utf-8")

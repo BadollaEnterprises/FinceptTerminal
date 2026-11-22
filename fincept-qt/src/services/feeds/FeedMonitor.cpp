@@ -166,8 +166,10 @@ void FeedMonitor::fetch(const FeedSubscription& sub) {
     });
 }
 
-void FeedMonitor::add_or_update(const FeedSubscription& sub) {
-    FeedSubscriptionRepository::instance().upsert(sub);
+Result<void> FeedMonitor::add_or_update(const FeedSubscription& sub) {
+    const auto saved = FeedSubscriptionRepository::instance().upsert(sub);
+    if (saved.is_err())
+        return saved;
     if (sub.enabled) {
         arm_timer(sub);
     } else {
@@ -175,6 +177,7 @@ void FeedMonitor::add_or_update(const FeedSubscription& sub) {
         disarm_timer(sub.id);
     }
     emit subscriptions_changed();
+    return saved;
 }
 
 void FeedMonitor::remove(const QString& id) {

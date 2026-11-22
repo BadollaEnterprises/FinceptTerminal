@@ -1,5 +1,6 @@
 #include "screens/common/feeds/FeedPanel.h"
 
+#include "core/privacy/LogRedact.h"
 #include "screens/common/feeds/FeedConfigDialog.h"
 #include "screens/common/feeds/FeedView.h"
 #include "screens/common/feeds/FloatingFeedWindow.h"
@@ -8,6 +9,7 @@
 
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QMessageBox>
 #include <QPushButton>
 #include <QScrollArea>
 #include <QShowEvent>
@@ -130,8 +132,14 @@ void FeedPanel::open_config(const QString& feed_id) {
             return;
         }
         const FeedSubscription s = dlg.result_subscription();
-        if (!s.url.isEmpty())
-            FeedMonitor::instance().add_or_update(s);
+        if (!s.url.isEmpty()) {
+            const auto saved = FeedMonitor::instance().add_or_update(s);
+            if (saved.is_err())
+                QMessageBox::warning(
+                    this, tr("Save feed"),
+                    tr("Could not save the feed: %1")
+                        .arg(privacy::redact_text(QString::fromStdString(saved.error()))));
+        }
     }
 }
 
