@@ -7,6 +7,7 @@
 
 #include "core/logging/Logger.h"
 #include "core/policy/CommunityPolicy.h"
+#include "core/privacy/LogRedact.h"
 #include "screens/settings/LlmConfigSection.h"
 #include "services/harness/HarnessRegistry.h"
 #include "services/harness/IHarnessAdapter.h"
@@ -413,7 +414,11 @@ void LlmConfigSection::load_profiles() {
     // Every profile, harness profiles included (list_profiles() leaves those out
     // for the agent runtime's pickers).
     auto result = LlmProfileRepository::instance().list_all_profiles();
-    if (result.is_ok()) {
+    if (result.is_err()) {
+        const QString error = QString::fromStdString(result.error());
+        show_profile_status(tr("Could not read LLM profiles: ") + error, true);
+        LOG_ERROR(TAG_PROFILES, "load_profiles failed: " + privacy::redact_text(error));
+    } else {
         for (const auto& p : result.value()) {
             if (lph_profile_provider_is_hidden(p.provider))
                 continue;
@@ -526,8 +531,13 @@ void LlmConfigSection::on_profile_selected(int row) {
         return;
     QString id = item->data(Qt::UserRole).toString();
     auto r = LlmProfileRepository::instance().get_profile(id);
-    if (r.is_ok())
-        populate_profile_form(r.value());
+    if (r.is_err()) {
+        const QString error = QString::fromStdString(r.error());
+        show_profile_status(tr("Could not load LLM profile: ") + error, true);
+        LOG_ERROR(TAG_PROFILES, "get_profile failed: " + privacy::redact_text(error));
+        return;
+    }
+    populate_profile_form(r.value());
 }
 
 void LlmConfigSection::on_profile_provider_changed(const QString& provider) {
@@ -613,12 +623,16 @@ void LlmConfigSection::on_save_profile() {
     QString api_key = is_harness ? QString() : profile_api_key_edit_->text().trimmed();
     if (api_key.isEmpty() && !is_harness) {
         auto providers = LlmConfigRepository::instance().list_providers();
-        if (providers.is_ok()) {
-            for (const auto& p : providers.value()) {
-                if (p.provider.toLower() == provider.toLower()) {
-                    api_key = p.api_key;
-                    break;
-                }
+        if (providers.is_err()) {
+            const QString error = QString::fromStdString(providers.error());
+            show_profile_status(tr("Could not read provider credentials: ") + error, true);
+            LOG_ERROR(TAG_PROFILES, "list_providers failed before profile save: " + privacy::redact_text(error));
+            return;
+        }
+        for (const auto& p : providers.value()) {
+            if (p.provider.toLower() == provider.toLower()) {
+                api_key = p.api_key;
+                break;
             }
         }
     }
@@ -635,14 +649,18 @@ void LlmConfigSection::on_save_profile() {
         }
     }
 
-    // save_profile() is INSERT OR REPLACE, so is_default has to be carried over
-    // from the stored row: hard-coding false silently cleared the default flag
-    // every time the default profile was edited and saved.
+    // Carry is_default over from the stored row: hard-coding false silently
+    // cleared the default flag every time the default profile was edited.
     bool was_default = false;
     if (!editing_profile_id_.isEmpty()) {
         const auto existing = LlmProfileRepository::instance().get_profile(editing_profile_id_);
-        if (existing.is_ok())
-            was_default = existing.value().is_default;
+        if (existing.is_err()) {
+            const QString error = QString::fromStdString(existing.error());
+            show_profile_status(tr("Could not reload profile before save: ") + error, true);
+            LOG_ERROR(TAG_PROFILES, "get_profile failed before profile save: " + privacy::redact_text(error));
+            return;
+        }
+        was_default = existing.value().is_default;
     }
 
     LlmProfile profile;

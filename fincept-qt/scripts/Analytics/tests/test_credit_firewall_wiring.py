@@ -446,6 +446,30 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertIn("Could not load provider settings", form)
         self.assertIn("privacy::redact_text(error)", form)
 
+    def test_llm_settings_surfaces_profile_read_failures(self):
+        source = (ROOT / "src/screens/settings/LlmConfigSection_Profiles.cpp").read_text(encoding="utf-8")
+        self.assertIn('#include "core/privacy/LogRedact.h"', source)
+
+        load = source[source.index("void LlmConfigSection::load_profiles()"):
+                      source.index("void LlmConfigSection::populate_profile_form")]
+        self.assertIn("if (result.is_err())", load)
+        self.assertIn("Could not read LLM profiles", load)
+        self.assertIn("privacy::redact_text(error)", load)
+
+        selected = source[source.index("void LlmConfigSection::on_profile_selected"):
+                          source.index("void LlmConfigSection::on_profile_provider_changed")]
+        self.assertIn("if (r.is_err())", selected)
+        self.assertIn("Could not load LLM profile", selected)
+        self.assertIn("privacy::redact_text(error)", selected)
+
+        save = source[source.index("void LlmConfigSection::on_save_profile()"):
+                      source.index("void LlmConfigSection::on_delete_profile()")]
+        self.assertIn("if (providers.is_err())", save)
+        self.assertIn("Could not read provider credentials", save)
+        self.assertIn("if (existing.is_err())", save)
+        self.assertIn("Could not reload profile before save", save)
+        self.assertGreaterEqual(save.count("privacy::redact_text(error)"), 2)
+
     def test_local_chat_mode_diagnostics_scrub_conversation_storage_errors(self):
         source = (ROOT / "src/screens/chat_mode/ChatModeScreen.cpp").read_text(encoding="utf-8")
         self.assertIn('#include "core/privacy/LogRedact.h"', source)
