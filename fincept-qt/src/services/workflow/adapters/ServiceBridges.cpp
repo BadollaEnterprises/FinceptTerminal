@@ -1,6 +1,7 @@
 #include "services/workflow/adapters/ServiceBridges.h"
 
 #include "core/logging/Logger.h"
+#include "core/privacy/LogRedact.h"
 #include "mcp/McpService.h"
 #include "mcp/server/CallApproval.h"
 #include "network/http/HttpClient.h"
@@ -388,7 +389,7 @@ void wire_trading_bridges(NodeRegistry& registry) {
                     LOG_ERROR("ServiceBridges", logf("Workflow paper order failed", {{"symbol", symbol},
                                                                                      {"side", side},
                                                                                      {"qty", qty},
-                                                                                     {"error", ex.what()}}));
+                                                                                     {"error", privacy::redact_text(ex.what())}}));
                     cb(false, {}, QString("Paper trading error: %1").arg(ex.what()));
                 }
                 return;
@@ -541,7 +542,8 @@ void wire_trading_bridges(NodeRegistry& registry) {
                     cb(true, out, {});
                 } catch (const std::exception& ex) {
                     LOG_ERROR("ServiceBridges",
-                              logf("Workflow paper cancel failed", {{"order_id", order_id}, {"error", ex.what()}}));
+                              logf("Workflow paper cancel failed", {{"order_id", log_mask(order_id)},
+                                                                     {"error", privacy::redact_text(ex.what())}}));
                     cb(false, {}, QString("Paper trading error: %1").arg(ex.what()));
                 }
                 return;
@@ -637,17 +639,17 @@ void wire_trading_bridges(NodeRegistry& registry) {
                         } catch (const std::exception& restore_ex) {
                             LOG_ERROR("ServiceBridges",
                                       logf("Paper modify refused and the original order could not be restored",
-                                           {{"order_id", order_id},
+                                           {{"order_id", log_mask(order_id)},
                                             {"symbol", order->symbol},
-                                            {"reason", ex.what()},
-                                            {"error", restore_ex.what()}}));
+                                            {"reason", privacy::redact_text(ex.what())},
+                                            {"error", privacy::redact_text(restore_ex.what())}}));
                         }
                         if (!restored.isEmpty())
                             LOG_WARN("ServiceBridges", logf("Paper modify refused, original order re-placed",
-                                                            {{"order_id", order_id},
-                                                             {"new_order_id", restored},
+                                                            {{"order_id", log_mask(order_id)},
+                                                             {"new_order_id", log_mask(restored)},
                                                              {"symbol", order->symbol},
-                                                             {"reason", ex.what()}}));
+                                                             {"reason", privacy::redact_text(ex.what())}}));
                         cb(false, {},
                            restored.isEmpty()
                                ? QString("Paper modify refused (%1); the original order %2 was cancelled")
@@ -670,7 +672,8 @@ void wire_trading_bridges(NodeRegistry& registry) {
                     cb(true, out, {});
                 } catch (const std::exception& ex) {
                     LOG_ERROR("ServiceBridges",
-                              logf("Workflow paper modify failed", {{"order_id", order_id}, {"error", ex.what()}}));
+                              logf("Workflow paper modify failed", {{"order_id", log_mask(order_id)},
+                                                                     {"error", privacy::redact_text(ex.what())}}));
                     cb(false, {}, QString("Paper trading error: %1").arg(ex.what()));
                 }
                 return;
@@ -899,7 +902,8 @@ void wire_trading_bridges(NodeRegistry& registry) {
                     }
                     cb(true, arr, {});
                 } catch (const std::exception& ex) {
-                    LOG_ERROR("ServiceBridges", logf("Workflow paper holdings read failed", {{"error", ex.what()}}));
+                    LOG_ERROR("ServiceBridges",
+                              logf("Workflow paper holdings read failed", {{"error", privacy::redact_text(ex.what())}}));
                     cb(false, {}, QString("Paper trading error: %1").arg(ex.what()));
                 }
                 return;
@@ -986,7 +990,8 @@ void wire_trading_bridges(NodeRegistry& registry) {
                     out["mode"] = "paper";
                     cb(true, out, {});
                 } catch (const std::exception& ex) {
-                    LOG_ERROR("ServiceBridges", logf("Workflow paper balance read failed", {{"error", ex.what()}}));
+                    LOG_ERROR("ServiceBridges",
+                              logf("Workflow paper balance read failed", {{"error", privacy::redact_text(ex.what())}}));
                     cb(false, {}, QString("Paper trading error: %1").arg(ex.what()));
                 }
                 return;
@@ -1085,7 +1090,9 @@ void wire_trading_bridges(NodeRegistry& registry) {
                     cb(true, out, {});
                 } catch (const std::exception& ex) {
                     LOG_ERROR("ServiceBridges", logf("Workflow paper close failed",
-                                                     {{"symbol", symbol}, {"qty", qty}, {"error", ex.what()}}));
+                                                     {{"symbol", symbol},
+                                                      {"qty", qty},
+                                                      {"error", privacy::redact_text(ex.what())}}));
                     cb(false, {}, QString("Paper trading error: %1").arg(ex.what()));
                 }
                 return;
@@ -1315,7 +1322,8 @@ void wire_trading_bridges(NodeRegistry& registry) {
                     cb(true, out, {});
                 } catch (const std::exception& ex) {
                     LOG_ERROR("ServiceBridges",
-                              logf("Workflow paper stop order failed", {{"symbol", symbol}, {"error", ex.what()}}));
+                              logf("Workflow paper stop order failed",
+                                   {{"symbol", symbol}, {"error", privacy::redact_text(ex.what())}}));
                     cb(false, {}, QString("Paper trading error: %1").arg(ex.what()));
                 }
                 return;

@@ -333,6 +333,15 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertNotIn(".arg(broker_id_for_focused(), focused_account_id_, why)", streams)
         self.assertNotIn("focused_account_id_, why", streams)
 
+    def test_workflow_trading_diagnostics_mask_order_ids_and_exceptions(self):
+        source = (ROOT / "src/services/workflow/adapters/ServiceBridges.cpp").read_text(encoding="utf-8")
+        self.assertIn('#include "core/privacy/LogRedact.h"', source)
+        self.assertGreaterEqual(source.count("privacy::redact_text(ex.what())"), 8)
+        self.assertGreaterEqual(source.count("log_mask(order_id)"), 4)
+        self.assertIn("log_mask(restored)", source)
+        self.assertNotIn('{{"order_id", order_id}, {"error", ex.what()}}', source)
+        self.assertNotIn('{{"error", ex.what()}}', source)
+
     def test_exchange_process_diagnostics_redact_external_errors(self):
         pool = (ROOT / "src/trading/ExchangeDaemonPool.cpp").read_text(encoding="utf-8")
         session = (ROOT / "src/trading/ExchangeSession.cpp").read_text(encoding="utf-8")
