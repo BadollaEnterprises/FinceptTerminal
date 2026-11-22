@@ -10,12 +10,14 @@
 #include "python/PythonRunner.h"
 #include "services/llm/LlmService.h"
 #include "services/llm/ModelRouter.h"
+#include "storage/cache/CacheManager.h"
 #include "ui/theme/Theme.h"
 #include "ui/theme/ThemeManager.h"
 #include "ui/widgets/EnterprisePromo.h"
 #include "ui/widgets/ThemeHelpers.h"
 
 #include <QCoreApplication>
+#include <QCryptographicHash>
 #include <QDateTime>
 #include <QEvent>
 #include <QFrame>
@@ -44,6 +46,7 @@ namespace {
 constexpr const char* kProAnalyticsTag = "ProAnalytics";
 constexpr int kProAnalyticsStatColumns = 4;
 constexpr int kProAnalyticsMaxHoldings = 15;
+constexpr int kProAnalyticsReportCacheTtlSec = 5 * 60;
 
 QString pro_analytics_tr(const char* text) {
     return QCoreApplication::translate("fincept::ui::pro", text);
@@ -144,6 +147,11 @@ QJsonObject pro_analytics_payload(const pro::Request& request) {
         payload.insert(QStringLiteral("weights"), weights);
     }
     return payload;
+}
+
+QString pro_analytics_report_cache_key(const QByteArray& payload) {
+    const QByteArray digest = QCryptographicHash::hash(payload, QCryptographicHash::Sha256).toHex();
+    return QStringLiteral("pro_analytics:report:v1:") + QString::fromLatin1(digest);
 }
 
 /// One report window per kind, process-wide.
@@ -408,7 +416,23 @@ void ProAnalyticsPanel::run() {
     const quint64 generation = ++generation_;
     pages_->setCurrentIndex(Loading);
     LOG_DEBUG(kProAnalyticsTag, QString("Local report requested (kind %1)").arg(static_cast<int>(request_.kind)));
-    const QString payload = QString::fromUtf8(QJsonDocument(pro_analytics_payload(request_)).toJson(QJsonDocument::Compact));
+    const QByteArray payload_bytes = QJsonDocument(pro_analytics_payload(request_)).toJson(QJsonDocument::Compact);
+    const QString payload = QString::fromUtf8(payload_bytes);
+    const QString cache_key = pro_analytics_report_cache_key(payload_bytes);
+    if (const auto cached = CacheManager::instance().try_get(cache_key)) {
+        QJsonParseError cached_error;
+        const QJsonDocument cached_document = QJsonDocument::fromJson(cached->toUtf8(), &cached_error);
+        const QJsonObject cached_body = cached_document.object();
+        const QJsonObject cached_data = cached_body.value(QStringLiteral("data")).toObject();
+        if (cached_error.error == QJsonParseError::NoError && cached_document.isObject() &&
+            cached_data.value(QStringLiteral("report")).isObject()) {
+            QJsonObject cached_meta = cached_body.value(QStringLiteral("meta")).toObject();
+            cached_meta.insert(QStringLiteral("cache_hit"), true);
+            show_report(cached_data, cached_meta);
+            return;
+        }
+        CacheManager::instance().remove(cache_key);
+    }
     python::PythonRunner::RunOptions options;
     options.timeout_ms = 120000;
     options.credential_allowlist = QStringList{}; // deterministic analytics never receive user secrets
@@ -416,7 +440,7 @@ void ProAnalyticsPanel::run() {
     QPointer<ProAnalyticsPanel> self(this);
     python::PythonRunner::instance().run_with_options(
         QStringLiteral("byo_pro_analytics.py"), {QStringLiteral("report"), payload}, options,
-        [self, generation](python::PythonResult result) {
+        [self, generation, cache_key](python::PythonResult result) {
             if (!self || generation != self->generation_)
                 return; // superseded by a newer subject or run
             if (!result.success) {
@@ -437,6 +461,9 @@ void ProAnalyticsPanel::run() {
                 self->show_error(self->tr("The local analytics adapter answered without a report."), false);
                 return;
             }
+            CacheManager::instance().put(
+                cache_key, QString::fromUtf8(document.toJson(QJsonDocument::Compact)),
+                kProAnalyticsReportCacheTtlSec, QStringLiteral("pro_analytics"));
             self->show_report(data, body.value(QStringLiteral("meta")).toObject());
         },
         {});
@@ -466,6 +493,8 @@ void ProAnalyticsPanel::show_report(const QJsonObject& data, const QJsonObject& 
         meta_bits << tr("%1-minute delayed").arg(meta.value(QStringLiteral("delayed_minutes")).toInt());
     if (meta.value(QStringLiteral("stale")).toBool())
         meta_bits << tr("source unavailable — showing the last good data");
+    if (meta.value(QStringLiteral("cache_hit")).toBool())
+        meta_bits << tr("cached local copy");
     if (!meta_bits.isEmpty()) {
         auto* meta_label = new QLabel(meta_bits.join(QStringLiteral("  ·  ")), host);
         meta_label->setObjectName(QStringLiteral("paMeta"));
