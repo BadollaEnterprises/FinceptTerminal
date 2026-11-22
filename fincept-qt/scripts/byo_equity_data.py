@@ -25,6 +25,15 @@ NASDAQ_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
                   "AppleWebKit/537.36 Chrome/124 Safari/537.36",
 }
+_MAX_PUBLIC_RESPONSE_BYTES = 8 * 1024 * 1024
+
+
+def _read_json_response(response: Any, *, max_bytes: int = _MAX_PUBLIC_RESPONSE_BYTES) -> Any:
+    """Decode one bounded public JSON response without buffering an unlimited body."""
+    body = response.read(max_bytes + 1)
+    if len(body) > max_bytes:
+        raise ValueError(f"Public data response exceeds {max_bytes} bytes")
+    return json.loads(body.decode("utf-8", errors="replace"))
 
 
 def _num(value: Any) -> float | None:
@@ -78,7 +87,7 @@ def _nasdaq(path: str) -> Dict[str, Any]:
     url = "https://api.nasdaq.com" + path
     request = urllib.request.Request(url, headers=NASDAQ_HEADERS)
     with urllib.request.urlopen(request, timeout=30) as response:
-        payload = json.loads(response.read().decode("utf-8", errors="replace"))
+        payload = _read_json_response(response)
     data = payload.get("data")
     if not isinstance(data, dict):
         message = payload.get("message") or payload.get("status", {}).get("bCodeMessage") or "No data returned"
@@ -89,7 +98,7 @@ def _nasdaq(path: str) -> Dict[str, Any]:
 def _json_url(url: str, *, headers: Mapping[str, str] | None = None) -> Any:
     request = urllib.request.Request(url, headers=dict(headers or NASDAQ_HEADERS))
     with urllib.request.urlopen(request, timeout=30) as response:
-        return json.loads(response.read().decode("utf-8", errors="replace"))
+        return _read_json_response(response)
 
 
 def _parse_expiry(text: str) -> date | None:

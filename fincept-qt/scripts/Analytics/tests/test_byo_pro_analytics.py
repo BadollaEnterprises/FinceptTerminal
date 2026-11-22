@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import inspect
+import io
 import unittest
 from pathlib import Path
 
@@ -22,6 +23,12 @@ def load_module():
 
 
 class ByoProAnalyticsTest(unittest.TestCase):
+    def test_public_json_reader_rejects_oversized_responses(self):
+        mod = load_module()
+        self.assertEqual(mod._read_json_response(io.BytesIO(b'{"ok":true}'), max_bytes=32), {"ok": True})
+        with self.assertRaisesRegex(ValueError, "response exceeds 8 bytes"):
+            mod._read_json_response(io.BytesIO(b'{"payload":"too large"}'), max_bytes=8)
+
     def test_nasdaq_history_needs_no_yfinance_dependency(self):
         mod = load_module()
         seen = []

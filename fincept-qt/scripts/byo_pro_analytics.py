@@ -307,12 +307,21 @@ _NASDAQ_HEADERS = {
                   "AppleWebKit/537.36 Chrome/124 Safari/537.36",
 }
 _ETF_SYMBOLS = {"SPY", "RSP", "HYG", "TLT", "UUP", "QQQ", "GLD", "IWM", "DIA"}
+_MAX_PUBLIC_RESPONSE_BYTES = 8 * 1024 * 1024
+
+
+def _read_json_response(response: Any, *, max_bytes: int = _MAX_PUBLIC_RESPONSE_BYTES) -> Any:
+    """Decode one bounded public JSON response without buffering an unlimited body."""
+    body = response.read(max_bytes + 1)
+    if len(body) > max_bytes:
+        raise ValueError(f"Public data response exceeds {max_bytes} bytes")
+    return json.loads(body.decode("utf-8", errors="replace"))
 
 
 def _get_json(url: str) -> Mapping[str, Any]:
     request = urllib.request.Request(url, headers=_NASDAQ_HEADERS)
     with urllib.request.urlopen(request, timeout=30) as response:
-        return json.loads(response.read().decode("utf-8", errors="replace"))
+        return _read_json_response(response)
 
 
 def _number(value: Any) -> float | None:

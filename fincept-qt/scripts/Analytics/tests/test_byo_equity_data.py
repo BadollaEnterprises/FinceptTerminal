@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import io
 import unittest
 from datetime import date
 from pathlib import Path
@@ -31,6 +32,12 @@ def load_equity_research_module():
 
 
 class ByoEquityDataTest(unittest.TestCase):
+    def test_public_json_reader_rejects_oversized_responses(self):
+        mod = load_module()
+        self.assertEqual(mod._read_json_response(io.BytesIO(b'{"ok":true}'), max_bytes=32), {"ok": True})
+        with self.assertRaisesRegex(ValueError, "response exceeds 8 bytes"):
+            mod._read_json_response(io.BytesIO(b'{"payload":"too large"}'), max_bytes=8)
+
     def test_public_session_enriches_only_supported_future_us_listing(self):
         mod = load_equity_research_module()
         calls = []
