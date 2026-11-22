@@ -258,6 +258,17 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertIn("privacy::redact_text", auth)
         self.assertIn("during sign-out", auth)
 
+    def test_coding_agent_schedule_delete_reports_storage_failures(self):
+        service = (ROOT / "src/services/coding_agents/CodingAgentService.cpp").read_text(encoding="utf-8")
+        delete_path = service[
+            service.index("void CodingAgentService::delete_schedule"):
+            service.index("namespace coding_agent_service_detail", service.index("void CodingAgentService::delete_schedule"))
+        ]
+        self.assertIn('#include "core/privacy/LogRedact.h"', service)
+        self.assertIn("auto r = CodingAgentRepository::instance().delete_schedule(id);", delete_path)
+        self.assertIn("if (r.is_err())", delete_path)
+        self.assertIn("privacy::redact_text(QString::fromStdString(r.error()))", delete_path)
+
     def test_llm_settings_diagnostics_scrub_storage_errors_and_profile_identity(self):
         providers = (ROOT / "src/screens/settings/LlmConfigSection_Providers.cpp").read_text(encoding="utf-8")
         profiles = (ROOT / "src/screens/settings/LlmConfigSection_Profiles.cpp").read_text(encoding="utf-8")

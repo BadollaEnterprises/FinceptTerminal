@@ -8,6 +8,7 @@
 #include "core/config/AppConfig.h"
 #include "core/config/AppPaths.h"
 #include "core/logging/Logger.h"
+#include "core/privacy/LogRedact.h"
 #include "core/process/HostExec.h"
 #include "services/coding_agents/CodingAgentLiveRun.h"
 #include "services/coding_agents/CodingAgentRepository.h"
@@ -1166,7 +1167,13 @@ void CodingAgentService::delete_schedule(const QString& id) {
     if (!schedules_.remove(id))
         return;
     schedule_order_.removeAll(id);
-    submit_write([id]() { CodingAgentRepository::instance().delete_schedule(id); });
+    submit_write([id]() {
+        auto r = CodingAgentRepository::instance().delete_schedule(id);
+        if (r.is_err())
+            LOG_WARN(kCodingAgentSvcTag,
+                     QStringLiteral("delete_schedule failed: %1")
+                         .arg(privacy::redact_text(QString::fromStdString(r.error()))));
+    });
     rearm_schedule_timer();
     emit schedules_changed();
 }
