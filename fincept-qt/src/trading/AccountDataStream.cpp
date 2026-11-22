@@ -1,6 +1,7 @@
 #include "trading/AccountDataStream.h"
 
 #include "core/logging/Logger.h"
+#include "core/privacy/LogRedact.h"
 #include "trading/AccountManager.h"
 #include "trading/BrokerRegistry.h"
 #include "trading/HistoricalDataService.h"
@@ -37,12 +38,20 @@ namespace fincept::trading {
 namespace {
 constexpr const char* ADS_TAG = "AccountDataStream";
 
+QString ads_log_account(const QString& account_id) {
+    return privacy::mask_id(account_id);
+}
+
+QString ads_log_error(const QString& error) {
+    return privacy::redact_text(error);
+}
+
 /// A broker whose daily session has not been signed in yet (no token for its live feed):
 /// an expected state, written once per account until its stream is (re)started.
 void ads_log_not_signed_in(const QString& broker_id, const QString& account_id) {
     LOG_TRANSITION(ADS_TAG, QStringLiteral("ws_session|") + account_id, 1, LogLevel::Info,
                    logf("Live stream not started: broker session not signed in",
-                        {{"broker", broker_id}, {"account", log_mask(account_id)}}));
+                        {{"broker", broker_id}, {"account", ads_log_account(account_id)}}));
 }
 constexpr int ADS_QUOTE_POLL_MS = 300000;
 constexpr int ADS_PORTFOLIO_POLL_MS = 300000;
@@ -131,7 +140,7 @@ void AccountDataStream::start() {
     // A (re)started stream re-arms the "not signed in" line of its account.
     if (Logger::instance().transition_possible(0))
         Logger::instance().transition(ADS_TAG, QStringLiteral("ws_session|") + account_id_, 0);
-    LOG_DEBUG(ADS_TAG, QString("Started stream for account %1 (%2)").arg(account_id_, broker_id_));
+    LOG_DEBUG(ADS_TAG, QString("Started stream for account %1 (%2)").arg(ads_log_account(account_id_), broker_id_));
 }
 
 void AccountDataStream::stop() {
@@ -146,7 +155,7 @@ void AccountDataStream::stop() {
     candle_gate_timer_->stop();
     ws_teardown();
 
-    LOG_DEBUG(ADS_TAG, QString("Stopped stream for account %1").arg(account_id_));
+    LOG_DEBUG(ADS_TAG, QString("Stopped stream for account %1").arg(ads_log_account(account_id_)));
 }
 
 void AccountDataStream::pause() {
@@ -349,7 +358,8 @@ bool AccountDataStream::check_token_expiry(const QString& error) {
                 return;
             AccountManager::instance().set_connection_state(self->account_id_, ConnectionState::TokenExpired,
                                                             QStringLiteral("Broker session token expired"));
-            LOG_WARN(ADS_TAG, QString("Token expired for account %1 (%2)").arg(self->account_id_, self->broker_id_));
+            LOG_WARN(ADS_TAG, QString("Token expired for account %1 (%2)")
+                                  .arg(ads_log_account(self->account_id_), self->broker_id_));
             emit self->token_expired(self->account_id_);
         },
         Qt::QueuedConnection);
@@ -422,8 +432,8 @@ void AccountDataStream::async_fetch_quote() {
         if (self)
             self->quote_fetching_ = false;
         if (!result.success || !result.data || result.data->isEmpty()) {
-            LOG_WARN(ADS_TAG,
-                     QString("async_fetch_quote failed for %1/%2 [%3]: %4").arg(bid, acct_id, symbol, result.error));
+            LOG_WARN(ADS_TAG, QString("async_fetch_quote failed for %1/%2 [%3]: %4")
+                                  .arg(bid, ads_log_account(acct_id), symbol, ads_log_error(result.error)));
             if (self)
                 self->check_token_expiry(result.error);
             return;
@@ -456,14 +466,17 @@ void AccountDataStream::async_fetch_positions() {
             return;
         auto result = broker->get_positions(creds);
         if (!result.success || !result.data) {
-            LOG_WARN(ADS_TAG, QString("async_fetch_positions failed for %1/%2: %3").arg(bid, acct_id, result.error));
+            LOG_WARN(ADS_TAG, QString("async_fetch_positions failed for %1/%2: %3")
+                                  .arg(bid, ads_log_account(acct_id), ads_log_error(result.error)));
             if (self)
                 self->check_token_expiry(result.error);
             return;
         }
         // Success — log the count so an empty live blotter can be told apart from a
         // token/error (which logs WARN above): 0 rows here = genuinely no positions.
-        LOG_DEBUG(ADS_TAG, QString("get_positions %1/%2 → %3 row(s)").arg(bid, acct_id).arg(result.data->size()));
+        LOG_DEBUG(ADS_TAG, QString("get_positions %1/%2 → %3 row(s)")
+                               .arg(bid, ads_log_account(acct_id))
+                               .arg(result.data->size()));
         QMetaObject::invokeMethod(
             self,
             [self, acct_id, data = *result.data]() {
@@ -491,12 +504,15 @@ void AccountDataStream::async_fetch_holdings() {
             return;
         auto result = broker->get_holdings(creds);
         if (!result.success || !result.data) {
-            LOG_WARN(ADS_TAG, QString("async_fetch_holdings failed for %1/%2: %3").arg(bid, acct_id, result.error));
+            LOG_WARN(ADS_TAG, QString("async_fetch_holdings failed for %1/%2: %3")
+                                  .arg(bid, ads_log_account(acct_id), ads_log_error(result.error)));
             if (self)
                 self->check_token_expiry(result.error);
             return;
         }
-        LOG_DEBUG(ADS_TAG, QString("get_holdings %1/%2 → %3 row(s)").arg(bid, acct_id).arg(result.data->size()));
+        LOG_DEBUG(ADS_TAG, QString("get_holdings %1/%2 → %3 row(s)")
+                               .arg(bid, ads_log_account(acct_id))
+                               .arg(result.data->size()));
         QMetaObject::invokeMethod(
             self,
             [self, acct_id, data = *result.data]() {
@@ -524,12 +540,15 @@ void AccountDataStream::async_fetch_orders() {
             return;
         auto result = broker->get_orders(creds);
         if (!result.success || !result.data) {
-            LOG_WARN(ADS_TAG, QString("async_fetch_orders failed for %1/%2: %3").arg(bid, acct_id, result.error));
+            LOG_WARN(ADS_TAG, QString("async_fetch_orders failed for %1/%2: %3")
+                                  .arg(bid, ads_log_account(acct_id), ads_log_error(result.error)));
             if (self)
                 self->check_token_expiry(result.error);
             return;
         }
-        LOG_DEBUG(ADS_TAG, QString("get_orders %1/%2 → %3 row(s)").arg(bid, acct_id).arg(result.data->size()));
+        LOG_DEBUG(ADS_TAG, QString("get_orders %1/%2 → %3 row(s)")
+                               .arg(bid, ads_log_account(acct_id))
+                               .arg(result.data->size()));
         QMetaObject::invokeMethod(
             self,
             [self, acct_id, data = *result.data]() {
@@ -557,7 +576,8 @@ void AccountDataStream::async_fetch_funds() {
             return;
         auto result = broker->get_funds(creds);
         if (!result.success || !result.data) {
-            LOG_WARN(ADS_TAG, QString("async_fetch_funds failed for %1/%2: %3").arg(bid, acct_id, result.error));
+            LOG_WARN(ADS_TAG, QString("async_fetch_funds failed for %1/%2: %3")
+                                  .arg(bid, ads_log_account(acct_id), ads_log_error(result.error)));
             if (self)
                 self->check_token_expiry(result.error);
             return;
@@ -593,9 +613,9 @@ void AccountDataStream::async_fetch_watchlist_quotes() {
         auto result = broker->get_quotes(creds, symbols.toVector());
         if (!result.success || !result.data) {
             LOG_WARN(ADS_TAG, QString("async_fetch_watchlist_quotes failed for %1/%2 (%3 syms): %4")
-                                  .arg(bid, acct_id)
+                                  .arg(bid, ads_log_account(acct_id))
                                   .arg(symbols.size())
-                                  .arg(result.error));
+                                  .arg(ads_log_error(result.error)));
             if (self)
                 self->check_token_expiry(result.error);
             return;
@@ -714,7 +734,8 @@ void AccountDataStream::on_candles_answer(quint64 ticket_id, const MarketDataKey
                                                                  "%2 timeframe.")
                            .arg(key.symbol, key.timeframe));
             LOG_WARN(ADS_TAG, QString("fetch_candles failed for %1/%2 [%3 %4]: %5")
-                                  .arg(broker_id_, account_id_, key.symbol, key.timeframe, error));
+                                  .arg(broker_id_, ads_log_account(account_id_), key.symbol, key.timeframe,
+                                       ads_log_error(error)));
             emit candles_failed(account_id_, key.symbol, key.timeframe, reason);
         }
     } else {
@@ -795,12 +816,12 @@ void AccountDataStream::fetch_orderbook(const QString& symbol) {
         if (!result.success || !result.data || result.data->isEmpty()) {
             // Most brokers have no L2 history: the snapshot below is the normal path.
             LOG_DEBUG(ADS_TAG, logf("Market depth (L2) unavailable, using the quote snapshot",
-                                    {{"broker", bid}, {"symbol", symbol}, {"error", result.error}}));
+                                    {{"broker", bid}, {"symbol", symbol}, {"error", ads_log_error(result.error)}}));
             auto snap = broker->get_quotes(creds, {symbol});
             if (!snap.success || !snap.data || snap.data->isEmpty()) {
                 LOG_WARN_RL(ADS_TAG, QStringLiteral("depth_failed|") + acct_id + QLatin1Char('|') + symbol, 60000,
                             logf("Market depth could not be fetched",
-                                 {{"broker", bid}, {"symbol", symbol}, {"error", snap.error}}));
+                                 {{"broker", bid}, {"symbol", symbol}, {"error", ads_log_error(snap.error)}}));
                 // The snapshot is the broker's last word; its error explains more
                 // than the L2 one (which is "Not supported" for most brokers).
                 fail(snap.error.trimmed().isEmpty() ? result.error : snap.error);
@@ -922,8 +943,8 @@ void AccountDataStream::fetch_time_sales(const QString& symbol) {
         if (!result.success || !result.data) {
             // Debug, not warn: most brokers answer "Not supported" for the tape, and
             // the consumer that shows it reports a real failure itself.
-            LOG_DEBUG(ADS_TAG, QString("fetch_time_sales failed for %1/%2 [%3]: %4").arg(bid, acct_id, symbol,
-                                                                                        result.error));
+            LOG_DEBUG(ADS_TAG, QString("fetch_time_sales failed for %1/%2 [%3]: %4")
+                                   .arg(bid, ads_log_account(acct_id), symbol, ads_log_error(result.error)));
             fail(result.error);
             return;
         }
@@ -1125,7 +1146,7 @@ void AccountDataStream::wire_base_ws(BrokerWebSocketBase* ws) {
     connect(ws, &BrokerWebSocketBase::disconnected, this,
             [this]() { emit connection_state_changed(account_id_, ConnectionState::Disconnected); });
     connect(ws, &BrokerWebSocketBase::error_occurred, this, [this](const QString& e) {
-        LOG_ERROR(ADS_TAG, QString("WS error: %1").arg(e));
+        LOG_ERROR(ADS_TAG, QString("WS error: %1").arg(ads_log_error(e)));
         check_token_expiry(e);
     });
 }
@@ -1201,7 +1222,7 @@ void AccountDataStream::ws_init() {
                 });
 
         connect(fws, &FyersWebSocket::connected, this, [this]() {
-            LOG_INFO(ADS_TAG, QString("Fyers HSM connected for %1").arg(account_id_));
+            LOG_INFO(ADS_TAG, QString("Fyers HSM connected for %1").arg(ads_log_account(account_id_)));
             emit connection_state_changed(account_id_, ConnectionState::Connected);
             auto to_fyers = [](const QString& sym) {
                 // Strip any exchange prefix to inspect the bare contract: a held
@@ -1240,12 +1261,12 @@ void AccountDataStream::ws_init() {
 
         connect(fws, &FyersWebSocket::disconnected, this, [this]() {
             // FyersWebSocket writes one WARN per outage; this fires on every drop.
-            LOG_DEBUG(ADS_TAG, QString("Fyers HSM disconnected for %1").arg(account_id_));
+            LOG_DEBUG(ADS_TAG, QString("Fyers HSM disconnected for %1").arg(ads_log_account(account_id_)));
             emit connection_state_changed(account_id_, ConnectionState::Disconnected);
         });
 
         connect(fws, &FyersWebSocket::error_occurred, this, [this](const QString& err) {
-            LOG_ERROR(ADS_TAG, QString("Fyers WS error: %1").arg(err));
+            LOG_ERROR(ADS_TAG, QString("Fyers WS error: %1").arg(ads_log_error(err)));
             check_token_expiry(err);
         });
 
@@ -1292,7 +1313,7 @@ void AccountDataStream::ws_init() {
         });
 
         connect(aws, &AlpacaWebSocket::connected, this, [this]() {
-            LOG_INFO(ADS_TAG, QString("Alpaca WS connected for %1").arg(account_id_));
+            LOG_INFO(ADS_TAG, QString("Alpaca WS connected for %1").arg(ads_log_account(account_id_)));
             emit connection_state_changed(account_id_, ConnectionState::Connected);
             QStringList symbols;
             if (!selected_symbol_.isEmpty())
@@ -1306,17 +1327,18 @@ void AccountDataStream::ws_init() {
         });
 
         connect(aws, &AlpacaWebSocket::disconnected, this, [this]() {
-            LOG_WARN(ADS_TAG, QString("Alpaca WS disconnected for %1").arg(account_id_));
+            LOG_WARN(ADS_TAG, QString("Alpaca WS disconnected for %1").arg(ads_log_account(account_id_)));
             emit connection_state_changed(account_id_, ConnectionState::Disconnected);
         });
 
         connect(aws, &AlpacaWebSocket::error_occurred, this, [this](const QString& err) {
-            LOG_ERROR(ADS_TAG, QString("Alpaca WS error: %1").arg(err));
+            LOG_ERROR(ADS_TAG, QString("Alpaca WS error: %1").arg(ads_log_error(err)));
             check_token_expiry(err);
         });
 
         connect(aws, &AlpacaWebSocket::market_closed, this, [this]() {
-            LOG_INFO(ADS_TAG, QString("Alpaca market closed for %1 — falling back to polling").arg(account_id_));
+            LOG_INFO(ADS_TAG, QString("Alpaca market closed for %1 — falling back to polling")
+                                  .arg(ads_log_account(account_id_)));
         });
 
         aws->open();
@@ -1395,7 +1417,7 @@ void AccountDataStream::ws_init() {
             }
         });
         connect(zws, &ZerodhaWebSocket::connected, this, [this]() {
-            LOG_INFO(ADS_TAG, QString("Zerodha WS connected for %1").arg(account_id_));
+            LOG_INFO(ADS_TAG, QString("Zerodha WS connected for %1").arg(ads_log_account(account_id_)));
             ws_permission_denied_ = false; // streaming is permitted after all
             emit connection_state_changed(account_id_, ConnectionState::Connected);
             ws_resubscribe(); // resolves current symbols → tokens and subscribes
@@ -1403,7 +1425,7 @@ void AccountDataStream::ws_init() {
         connect(zws, &ZerodhaWebSocket::disconnected, this,
                 [this]() { emit connection_state_changed(account_id_, ConnectionState::Disconnected); });
         connect(zws, &ZerodhaWebSocket::error_occurred, this, [this](const QString& e) {
-            LOG_ERROR(ADS_TAG, QString("Zerodha WS error: %1").arg(e));
+            LOG_ERROR(ADS_TAG, QString("Zerodha WS error: %1").arg(ads_log_error(e)));
             // A 403/Forbidden on the KiteTicker handshake is a permission verdict,
             // not a transient network error: Kite refuses the streaming socket when
             // the API key has no active Kite Connect (market-data) subscription —
@@ -1428,7 +1450,7 @@ void AccountDataStream::ws_init() {
                         AccountManager::instance().set_connection_state(self->account_id_, ConnectionState::Error, msg);
                         LOG_WARN(ADS_TAG, QString("Zerodha streaming denied (403) for %1 — no Kite "
                                                   "Connect market-data subscription for this API key")
-                                              .arg(self->account_id_));
+                                              .arg(ads_log_account(self->account_id_)));
                         emit self->connection_state_changed(self->account_id_, ConnectionState::Error);
                     },
                     Qt::QueuedConnection);
@@ -1478,7 +1500,7 @@ void AccountDataStream::ws_init() {
         ws_ = uws;
         wire_base_ws(uws);
         connect(uws, &UpstoxWebSocket::connected, this, [this, current_symbols, resolve_tokens]() {
-            LOG_INFO(ADS_TAG, QString("Upstox WS connected for %1").arg(account_id_));
+            LOG_INFO(ADS_TAG, QString("Upstox WS connected for %1").arg(ads_log_account(account_id_)));
             if (auto* w = qobject_cast<UpstoxWebSocket*>(ws_))
                 w->subscribe(resolve_tokens(current_symbols()));
         });
@@ -1496,7 +1518,7 @@ void AccountDataStream::ws_init() {
         ws_ = dws;
         wire_base_ws(dws);
         connect(dws, &DhanWebSocket::connected, this, [this, current_symbols, resolve_tokens]() {
-            LOG_INFO(ADS_TAG, QString("Dhan WS connected for %1").arg(account_id_));
+            LOG_INFO(ADS_TAG, QString("Dhan WS connected for %1").arg(ads_log_account(account_id_)));
             if (auto* w = qobject_cast<DhanWebSocket*>(ws_))
                 w->subscribe(resolve_tokens(current_symbols()));
         });
@@ -1508,7 +1530,7 @@ void AccountDataStream::ws_init() {
         auto creds = AccountManager::instance().load_credentials(account_id_);
         const QStringList parts = creds.access_token.split(":::");
         if (parts.size() < 4) {
-            LOG_WARN(ADS_TAG, QString("Kotak WS: malformed token for %1").arg(account_id_));
+            LOG_WARN(ADS_TAG, QString("Kotak WS: malformed token for %1").arg(ads_log_account(account_id_)));
             return;
         }
         // Packed: "trading_token:::trading_sid:::base_url:::access_token[:::server_id]"
@@ -1524,7 +1546,7 @@ void AccountDataStream::ws_init() {
         ws_ = kws;
         wire_base_ws(kws);
         connect(kws, &KotakWebSocket::connected, this, [this, current_symbols, resolve_tokens]() {
-            LOG_INFO(ADS_TAG, QString("Kotak WS connected for %1").arg(account_id_));
+            LOG_INFO(ADS_TAG, QString("Kotak WS connected for %1").arg(ads_log_account(account_id_)));
             if (auto* w = qobject_cast<KotakWebSocket*>(ws_)) {
                 if (!selected_exchange_.isEmpty())
                     w->set_default_exchange(selected_exchange_);
@@ -1548,7 +1570,7 @@ void AccountDataStream::ws_init() {
         ws_ = iws;
         wire_base_ws(iws);
         connect(iws, &IIFLWebSocket::connected, this, [this, current_symbols, resolve_tokens]() {
-            LOG_INFO(ADS_TAG, QString("IIFL WS connected for %1").arg(account_id_));
+            LOG_INFO(ADS_TAG, QString("IIFL WS connected for %1").arg(ads_log_account(account_id_)));
             if (auto* w = qobject_cast<IIFLWebSocket*>(ws_)) {
                 if (!selected_exchange_.isEmpty())
                     w->set_default_exchange(selected_exchange_);
@@ -1575,7 +1597,7 @@ void AccountDataStream::ws_init() {
         ws_ = fws;
         wire_base_ws(fws);
         connect(fws, &FivePaisaWebSocket::connected, this, [this, current_symbols, resolve_tokens]() {
-            LOG_INFO(ADS_TAG, QString("5Paisa WS connected for %1").arg(account_id_));
+            LOG_INFO(ADS_TAG, QString("5Paisa WS connected for %1").arg(ads_log_account(account_id_)));
             if (auto* w = qobject_cast<FivePaisaWebSocket*>(ws_))
                 w->subscribe(resolve_tokens(current_symbols()));
         });
@@ -1594,7 +1616,7 @@ void AccountDataStream::ws_init() {
         ws_ = aws;
         wire_base_ws(aws);
         connect(aws, &AliceBlueWebSocket::connected, this, [this, current_symbols, resolve_tokens]() {
-            LOG_INFO(ADS_TAG, QString("AliceBlue WS connected for %1").arg(account_id_));
+            LOG_INFO(ADS_TAG, QString("AliceBlue WS connected for %1").arg(ads_log_account(account_id_)));
             if (auto* w = qobject_cast<AliceBlueWebSocket*>(ws_)) {
                 if (!selected_exchange_.isEmpty())
                     w->set_default_exchange(selected_exchange_);
@@ -1616,7 +1638,7 @@ void AccountDataStream::ws_init() {
         ws_ = sws;
         wire_base_ws(sws);
         connect(sws, &ShoonyaWebSocket::connected, this, [this, current_symbols, resolve_tokens]() {
-            LOG_INFO(ADS_TAG, QString("Shoonya WS connected for %1").arg(account_id_));
+            LOG_INFO(ADS_TAG, QString("Shoonya WS connected for %1").arg(ads_log_account(account_id_)));
             if (auto* w = qobject_cast<ShoonyaWebSocket*>(ws_)) {
                 if (!selected_exchange_.isEmpty())
                     w->set_default_exchange(selected_exchange_);
@@ -1638,7 +1660,7 @@ void AccountDataStream::ws_init() {
         ws_ = mp;
         wire_base_ws(mp);
         connect(mp, &MotilalPoller::connected, this, [this, current_symbols]() {
-            LOG_INFO(ADS_TAG, QString("Motilal poller started for %1").arg(account_id_));
+            LOG_INFO(ADS_TAG, QString("Motilal poller started for %1").arg(ads_log_account(account_id_)));
             if (auto* w = qobject_cast<MotilalPoller*>(ws_))
                 w->subscribe(current_symbols());
         });
@@ -1657,7 +1679,7 @@ void AccountDataStream::ws_init() {
         ws_ = iws;
         wire_base_ws(iws);
         connect(iws, &IciciDirectWebSocket::connected, this, [this, current_symbols, resolve_tokens]() {
-            LOG_INFO(ADS_TAG, QString("ICICI WS connected for %1").arg(account_id_));
+            LOG_INFO(ADS_TAG, QString("ICICI WS connected for %1").arg(ads_log_account(account_id_)));
             if (auto* w = qobject_cast<IciciDirectWebSocket*>(ws_))
                 w->subscribe(resolve_tokens(current_symbols()));
         });
@@ -1718,14 +1740,14 @@ void AccountDataStream::ws_init() {
         emit quote_updated(account_id_, q.symbol, q);
     });
     connect(aows, &AngelOneWebSocket::connected, this, [this]() {
-        LOG_INFO(ADS_TAG, QString("AngelOne WS connected for %1").arg(account_id_));
+        LOG_INFO(ADS_TAG, QString("AngelOne WS connected for %1").arg(ads_log_account(account_id_)));
         emit connection_state_changed(account_id_, ConnectionState::Connected);
         ws_resubscribe(); // resolves current symbols → {token, exchange_type} and subscribes
     });
     connect(aows, &AngelOneWebSocket::disconnected, this,
             [this]() { emit connection_state_changed(account_id_, ConnectionState::Disconnected); });
     connect(aows, &AngelOneWebSocket::error_occurred, this, [this](const QString& e) {
-        LOG_ERROR(ADS_TAG, QString("AngelOne WS error: %1").arg(e));
+        LOG_ERROR(ADS_TAG, QString("AngelOne WS error: %1").arg(ads_log_error(e)));
         check_token_expiry(e);
     });
     aows->open();

@@ -239,6 +239,16 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertNotIn('"Import: " + raw_errors.join', source)
         self.assertNotIn('" + file_path', source)
 
+    def test_account_stream_diagnostics_mask_accounts_and_broker_errors(self):
+        source = (ROOT / "src/trading/AccountDataStream.cpp").read_text(encoding="utf-8")
+        self.assertIn('#include "core/privacy/LogRedact.h"', source)
+        self.assertIn("return privacy::mask_id(account_id);", source)
+        self.assertIn("return privacy::redact_text(error);", source)
+        self.assertGreaterEqual(source.count("ads_log_account("), 20)
+        self.assertGreaterEqual(source.count("ads_log_error("), 12)
+        self.assertNotIn(".arg(bid, acct_id, result.error)", source)
+        self.assertNotIn('QString("WS error: %1").arg(e)', source)
+
     def test_macro_and_geopolitics_services_check_firewall(self):
         geopolitics = (ROOT / "src/services/geopolitics/GeopoliticsService.cpp").read_text(encoding="utf-8")
         macro = (ROOT / "src/services/economics/FinceptMacroService.cpp").read_text(encoding="utf-8")
