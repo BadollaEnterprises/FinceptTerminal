@@ -47,6 +47,7 @@ logger = logging.getLogger(__name__)
 MAX_SIMULATION_COUNT = 100_000
 MAX_TIME_PERIODS = 10_000
 MAX_SIMULATION_DRAWS = 5_000_000
+MAX_FORECAST_PERIODS = 10_000
 
 # No process-wide warnings.filterwarnings('ignore') here: a library must not silence warnings
 # for its importer. The ARIMA order search silences its own fitting warnings locally.
@@ -1082,6 +1083,13 @@ class ForecastingEngine(EconomicsBase):
                                    methods: List[str] = None) -> Dict[str, Any]:
         """Simple forecasting methods for economic time series"""
 
+        try:
+            forecast_periods = bounded_positive_int(
+                forecast_periods, "forecast_periods", MAX_FORECAST_PERIODS
+            )
+        except ValueError as exc:
+            raise ValidationError(str(exc)) from exc
+
         if data.empty:
             raise ValidationError("Empty time series provided")
 
@@ -1319,6 +1327,13 @@ class ForecastingEngine(EconomicsBase):
                        order: Tuple[int, int, int] = None,
                        auto_arima: bool = True) -> Dict[str, Any]:
         """ARIMA forecasting"""
+
+        try:
+            forecast_periods = bounded_positive_int(
+                forecast_periods, "forecast_periods", MAX_FORECAST_PERIODS
+            )
+        except ValueError as exc:
+            raise ValidationError(str(exc)) from exc
 
         if data.empty:
             raise ValidationError("Empty time series provided")

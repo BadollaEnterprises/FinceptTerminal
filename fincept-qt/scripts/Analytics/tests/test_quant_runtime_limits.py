@@ -102,6 +102,19 @@ class QuantRuntimeLimitsTest(unittest.TestCase):
             r'MAX_SIMULATION_DRAWS\s*\)',
         )
 
+    def test_economics_forecasts_bound_output_periods(self):
+        source = ECONOMICS_ENGINE.read_text(encoding="utf-8")
+        expected = (
+            r'bounded_positive_int\(\s*forecast_periods, "forecast_periods", '
+            r'MAX_FORECAST_PERIODS\s*\)'
+        )
+        simple = source[source.index("def simple_forecasting_methods("):
+                        source.index("def _naive_forecast(")]
+        arima = source[source.index("def arima_forecast("):
+                       source.index("def calculate(", source.index("def arima_forecast("))]
+        self.assertRegex(simple, expected)
+        self.assertRegex(arima, expected)
+
     def test_portfolio_var_bounds_simulation_matrix_before_allocation(self):
         source = PORTFOLIO_RISK.read_text(encoding="utf-8")
         method = source[source.index("def monte_carlo_var("):
