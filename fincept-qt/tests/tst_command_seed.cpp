@@ -11,6 +11,7 @@ class TestCommandSeed : public QObject {
   private slots:
     void ids_are_unique();
     void terminal_aliases_are_discoverable();
+    void relationship_views_are_discoverable();
 };
 
 void TestCommandSeed::ids_are_unique() {
@@ -74,6 +75,29 @@ void TestCommandSeed::terminal_aliases_are_discoverable() {
     const auto* time_sales = find(QStringLiteral("equity_trading.time_sales"));
     QVERIFY(time_sales);
     QVERIFY(time_sales->keywords.contains(QStringLiteral("tas")));
+}
+
+void TestCommandSeed::relationship_views_are_discoverable() {
+    const QList<fincept::command::CommandItem> items = seed::section_items();
+    const auto find = [&items](const QString& id) -> const fincept::command::CommandItem* {
+        for (const auto& item : items)
+            if (item.id == id)
+                return &item;
+        return nullptr;
+    };
+
+    const auto* holders = find(QStringLiteral("relationship_map.holders"));
+    QVERIFY(holders);
+    QVERIFY(holders->keywords.contains(QStringLiteral("top holders")));
+
+    const auto* peers = find(QStringLiteral("relationship_map.peers"));
+    QVERIFY(peers);
+    QVERIFY(peers->keywords.contains(QStringLiteral("competitors")));
+
+    const auto* supply_chain = find(QStringLiteral("relationship_map.supply_chain"));
+    QVERIFY(supply_chain);
+    QVERIFY(supply_chain->keywords.contains(QStringLiteral("customers")));
+    QVERIFY(supply_chain->keywords.contains(QStringLiteral("suppliers")));
 }
 
 QTEST_GUILESS_MAIN(TestCommandSeed)
