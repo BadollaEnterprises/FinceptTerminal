@@ -8,6 +8,7 @@
 #include "core/config/AppPaths.h"
 #include "core/events/EventBus.h"
 #include "core/logging/Logger.h"
+#include "core/privacy/LogRedact.h"
 #include "services/agent_tasks/TaskRunService.h"
 #include "services/agent_tasks/TaskRunStore.h"
 #include "services/file_manager/FileManagerService.h"
@@ -179,7 +180,8 @@ struct ArtefactService::Impl {
         submit([a]() {
             auto r = TaskRunStore::instance().upsert_artefact(a);
             if (r.is_err())
-                LOG_WARN(kArtefactTag, QStringLiteral("upsert failed: %1").arg(QString::fromStdString(r.error())));
+                LOG_WARN(kArtefactTag, QStringLiteral("upsert failed: %1")
+                                           .arg(privacy::redact_text(QString::fromStdString(r.error()))));
         });
     }
 
@@ -198,7 +200,8 @@ struct ArtefactService::Impl {
             }
             auto r = TaskRunStore::instance().delete_artefacts(ids);
             if (r.is_err())
-                LOG_WARN(kArtefactTag, QStringLiteral("delete failed: %1").arg(QString::fromStdString(r.error())));
+                LOG_WARN(kArtefactTag, QStringLiteral("delete failed: %1")
+                                           .arg(privacy::redact_text(QString::fromStdString(r.error()))));
             for (const QString& folder : folders_to_tidy)
                 QDir().rmdir(folder); // only when empty: a pinned artefact keeps it
         });
@@ -273,7 +276,8 @@ void ArtefactService::Impl::write_and_record(RunArtefact a, const QByteArray& by
             }
         }
         if (!ok)
-            LOG_WARN(kArtefactTag, QStringLiteral("Artefact %1 of run %2 not saved: %3").arg(a.id.left(8), a.run_id.left(8), err));
+            LOG_WARN(kArtefactTag, QStringLiteral("Artefact %1 of run %2 not saved: %3")
+                                       .arg(log_mask(a.id), log_mask(a.run_id), privacy::redact_text(err)));
         QMetaObject::invokeMethod(
             QCoreApplication::instance(),
             [self, a, ok, err, ctx, cb, pending]() {
@@ -931,8 +935,9 @@ void ArtefactService::send_to_notes(const QString& artefact_id, QObject* ctx, No
                     {al::note_board_row_for_run(id, note.category, run_id, QDateTime::currentSecsSinceEpoch())});
                 if (m.is_err())
                     LOG_WARN(kArtefactTag, QStringLiteral("Note %1: its link to run %2 was not stored: %3")
-                                               .arg(id)
-                                               .arg(run_id.left(8), QString::fromStdString(m.error())));
+                                               .arg(log_mask(QString::number(id)))
+                                               .arg(log_mask(run_id),
+                                                    privacy::redact_text(QString::fromStdString(m.error()))));
             }
             asv_post(ctx, [ok, id, run_id, step_idx, err, cb]() {
                 if (ok) // the Notes screen and the dashboard tile reload on this

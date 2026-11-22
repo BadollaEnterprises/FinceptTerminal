@@ -4,6 +4,7 @@
 #include "services/agent_tasks/RunTemplateLibrary.h"
 
 #include "core/logging/Logger.h"
+#include "core/privacy/LogRedact.h"
 #include "screens/portfolio/PortfolioTypes.h"
 #include "services/agent_tasks/ScheduleLogic.h"
 #include "services/agent_tasks/TaskRunStore.h"
@@ -103,7 +104,8 @@ void RunTemplateLibrary::ensure_loaded() {
                 list.append(t);
             }
         } else {
-            LOG_WARN(kRtlTag, QStringLiteral("Loading user templates failed: %1").arg(QString::fromStdString(r.error())));
+            LOG_WARN(kRtlTag, QStringLiteral("Loading user templates failed: %1")
+                                  .arg(privacy::redact_text(QString::fromStdString(r.error()))));
         }
         QMetaObject::invokeMethod(
             QCoreApplication::instance(),

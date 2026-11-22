@@ -246,6 +246,28 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertNotIn(".arg(QString::fromStdString(history.error()))", source)
         self.assertNotIn(".arg(QString::fromStdString(saved.error()))", source)
 
+    def test_agent_task_persistence_diagnostics_scrub_errors_and_identifiers(self):
+        expected = {
+            "src/services/agent_tasks/TaskRunStore.cpp": 1,
+            "src/services/agent_tasks/RunTemplateLibrary.cpp": 1,
+            "src/services/agent_tasks/ArtefactService.cpp": 4,
+            "src/services/agent_tasks/TaskRunScheduler.cpp": 4,
+            "src/services/agent_tasks/TaskRunService.cpp": 6,
+        }
+        for relative, minimum in expected.items():
+            with self.subTest(source=relative):
+                source = (ROOT / relative).read_text(encoding="utf-8")
+                self.assertIn('#include "core/privacy/LogRedact.h"', source)
+                self.assertGreaterEqual(source.count("privacy::redact_text"), minimum)
+
+        scheduler = (ROOT / "src/services/agent_tasks/TaskRunScheduler.cpp").read_text(encoding="utf-8")
+        artefacts = (ROOT / "src/services/agent_tasks/ArtefactService.cpp").read_text(encoding="utf-8")
+        self.assertIn("log_mask(copy.id)", scheduler)
+        self.assertIn("log_mask(id)", scheduler)
+        self.assertGreaterEqual(artefacts.count("log_mask("), 4)
+        self.assertNotIn(".arg(copy.id.left(8), QString::fromStdString(r.error()))", scheduler)
+        self.assertNotIn(".arg(id.left(8), QString::fromStdString(r.error()))", scheduler)
+
     def test_broker_auth_diagnostics_redact_provider_errors(self):
         for relative, minimum in (
             ("src/trading/brokers/angelone/AngelOneBroker.cpp", 2),

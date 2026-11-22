@@ -5,6 +5,7 @@
 
 #include "core/logging/Logger.h"
 #include "core/policy/CommunityPolicy.h"
+#include "core/privacy/LogRedact.h"
 #include "services/agent_tasks/ArtefactService.h"
 #include "services/agent_tasks/ByoChatExecutor.h"
 #include "services/agent_tasks/CloudPlanExecutor.h"
@@ -148,7 +149,8 @@ void TaskRunService::initialize_deferred() {
         QVector<RunArtefact> artefact_list = artefacts.is_ok() ? artefacts.value() : QVector<RunArtefact>{};
         QHash<QString, int> seq_map = seqs.is_ok() ? seqs.value() : QHash<QString, int>{};
         if (runs.is_err())
-            LOG_WARN(kTaskRunSvcTag, QStringLiteral("Loading runs failed: %1").arg(QString::fromStdString(runs.error())));
+            LOG_WARN(kTaskRunSvcTag, QStringLiteral("Loading runs failed: %1")
+                                         .arg(privacy::redact_text(QString::fromStdString(runs.error()))));
         LOG_DEBUG(kTaskRunSvcTag, QStringLiteral("Loaded %1 runs, %2 steps, %3 artefacts (interrupted %4, pruned %5)")
                                      .arg(run_list.size())
                                      .arg(step_list.size())
@@ -725,7 +727,8 @@ int TaskRunService::delete_runs(const QStringList& ids) {
     submit_write([gone]() {
         auto r = TaskRunStore::instance().delete_runs(gone);
         if (r.is_err())
-            LOG_WARN(kTaskRunSvcTag, QStringLiteral("delete_runs failed: %1").arg(QString::fromStdString(r.error())));
+            LOG_WARN(kTaskRunSvcTag, QStringLiteral("delete_runs failed: %1")
+                                         .arg(privacy::redact_text(QString::fromStdString(r.error()))));
     });
     // Their unpinned artefacts go with them (rows and files); pinned ones stay.
     ArtefactService::instance().on_runs_deleted(gone);
@@ -1265,7 +1268,8 @@ void TaskRunService::persist_run(const QString& run_id) {
     submit_write([copy]() {
         auto r = TaskRunStore::instance().upsert_run(copy);
         if (r.is_err())
-            LOG_WARN(kTaskRunSvcTag, QStringLiteral("upsert_run failed: %1").arg(QString::fromStdString(r.error())));
+            LOG_WARN(kTaskRunSvcTag, QStringLiteral("upsert_run failed: %1")
+                                         .arg(privacy::redact_text(QString::fromStdString(r.error()))));
     });
 }
 
@@ -1274,7 +1278,8 @@ void TaskRunService::persist_step(const RunStep& step) {
     submit_write([copy]() {
         auto r = TaskRunStore::instance().upsert_step(copy);
         if (r.is_err())
-            LOG_WARN(kTaskRunSvcTag, QStringLiteral("upsert_step failed: %1").arg(QString::fromStdString(r.error())));
+            LOG_WARN(kTaskRunSvcTag, QStringLiteral("upsert_step failed: %1")
+                                         .arg(privacy::redact_text(QString::fromStdString(r.error()))));
     });
 }
 
@@ -1283,7 +1288,8 @@ void TaskRunService::persist_steps(const QString& run_id) {
     submit_write([run_id, copy]() {
         auto r = TaskRunStore::instance().replace_steps(run_id, copy);
         if (r.is_err())
-            LOG_WARN(kTaskRunSvcTag, QStringLiteral("replace_steps failed: %1").arg(QString::fromStdString(r.error())));
+            LOG_WARN(kTaskRunSvcTag, QStringLiteral("replace_steps failed: %1")
+                                         .arg(privacy::redact_text(QString::fromStdString(r.error()))));
     });
 }
 
@@ -1298,7 +1304,7 @@ void TaskRunService::flush_events() {
         if (r.is_err())
             LOG_WARN(kTaskRunSvcTag, QStringLiteral("insert_events failed (%1 rows): %2")
                                          .arg(batch.size())
-                                         .arg(QString::fromStdString(r.error())));
+                                         .arg(privacy::redact_text(QString::fromStdString(r.error()))));
     });
 }
 

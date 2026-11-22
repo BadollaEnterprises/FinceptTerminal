@@ -4,6 +4,7 @@
 #include "services/agent_tasks/TaskRunStore.h"
 
 #include "core/logging/Logger.h"
+#include "core/privacy/LogRedact.h"
 
 #include <QDateTime>
 #include <QJsonDocument>
@@ -382,7 +383,7 @@ Result<int> TaskRunStore::mark_unfinished_interrupted(qint64 before_ms, qint64 n
                                          "AND run_id IN (SELECT id FROM agent_task_runs WHERE status = 'interrupted')"));
     if (s.is_err())
         LOG_WARN(kTaskRunStoreTag, QStringLiteral("Resetting interrupted steps failed: %1")
-                                       .arg(QString::fromStdString(s.error())));
+                                       .arg(privacy::redact_text(QString::fromStdString(s.error()))));
     return Result<int>::ok(marked);
 }
 

@@ -6,6 +6,7 @@
 
 #include "auth/AuthManager.h"
 #include "core/logging/Logger.h"
+#include "core/privacy/LogRedact.h"
 #include "services/agent_tasks/RunTemplateLibrary.h"
 #include "services/agent_tasks/ScheduleLogic.h"
 #include "services/agent_tasks/TaskRunService.h"
@@ -85,7 +86,8 @@ struct TaskRunScheduler::Impl {
         writer->start([copy]() {
             auto r = TaskRunStore::instance().upsert_schedule(copy);
             if (r.is_err())
-                LOG_WARN(kSchedTag, QStringLiteral("Saving schedule %1 failed: %2").arg(copy.id.left(8), QString::fromStdString(r.error())));
+                LOG_WARN(kSchedTag, QStringLiteral("Saving schedule %1 failed: %2")
+                                        .arg(log_mask(copy.id), privacy::redact_text(QString::fromStdString(r.error()))));
         });
     }
 
@@ -380,7 +382,8 @@ void TaskRunScheduler::initialize_deferred() {
         auto r = TaskRunStore::instance().load_schedules();
         QVector<RunSchedule> list = r.is_ok() ? r.value() : QVector<RunSchedule>{};
         if (r.is_err())
-            LOG_WARN(kSchedTag, QStringLiteral("Loading schedules failed: %1").arg(QString::fromStdString(r.error())));
+            LOG_WARN(kSchedTag, QStringLiteral("Loading schedules failed: %1")
+                                    .arg(privacy::redact_text(QString::fromStdString(r.error()))));
         auto cap_r = SettingsRepository::instance().get(QString::fromLatin1(kSchedCapKey));
         bool cap_ok = false;
         const double cap = cap_r.is_ok() ? cap_r.value().toDouble(&cap_ok) : 0.0;
@@ -482,7 +485,8 @@ void TaskRunScheduler::delete_schedule(const QString& id) {
     d_->writer->start([id]() {
         auto r = TaskRunStore::instance().delete_schedule(id);
         if (r.is_err())
-            LOG_WARN(kSchedTag, QStringLiteral("Deleting schedule %1 failed: %2").arg(id.left(8), QString::fromStdString(r.error())));
+            LOG_WARN(kSchedTag, QStringLiteral("Deleting schedule %1 failed: %2")
+                                    .arg(log_mask(id), privacy::redact_text(QString::fromStdString(r.error()))));
     });
     emit schedules_changed();
     d_->rearm();
@@ -537,7 +541,8 @@ void TaskRunScheduler::set_daily_credit_cap(double credits) {
     d_->writer->start([value]() {
         auto r = SettingsRepository::instance().set(QString::fromLatin1(kSchedCapKey), value, QStringLiteral("agent_runs"));
         if (r.is_err())
-            LOG_WARN(kSchedTag, QStringLiteral("Saving the daily cap failed: %1").arg(QString::fromStdString(r.error())));
+            LOG_WARN(kSchedTag, QStringLiteral("Saving the daily cap failed: %1")
+                                    .arg(privacy::redact_text(QString::fromStdString(r.error()))));
     });
     emit schedules_changed();
 }
