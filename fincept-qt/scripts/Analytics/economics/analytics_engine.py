@@ -40,8 +40,13 @@ import warnings
 from scipy import stats
 import logging
 from .core import EconomicsBase, ValidationError, CalculationError, DataError
+from ..quant.runtime_limits import bounded_positive_int, bounded_workload
 
 logger = logging.getLogger(__name__)
+
+MAX_SIMULATION_COUNT = 100_000
+MAX_TIME_PERIODS = 10_000
+MAX_SIMULATION_DRAWS = 5_000_000
 
 # No process-wide warnings.filterwarnings('ignore') here: a library must not silence warnings
 # for its importer. The ARIMA order search silences its own fitting warnings locally.
@@ -672,11 +677,19 @@ class ScenarioAnalyzer(EconomicsBase):
         Student-t shocks (df 5) are scaled to unit variance. VaR / expected shortfall are LOSSES
         (base_value minus the tail level / tail mean), positive numbers."""
 
+        try:
+            num_simulations = bounded_positive_int(
+                num_simulations, "num_simulations", MAX_SIMULATION_COUNT
+            )
+            time_periods = bounded_positive_int(time_periods, "time_periods", MAX_TIME_PERIODS)
+            bounded_workload(
+                "monte_carlo", [num_simulations, time_periods], MAX_SIMULATION_DRAWS
+            )
+        except ValueError as exc:
+            raise ValidationError(str(exc)) from exc
+
         if num_simulations < 100:
             raise ValidationError("Number of simulations must be at least 100")
-
-        if time_periods < 1:
-            raise ValidationError("Time periods must be positive")
         if base_value <= 0:
             raise ValidationError("base_value must be positive for a geometric Brownian motion")
         if volatility < 0:

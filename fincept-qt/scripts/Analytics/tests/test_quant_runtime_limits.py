@@ -10,6 +10,7 @@ from pathlib import Path
 ANALYTICS = Path(__file__).resolve().parents[1]
 LIMITS = ANALYTICS / "quant" / "runtime_limits.py"
 QUANT_MODULES = ANALYTICS / "quant" / "quant_modules_3042.py"
+ECONOMICS_ENGINE = ANALYTICS / "economics" / "analytics_engine.py"
 
 
 def load_limits_module():
@@ -82,6 +83,22 @@ class QuantRuntimeLimitsTest(unittest.TestCase):
         self.assertIn('bounded_name_list(algorithms, "algorithms", MAX_METHOD_COUNT)', source)
         self.assertIn('bounded_name_list(methods, "methods", MAX_METHOD_COUNT)', source)
         self.assertIn('bounded_name_list(sampling_methods, "sampling_methods", MAX_METHOD_COUNT)', source)
+
+    def test_economics_monte_carlo_bounds_counts_and_matrix_work(self):
+        source = ECONOMICS_ENGINE.read_text(encoding="utf-8")
+        self.assertRegex(
+            source,
+            r'bounded_positive_int\(\s*num_simulations, "num_simulations", MAX_SIMULATION_COUNT\s*\)',
+        )
+        self.assertRegex(
+            source,
+            r'bounded_positive_int\(\s*time_periods, "time_periods", MAX_TIME_PERIODS\s*\)',
+        )
+        self.assertRegex(
+            source,
+            r'bounded_workload\(\s*"monte_carlo", \[num_simulations, time_periods\], '
+            r'MAX_SIMULATION_DRAWS\s*\)',
+        )
 
 
 if __name__ == "__main__":
