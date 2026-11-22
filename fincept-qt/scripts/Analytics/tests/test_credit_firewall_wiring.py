@@ -893,6 +893,18 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertNotIn('fu["tools"]', summary)
         self.assertNotIn("try_extract_and_execute_text_tool_calls", summary)
 
+    def test_ai_chat_displays_the_resolved_reply_allowance(self):
+        screen = (ROOT / "src/screens/ai_chat/AiChatScreen_Messaging.cpp").read_text(encoding="utf-8")
+        hint = screen[screen.index("void AiChatScreen::update_model_hint"):
+                      screen.index("void AiChatScreen::update_status")]
+        settings = (ROOT / "src/screens/settings/LlmConfigSection_Providers.cpp").read_text(encoding="utf-8")
+
+        self.assertIn("resolved_config_json", hint)
+        self.assertIn('value(QStringLiteral("max_tokens")).toInt()', hint)
+        self.assertNotIn("ModelCatalog::output_cap", hint)
+        self.assertIn("cost-conscious 4,096-token default", settings)
+        self.assertNotIn("Auto = the model's own", settings)
+
     def test_selected_agent_profiles_share_runtime_provider_policy(self):
         header = (ROOT / "src/storage/repositories/LlmProfileRepository.h").read_text(encoding="utf-8")
         source = (ROOT / "src/storage/repositories/LlmProfileRepository.cpp").read_text(encoding="utf-8")

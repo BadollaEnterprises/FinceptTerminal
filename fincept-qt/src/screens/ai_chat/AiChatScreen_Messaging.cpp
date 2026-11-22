@@ -774,11 +774,10 @@ void AiChatScreen::update_model_hint() {
         return;
     const ai_chat::ModelChoice route =
         ai_chat::ModelRouter::instance().resolve(QString::fromLatin1(ai_chat::kFeatureAiChat));
-    int cap = 0;
-    if (route.is_fincept())
-        cap = ai_chat::ModelCatalog::kFinceptMaxOutputTokens;
-    else if (!route.is_harness())
-        cap = ai_chat::ModelCatalog::output_cap(route.provider.toLower(), route.model);
+    ai_chat::ChatRoute chat_route;
+    chat_route.feature = QString::fromLatin1(ai_chat::kFeatureAiChat);
+    const QJsonObject resolved = ai_chat::LlmService::instance().resolved_config_json(chat_route);
+    const int cap = resolved.value(QStringLiteral("max_tokens")).toInt();
     QStringList parts;
     if (cap > 0)
         parts << tr("REPLY ≤ %1").arg(aichat::format_count(cap));
@@ -786,8 +785,8 @@ void AiChatScreen::update_model_hint() {
     if (!billing.isEmpty())
         parts << billing;
     model_hint_->setText(parts.join(QStringLiteral(" · ")));
-    model_hint_->setToolTip(tr("Largest reply this model accepts (output tokens) and who pays for it. The context "
-                               "window is not reported by the model catalogue."));
+    model_hint_->setToolTip(tr("Output-token allowance sent for the active route, after the configured limit and "
+                               "provider ceiling are applied, and who pays for it."));
     model_hint_->setVisible(!parts.isEmpty());
     composer_->set_reply_cap(cap);
 }

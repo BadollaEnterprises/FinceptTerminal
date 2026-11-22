@@ -603,11 +603,13 @@ void LlmConfigSection::load_providers() {
     const bool fincept_active = effective_provider.compare(QLatin1String("fincept"), Qt::CaseInsensitive) == 0;
     const int tokens_max = fincept_active ? ai_chat::ModelCatalog::kFinceptMaxOutputTokens : kLlmProvidersTokensMax;
     tokens_spin_->setMaximum(tokens_max);
-    tokens_spin_->setToolTip(fincept_active ? tr("Maximum output tokens per reply. Auto = %1. The Fincept AI "
-                                                 "service accepts at most %1.")
-                                                  .arg(tokens_max)
-                                            : tr("Maximum output tokens per reply. Auto = the model's own "
-                                                 "limit; larger values are capped to it."));
+    tokens_spin_->setToolTip(
+        fincept_active
+            ? tr("Maximum output tokens per reply. Auto uses the cost-conscious 4,096-token default. The Fincept "
+                 "AI service accepts at most %1.")
+                  .arg(tokens_max)
+            : tr("Maximum output tokens per reply. Auto uses the cost-conscious 4,096-token default; explicit "
+                 "larger values are capped to the selected model's limit."));
 
     // Load global settings
     auto gs = LlmConfigRepository::instance().get_global_settings();
