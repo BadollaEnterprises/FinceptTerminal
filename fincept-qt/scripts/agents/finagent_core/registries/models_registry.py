@@ -265,6 +265,19 @@ class ModelsRegistry:
     }
 
     _loaded_models: Dict[str, Any] = {}
+    _DEFAULT_OUTPUT_TOKENS = 4096
+    _MAX_OUTPUT_TOKENS = 2_000_000
+
+    @classmethod
+    def output_token_limit(cls, value: Any) -> int:
+        """Return a valid, cost-bounded per-call output allowance."""
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError, OverflowError):
+            parsed = cls._DEFAULT_OUTPUT_TOKENS
+        if parsed <= 0:
+            parsed = cls._DEFAULT_OUTPUT_TOKENS
+        return min(parsed, cls._MAX_OUTPUT_TOKENS)
 
     @classmethod
     def create_model(
@@ -379,6 +392,7 @@ class ModelsRegistry:
                 or (api_keys or {}).get(base_url_key)
                 or config.get("base_url")
             )
+            max_tok = cls.output_token_limit(kwargs.pop("max_tokens", None))
 
             # If a custom base_url is set for a provider that normally doesn't
             # accept one (e.g. anthropic with a MiniMax/OpenRouter-compatible
@@ -416,8 +430,7 @@ class ModelsRegistry:
                     oai_kwargs["api_key"] = final_api_key
                 if "temperature" in kwargs:
                     oai_kwargs["temperature"] = kwargs.pop("temperature")
-                if "max_tokens" in kwargs:
-                    oai_kwargs["max_tokens"] = kwargs.pop("max_tokens")
+                oai_kwargs["max_tokens"] = max_tok
                 logger.info(
                     f"Provider '{provider}' has custom base_url → redirecting to "
                     f"OpenAIChat(base_url={_cleaned_base_url}, id={final_model_id})"
@@ -434,13 +447,10 @@ class ModelsRegistry:
 
             if "temperature" in kwargs:
                 model_kwargs["temperature"] = kwargs.pop("temperature")
-            if "max_tokens" in kwargs:
-                max_tok = kwargs.pop("max_tokens")
-                if max_tok is not None:
-                    if provider_lower in USES_MAX_OUTPUT_TOKENS:
-                        model_kwargs["max_output_tokens"] = max_tok
-                    else:
-                        model_kwargs["max_tokens"] = max_tok
+            if provider_lower in USES_MAX_OUTPUT_TOKENS:
+                model_kwargs["max_output_tokens"] = max_tok
+            else:
+                model_kwargs["max_tokens"] = max_tok
             if "max_completion_tokens" in kwargs:
                 model_kwargs["max_completion_tokens"] = kwargs.pop("max_completion_tokens")
 

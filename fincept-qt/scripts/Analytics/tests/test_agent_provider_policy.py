@@ -510,6 +510,18 @@ class AgentProviderPolicyTest(unittest.TestCase):
         self.assertNotIn("api.fincept.in", retired_adapter)
         self.assertNotIn("import httpx", retired_adapter)
 
+    def test_agent_model_registry_applies_a_bounded_output_allowance(self):
+        models = load_path("finagent_models_registry_limits", MODEL_REGISTRY).ModelsRegistry
+        self.assertEqual(models.output_token_limit(None), 4096)
+        self.assertEqual(models.output_token_limit(0), 4096)
+        self.assertEqual(models.output_token_limit("bad"), 4096)
+        self.assertEqual(models.output_token_limit(777), 777)
+        self.assertEqual(models.output_token_limit(10**12), 2_000_000)
+
+        source = MODEL_REGISTRY.read_text(encoding="utf-8")
+        create = source[source.index("def create_model(") :]
+        self.assertIn('max_tok = cls.output_token_limit(kwargs.pop("max_tokens", None))', create)
+
     def test_rd_agent_rejects_retired_providers_before_applying_llm_config(self):
         cli = load_path("finagent_rdagent_cli", RDAGENT_CLI)
         check = getattr(cli, "_provider_policy_error", None)
