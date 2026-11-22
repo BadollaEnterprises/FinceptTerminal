@@ -127,6 +127,11 @@ class PythonRunner : public QObject {
     /// Creates a temp file, executes it, returns stdout/stderr.
     void run_code(const QString& code, Callback cb);
 
+    /// Same as run_code(), with an explicit child-process policy. Workflow code
+    /// uses this to run without inheriting Settings-managed credentials; the
+    /// notebook wrapper keeps run_code()'s reviewed compatibility behaviour.
+    void run_code_with_options(const QString& code, const RunOptions& opts, Callback cb);
+
     /// Resolve path to python executable
     QString python_path() const;
 

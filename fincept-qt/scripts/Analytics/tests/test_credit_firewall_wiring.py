@@ -105,6 +105,13 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertIn("credential_allowlist = QStringList{}", filings)
         self.assertIn("credential_allowlist = QStringList{}", segments)
 
+    def test_workflow_python_code_cannot_read_stored_credentials(self):
+        runner = (ROOT / "src/python/PythonRunner.h").read_text(encoding="utf-8")
+        bridge = (ROOT / "src/services/workflow/adapters/ServiceBridges.cpp").read_text(encoding="utf-8")
+        self.assertIn("run_code_with_options", runner)
+        self.assertGreaterEqual(bridge.count("code_opts.credential_allowlist = QStringList{}"), 2)
+        self.assertGreaterEqual(bridge.count("run_code_with_options"), 2)
+
     def test_macro_and_geopolitics_services_check_firewall(self):
         geopolitics = (ROOT / "src/services/geopolitics/GeopoliticsService.cpp").read_text(encoding="utf-8")
         macro = (ROOT / "src/services/economics/FinceptMacroService.cpp").read_text(encoding="utf-8")

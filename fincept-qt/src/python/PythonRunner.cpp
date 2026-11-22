@@ -970,11 +970,18 @@ void PythonRunner::run_with_options(const QString& script, const QStringList& ar
 /// Run arbitrary Python code (for notebook/colab cells).
 /// Creates a temp file, executes it, returns output.
 void PythonRunner::run_code(const QString& code, Callback cb) {
+    run_code_with_options(code, RunOptions{}, std::move(cb));
+}
+
+void PythonRunner::run_code_with_options(const QString& code, const RunOptions& opts, Callback cb) {
     // Same thread-affinity guard as run(). See the comment there.
     if (QThread::currentThread() != this->thread()) {
         Callback cb_copy = std::move(cb);
         QMetaObject::invokeMethod(
-            this, [this, code, cb_copy = std::move(cb_copy)]() mutable { run_code(code, std::move(cb_copy)); },
+            this,
+            [this, code, opts, cb_copy = std::move(cb_copy)]() mutable {
+                run_code_with_options(code, opts, std::move(cb_copy));
+            },
             Qt::QueuedConnection);
         return;
     }
@@ -1010,13 +1017,13 @@ void PythonRunner::run_code(const QString& code, Callback cb) {
     file.write(code.toUtf8());
     file.close();
 
-    // Queue as a special request — use the temp file path directly
-    // A watchdog floor here too: an endless cell would otherwise hold one of the
-    // three concurrency slots forever. A notebook cell may legitimately train for
-    // a long time, so use the long-run budget rather than the 5-minute default.
-    queue_.enqueue(
-        {"__code__:" + temp_path, {}, std::move(cb), {}, {}, false, true, kLongRunTimeoutMs, nullptr, std::nullopt, 0,
-         true});
+    // Queue as a special request — use the temp file path directly. A default
+    // run_code() keeps the long-run watchdog used by notebook cells; explicit
+    // options can tighten it for a caller without removing the default floor.
+    const int timeout_ms = opts.timeout_ms == kTimeoutFromScript ? kLongRunTimeoutMs : qMax(0, opts.timeout_ms);
+    queue_.enqueue({"__code__:" + temp_path, {}, std::move(cb), {}, opts.stdin_data, false, opts.expect_json,
+                    timeout_ms, opts.cancel_token, opts.credential_allowlist, opts.max_output_bytes,
+                    opts.stream_stdout});
     start_next();
 }
 

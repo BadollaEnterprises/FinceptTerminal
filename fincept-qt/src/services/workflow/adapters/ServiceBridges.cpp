@@ -1979,7 +1979,9 @@ static void wire_utility_bridges(NodeRegistry& registry) {
                         "   print(_json.dumps({'executed': True}))\n";
             }
 
-            PythonRunner::instance().run_code(code, [cb](const PythonResult& res) {
+            PythonRunner::RunOptions code_opts;
+            code_opts.credential_allowlist = QStringList{};
+            PythonRunner::instance().run_code_with_options(code, code_opts, [cb](const PythonResult& res) {
                 if (!res.success) {
                     cb(false, {}, res.error.isEmpty() ? "Code execution failed" : res.error);
                     return;
@@ -2976,7 +2978,10 @@ print(json.dumps({"path": path, "chart_type": chart_type, "size": os.path.getsiz
                                .arg(height)
                                .arg(QString::fromLatin1(path.toUtf8().toBase64()));
 
-            PythonRunner::instance().run_code(code, [cb, path, chart_type](const PythonResult& res) {
+            PythonRunner::RunOptions code_opts;
+            code_opts.credential_allowlist = QStringList{};
+            PythonRunner::instance().run_code_with_options(
+                code, code_opts, [cb, path, chart_type](const PythonResult& res) {
                 if (!res.success) {
                     cb(false, {}, res.error.isEmpty() ? "Chart generation failed" : res.error);
                     return;
