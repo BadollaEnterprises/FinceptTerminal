@@ -1,6 +1,7 @@
 #include "services/llm/DeepSeekLiveSmoke.h"
 
 #include "core/metrics/LocalUsageMetrics.h"
+#include "core/privacy/LogRedact.h"
 #include "mcp/McpProvider.h"
 #include "services/llm/LlmService.h"
 
@@ -55,10 +56,11 @@ int run_deepseek_live_smoke() {
         const bool usage_ok = response.prompt_tokens > 0 && response.completion_tokens > 0;
         const bool content_ok = response.content.contains(marker, Qt::CaseInsensitive);
         if (!response.success || !provider_ok || !tool_ok || !usage_ok || !content_ok) {
+            const QString safe_error = privacy::redact_text(response.error).left(200);
             std::fprintf(stderr,
                          "live DeepSeek smoke: %s FAILED (success=%d provider=%s tool=%d usage=%d marker=%d error=%s)\n",
                          qPrintable(item.id), response.success ? 1 : 0, qPrintable(response.provider), tool_ok ? 1 : 0,
-                         usage_ok ? 1 : 0, content_ok ? 1 : 0, qPrintable(response.error.left(200)));
+                         usage_ok ? 1 : 0, content_ok ? 1 : 0, qPrintable(safe_error));
             return 3;
         }
         observed_cached += qMax(0, response.cached_prompt_tokens);
