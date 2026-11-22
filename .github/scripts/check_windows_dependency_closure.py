@@ -28,7 +28,9 @@ def is_msvc_runtime(name: str) -> bool:
 
 def is_debug_msvc_runtime(name: str) -> bool:
     lowered = name.lower()
-    return is_msvc_runtime(lowered) and Path(lowered).stem.endswith("d")
+    return lowered == "ucrtbased.dll" or (
+        is_msvc_runtime(lowered) and Path(lowered).stem.endswith("d")
+    )
 
 
 def parse_dumpbin_dependents(output: str) -> list[str]:

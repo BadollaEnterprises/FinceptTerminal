@@ -122,6 +122,28 @@ class WindowsDependencyClosureTest(unittest.TestCase):
                 ],
             )
 
+    def test_rejects_debug_ucrt_even_when_host_has_it(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            bundle = root / "dist"
+            system32 = root / "System32"
+            bundle.mkdir()
+            system32.mkdir()
+            executable = bundle / "FinceptTerminal.exe"
+            executable.touch()
+            (system32 / "ucrtbased.dll").touch()
+
+            failures = CLOSURE.check_dependency_closure(
+                bundle,
+                system32,
+                lambda path: ["ucrtbased.dll"] if path == executable else [],
+            )
+
+            self.assertEqual(
+                failures,
+                ["FinceptTerminal.exe imports non-redistributable debug MSVC runtime ucrtbased.dll"],
+            )
+
     def test_parses_only_dumpbin_dependency_lines(self) -> None:
         output = """
 Dump of file FinceptTerminal.exe
