@@ -278,6 +278,14 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertNotIn('"Import: " + raw_errors.join', source)
         self.assertNotIn('" + file_path', source)
 
+    def test_portfolio_summary_logs_mask_ids_errors_and_holdings(self):
+        source = (ROOT / "src/services/portfolio/PortfolioService_Summary.cpp").read_text(encoding="utf-8")
+        self.assertGreaterEqual(source.count("log_mask(portfolio_id)"), 8)
+        self.assertGreaterEqual(source.count("log_mask(portfolio.broker_account_id)"), 2)
+        self.assertGreaterEqual(source.count("log_scrub("), 4)
+        self.assertNotIn("summary.unpriced.join", source)
+        self.assertNotIn("summary.fx_missing.join", source)
+
     def test_account_stream_diagnostics_mask_accounts_and_broker_errors(self):
         source = (ROOT / "src/trading/AccountDataStream.cpp").read_text(encoding="utf-8")
         self.assertIn('#include "core/privacy/LogRedact.h"', source)

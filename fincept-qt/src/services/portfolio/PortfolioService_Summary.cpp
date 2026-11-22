@@ -58,7 +58,7 @@ void PortfolioService::load_summary(const QString& portfolio_id) {
     if (portfolio_r.is_err()) {
         const QString raw = QString::fromStdString(portfolio_r.error());
         LOG_ERROR("PortfolioSvc", logf("Portfolio summary failed: the portfolio could not be read",
-                                       {{"portfolio", portfolio_id}, {"error", raw.left(300)}}));
+                                       {{"portfolio", log_mask(portfolio_id)}, {"error", log_scrub(raw)}}));
         emit summary_error(portfolio_id, storage_failure_text(tr("This portfolio could not be read."), raw));
         return;
     }
@@ -67,7 +67,7 @@ void PortfolioService::load_summary(const QString& portfolio_id) {
     if (assets_r.is_err()) {
         const QString raw = QString::fromStdString(assets_r.error());
         LOG_ERROR("PortfolioSvc", logf("Portfolio summary failed: the holdings could not be read",
-                                       {{"portfolio", portfolio_id}, {"error", raw.left(300)}}));
+                                       {{"portfolio", log_mask(portfolio_id)}, {"error", log_scrub(raw)}}));
         emit summary_error(portfolio_id, storage_failure_text(tr("The holdings of this portfolio could not be read."), raw));
         return;
     }
@@ -124,21 +124,21 @@ bool PortfolioService::try_broker_quotes(const QString& portfolio_id, const QVec
     const auto account = acct_mgr.get_account(portfolio.broker_account_id);
     if (account.account_id.isEmpty() || account.broker_id.isEmpty()) {
         LOG_WARN("PortfolioSvc", QString("broker_account_id %1 not found — falling back to yfinance for %2")
-                                     .arg(portfolio.broker_account_id, portfolio_id));
+                                     .arg(log_mask(portfolio.broker_account_id), log_mask(portfolio_id)));
         return false;
     }
 
     auto* broker = trading::BrokerRegistry::instance().get(account.broker_id);
     if (!broker) {
         LOG_WARN("PortfolioSvc", QString("broker '%1' not registered — falling back to yfinance for %2")
-                                     .arg(account.broker_id, portfolio_id));
+                                     .arg(account.broker_id, log_mask(portfolio_id)));
         return false;
     }
 
     const auto creds = acct_mgr.load_credentials(portfolio.broker_account_id);
     if (creds.access_token.isEmpty()) {
         LOG_WARN("PortfolioSvc", QString("broker account %1 has no access_token — falling back to yfinance for %2")
-                                     .arg(portfolio.broker_account_id, portfolio_id));
+                                     .arg(log_mask(portfolio.broker_account_id), log_mask(portfolio_id)));
         return false;
     }
 
@@ -162,7 +162,7 @@ bool PortfolioService::try_broker_quotes(const QString& portfolio_id, const QVec
         // via broker. Fall back to yfinance so the portfolio still renders.
         LOG_WARN("PortfolioSvc",
                  QString("broker-linked portfolio %1 has no broker_symbol/exchange on any asset — yfinance fallback")
-                     .arg(portfolio_id));
+                     .arg(log_mask(portfolio_id)));
         return false;
     }
 
@@ -208,13 +208,13 @@ bool PortfolioService::try_broker_quotes(const QString& portfolio_id, const QVec
                     LOG_DEBUG("PortfolioSvc", QString("Broker quotes: %1 of %2 for portfolio %3")
                                                  .arg(quote_map.size())
                                                  .arg(key_to_yf.size())
-                                                 .arg(portfolio_id));
+                                                 .arg(log_mask(portfolio_id)));
                 } else {
                     // Broker call failed — log and fall back to yfinance for
                     // _this_ refresh. The portfolio stays linked; next refresh
                     // will retry the broker.
                     LOG_WARN("PortfolioSvc", QString("broker get_quotes failed for %1: %2 — falling back to yfinance")
-                                                 .arg(portfolio_id, resp.error.left(200)));
+                                                 .arg(log_mask(portfolio_id), log_scrub(resp.error)));
                     QStringList symbols;
                     symbols.reserve(assets.size());
                     for (const auto& a : assets)
@@ -279,7 +279,7 @@ void PortfolioService::request_fx_history(const QString& portfolio_id, const QSt
                 // trade-date FX of those rows stays unknown (fx_pnl absent), never invented.
                 self->fx_history_.insert(key, ok ? rates : QMap<QDate, double>{});
                 if (!ok)
-                    LOG_WARN("PortfolioSvc", QString("FX history %1 unavailable: %2").arg(key, error.left(200)));
+                    LOG_WARN("PortfolioSvc", QString("FX history %1 unavailable: %2").arg(key, log_scrub(error)));
                 if (self->fx_pending_.isEmpty())
                     return;
                 QTimer::singleShot(200, self, [self]() {
@@ -410,13 +410,13 @@ void PortfolioService::finish_summary(const QString& portfolio_id, const QVector
     // save_snapshot() is INSERT OR REPLACE keyed by day — a partial total would
     // overwrite the real NAV and put a fake jump into every return statistic.
     if (!summary.complete) {
-        LOG_WARN("PortfolioSvc", QString("Summary for %1 incomplete (%2 of %3 valued; unpriced: %4; no FX: %5) — "
+        LOG_WARN("PortfolioSvc", QString("Summary for %1 incomplete (%2 of %3 valued; %4 unpriced; %5 without FX) — "
                                          "not cached or snapshotted")
-                                     .arg(portfolio_id)
+                                     .arg(log_mask(portfolio_id))
                                      .arg(summary.valued_positions)
                                      .arg(summary.total_positions)
-                                     .arg(summary.unpriced.join(QLatin1Char(',')).left(200),
-                                          summary.fx_missing.join(QLatin1Char(',')).left(200)));
+                                     .arg(summary.unpriced.size())
+                                     .arg(summary.fx_missing.size()));
         emit summary_loaded(summary);
         return;
     }
