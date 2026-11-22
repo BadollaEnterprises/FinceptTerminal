@@ -16,7 +16,6 @@
 #include "core/events/EventBus.h"
 #include "core/logging/Logger.h"
 #include "core/policy/CommunityPolicy.h"
-#include "core/privacy/LogRedact.h"
 #include "datahub/DataHub.h"
 #include "datahub/TopicPolicy.h"
 #include "mcp/McpProvider.h"
@@ -759,25 +758,10 @@ void AgentService::kill_agent_processes_for_quit() {
 
 QJsonObject AgentService::model_config_for_profile(const QString& profile_id, const QString& context_type) const {
     ResolvedLlmProfile resolved;
-    if (!profile_id.isEmpty()) {
-        const auto pr = LlmProfileRepository::instance().get_profile(profile_id);
-        if (pr.is_err()) {
-            resolved.config_error = QStringLiteral("Could not read selected LLM profile: %1")
-                                        .arg(privacy::redact_text(QString::fromStdString(pr.error())));
-            return ai_chat::LlmService::profile_to_json(resolved);
-        } else {
-            const LlmProfile& p = pr.value();
-            resolved.profile_id = p.id;
-            resolved.profile_name = p.name;
-            resolved.provider = p.provider;
-            resolved.model_id = p.model_id;
-            resolved.api_key = p.api_key;
-            resolved.base_url = p.base_url;
-            resolved.temperature = p.temperature;
-            resolved.max_tokens = p.max_tokens;
-            resolved.system_prompt = p.system_prompt;
-        }
-    }
+    if (!profile_id.isEmpty())
+        resolved = LlmProfileRepository::instance().resolve_profile_id(profile_id);
+    if (!resolved.config_error.isEmpty())
+        return ai_chat::LlmService::profile_to_json(resolved);
     if (resolved.provider.isEmpty() && !context_type.isEmpty())
         resolved = ai_chat::LlmService::instance().resolve_profile(context_type, {});
     if (resolved.provider.isEmpty())

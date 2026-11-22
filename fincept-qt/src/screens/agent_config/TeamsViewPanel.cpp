@@ -2,7 +2,6 @@
 #include "screens/agent_config/TeamsViewPanel.h"
 
 #include "core/logging/Logger.h"
-#include "core/privacy/LogRedact.h"
 #include "screens/agent_config/AgentProfileRows.h"
 #include "screens/agent_config/AgentResultFormat.h"
 #include "services/agents/AgentService.h"
@@ -599,22 +598,8 @@ void TeamsViewPanel::run_team() {
     // Resolve coordinator profile
     const QString coord_profile_id = team_profile_combo_->currentData().toString();
     ResolvedLlmProfile coord;
-    if (!coord_profile_id.isEmpty()) {
-        const auto selected = LlmProfileRepository::instance().get_profile(coord_profile_id);
-        if (selected.is_err()) {
-            coord.config_error = QStringLiteral("Could not read selected LLM profile: %1")
-                                     .arg(privacy::redact_text(QString::fromStdString(selected.error())));
-        } else {
-            const auto& p = selected.value();
-            coord.profile_id = p.id;
-            coord.provider = p.provider;
-            coord.model_id = p.model_id;
-            coord.api_key = p.api_key;
-            coord.base_url = p.base_url;
-            coord.temperature = p.temperature;
-            coord.max_tokens = p.max_tokens;
-        }
-    }
+    if (!coord_profile_id.isEmpty())
+        coord = LlmProfileRepository::instance().resolve_profile_id(coord_profile_id);
     if (coord.provider.isEmpty() && coord.config_error.isEmpty())
         coord = ai_chat::LlmService::instance().resolve_profile("team_coordinator", {});
 

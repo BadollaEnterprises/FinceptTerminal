@@ -2,7 +2,6 @@
 #include "screens/agent_config/AgentsViewPanel.h"
 
 #include "core/logging/Logger.h"
-#include "core/privacy/LogRedact.h"
 #include "screens/agent_config/AgentProfileRows.h"
 #include "screens/agent_config/AgentResultFormat.h"
 #include "services/agents/AgentService.h"
@@ -1546,22 +1545,7 @@ QJsonObject AgentsViewPanel::build_config_from_editor() const {
     if (!profile_id.isEmpty()) {
         // An explicit selection must either load or block. Falling back to the
         // inherited profile here can silently change the provider/billing path.
-        const auto selected = LlmProfileRepository::instance().get_profile(profile_id);
-        if (selected.is_err()) {
-            resolved.config_error = QStringLiteral("Could not read selected LLM profile: %1")
-                                        .arg(privacy::redact_text(QString::fromStdString(selected.error())));
-        } else {
-            const auto& p = selected.value();
-            resolved.profile_id = p.id;
-            resolved.profile_name = p.name;
-            resolved.provider = p.provider;
-            resolved.model_id = p.model_id;
-            resolved.api_key = p.api_key;
-            resolved.base_url = p.base_url;
-            resolved.temperature = p.temperature;
-            resolved.max_tokens = p.max_tokens;
-            resolved.system_prompt = p.system_prompt;
-        }
+        resolved = LlmProfileRepository::instance().resolve_profile_id(profile_id);
     }
     if (resolved.provider.isEmpty() && resolved.config_error.isEmpty())
         resolved = ai_chat::LlmService::instance().resolve_profile("agent", agent_id);

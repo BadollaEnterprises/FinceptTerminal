@@ -569,6 +569,17 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertIn("if (profiles.is_err())", config)
         self.assertGreaterEqual(quant.count("aiq_llm_configuration_error(llm)"), 3)
 
+    def test_selected_agent_profiles_share_runtime_provider_policy(self):
+        header = (ROOT / "src/storage/repositories/LlmProfileRepository.h").read_text(encoding="utf-8")
+        source = (ROOT / "src/storage/repositories/LlmProfileRepository.cpp").read_text(encoding="utf-8")
+        self.assertIn("ResolvedLlmProfile resolve_profile_id", header)
+        selected = source[source.index("ResolvedLlmProfile LlmProfileRepository::resolve_profile_id"):
+                          source.index("Result<void> LlmProfileRepository::save_profile")]
+        self.assertIn("get_profile(id)", selected)
+        self.assertIn("runtime_profile_allowed", selected)
+        self.assertIn("return resolution_error(", selected)
+        self.assertIn("return profile_to_resolved", selected)
+
     def test_llm_api_keys_never_use_remote_plaintext_endpoints(self):
         service = (ROOT / "src/services/llm/LlmService.cpp").read_text(encoding="utf-8")
         models = (ROOT / "src/services/llm/LlmModelsApi.cpp").read_text(encoding="utf-8")

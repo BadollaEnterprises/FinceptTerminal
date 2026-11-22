@@ -1,6 +1,5 @@
 #include "services/workflow/nodes/AgentNodes.h"
 
-#include "core/privacy/LogRedact.h"
 #include "mcp/McpService.h"
 #include "services/agents/AgentService.h"
 #include "services/agents/AgentTypes.h"
@@ -110,25 +109,8 @@ void register_agent_nodes(NodeRegistry& registry) {
                 using fincept::ResolvedLlmProfile;
 
                 ResolvedLlmProfile resolved;
-                if (!profile_id.isEmpty()) {
-                    const auto selected = LlmProfileRepository::instance().get_profile(profile_id);
-                    if (selected.is_err()) {
-                        resolved.config_error = QStringLiteral("Could not read selected LLM profile: %1")
-                                                    .arg(fincept::privacy::redact_text(
-                                                        QString::fromStdString(selected.error())));
-                    } else {
-                        const auto& p = selected.value();
-                        resolved.profile_id = p.id;
-                        resolved.profile_name = p.name;
-                        resolved.provider = p.provider;
-                        resolved.model_id = p.model_id;
-                        resolved.api_key = p.api_key;
-                        resolved.base_url = p.base_url;
-                        resolved.temperature = p.temperature;
-                        resolved.max_tokens = p.max_tokens;
-                        resolved.system_prompt = p.system_prompt;
-                    }
-                }
+                if (!profile_id.isEmpty())
+                    resolved = LlmProfileRepository::instance().resolve_profile_id(profile_id);
                 if (resolved.provider.isEmpty() && resolved.config_error.isEmpty())
                     resolved = LlmService::instance().resolve_profile("agent", agent_id);
 

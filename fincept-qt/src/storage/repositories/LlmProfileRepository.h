@@ -91,6 +91,10 @@ class LlmProfileRepository : public BaseRepository<LlmProfile> {
     /// Single profile by id.
     Result<LlmProfile> get_profile(const QString& id) const;
 
+    /// Resolve one explicitly selected profile for the Python agent runtime.
+    /// Storage errors and terminal-only/retired providers return config_error.
+    ResolvedLlmProfile resolve_profile_id(const QString& id) const;
+
     /// Save by inserting or updating the same row in place.
     Result<void> save_profile(const LlmProfile& p);
 

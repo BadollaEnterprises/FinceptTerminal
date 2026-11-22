@@ -146,6 +146,16 @@ Result<LlmProfile> LlmProfileRepository::get_profile(const QString& id) const {
     return Result<LlmProfile>::ok(std::move(profile));
 }
 
+ResolvedLlmProfile LlmProfileRepository::resolve_profile_id(const QString& id) const {
+    const auto profile = get_profile(id);
+    if (profile.is_err())
+        return resolution_error(QStringLiteral("selected LLM profile"), profile.error());
+    if (!runtime_profile_allowed(profile.value().provider))
+        return resolution_error(QStringLiteral("selected LLM profile"),
+                                "the provider is not available to the agent runtime");
+    return profile_to_resolved(profile.value());
+}
+
 Result<void> LlmProfileRepository::save_profile(const LlmProfile& p) {
     // Generate id if empty (new profile)
     QString id = p.id.isEmpty() ? QUuid::createUuid().toString(QUuid::WithoutBraces) : p.id;

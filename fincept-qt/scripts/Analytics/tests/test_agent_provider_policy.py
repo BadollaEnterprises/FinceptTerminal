@@ -117,10 +117,9 @@ class AgentProviderPolicyTest(unittest.TestCase):
 
         selected = service[service.index("QJsonObject AgentService::model_config_for_profile"):
                            service.index("void AgentService::run_python_light")]
-        self.assertIn("if (pr.is_err())", selected)
+        self.assertIn("resolve_profile_id(profile_id)", selected)
         self.assertIn("resolved.config_error", selected)
-        self.assertIn("privacy::redact_text", selected)
-        self.assertLess(selected.index("if (pr.is_err())"), selected.index("resolve_profile(context_type"))
+        self.assertLess(selected.index("resolved.config_error"), selected.index("resolve_profile(context_type"))
 
         payload = service[service.index("QJsonObject AgentService::build_payload"):
                           service.index("// Resolve user_id")]
@@ -134,23 +133,21 @@ class AgentProviderPolicyTest(unittest.TestCase):
         agents = AGENTS_PANEL.read_text(encoding="utf-8")
         build_start = agents.index("QJsonObject AgentsViewPanel::build_config_from_editor")
         build = agents[build_start:agents.index("// ── Actions", build_start)]
-        self.assertIn("get_profile(profile_id)", build)
+        self.assertIn("resolve_profile_id(profile_id)", build)
         self.assertIn("resolved.config_error", build)
-        self.assertIn("privacy::redact_text", build)
         self.assertIn("resolved.config_error.isEmpty()", build)
 
         nodes = AGENT_NODES.read_text(encoding="utf-8")
         resolve = nodes[nodes.index("// Resolve LLM profile"):
                         nodes.index("// Build config", nodes.index("// Resolve LLM profile"))]
-        self.assertIn("get_profile(profile_id)", resolve)
-        self.assertIn("resolved.config_error", resolve)
+        self.assertIn("resolve_profile_id(profile_id)", resolve)
         self.assertIn("resolved.config_error.isEmpty()", resolve)
 
         teams = TEAMS_PANEL.read_text(encoding="utf-8")
         run = teams[teams.index("void TeamsViewPanel::run_team"):
                     teams.index("void TeamsViewPanel::", teams.index("void TeamsViewPanel::run_team") + 1)]
-        self.assertIn("get_profile(coord_profile_id)", run)
-        self.assertIn("coord.config_error", run)
+        self.assertIn("resolve_profile_id(coord_profile_id)", run)
+        self.assertIn("coord.config_error.isEmpty()", run)
         self.assertIn("member_profile.config_error.isEmpty()", run)
 
     def test_super_agent_normalizes_saved_legacy_model_before_llm_routing(self):
