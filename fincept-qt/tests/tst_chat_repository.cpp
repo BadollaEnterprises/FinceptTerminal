@@ -16,6 +16,7 @@ class TestChatRepository : public QObject {
   private slots:
     void initTestCase();
     void stable_message_id_is_inserted_once();
+    void add_message_rolls_back_when_session_update_fails();
     void cleanupTestCase();
 
   private:
@@ -52,6 +53,30 @@ void TestChatRepository::stable_message_id_is_inserted_once() {
     const auto session = repo.get_session(created.value().id);
     QVERIFY(session.is_ok());
     QCOMPARE(session.value().message_count, 1);
+}
+
+void TestChatRepository::add_message_rolls_back_when_session_update_fails() {
+    auto& repo = ChatRepository::instance();
+    const auto created = repo.create_session(QStringLiteral("Atomic history"), QStringLiteral("deepseek"),
+                                             QStringLiteral("deepseek-chat"));
+    QVERIFY(created.is_ok());
+
+    auto trigger = Database::instance().execute(
+        "CREATE TRIGGER fail_chat_session_update BEFORE UPDATE ON chat_sessions "
+        "BEGIN SELECT RAISE(ABORT, 'forced session update failure'); END");
+    QVERIFY(trigger.is_ok());
+
+    const auto saved = repo.add_message(created.value().id, QStringLiteral("assistant"),
+                                        QStringLiteral("This row must roll back"), QStringLiteral("deepseek"),
+                                        QStringLiteral("deepseek-chat"), 12);
+    QVERIFY(saved.is_err());
+
+    const auto messages = repo.get_messages(created.value().id);
+    QVERIFY(messages.is_ok());
+    QCOMPARE(messages.value().size(), 0);
+
+    const auto dropped = Database::instance().execute("DROP TRIGGER fail_chat_session_update");
+    QVERIFY(dropped.is_ok());
 }
 
 void TestChatRepository::cleanupTestCase() {

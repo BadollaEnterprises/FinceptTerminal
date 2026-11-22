@@ -61,24 +61,39 @@ Result<void> ChatRepository::delete_session(const QString& id) {
 
 Result<void> ChatRepository::add_message(const QString& session_id, const QString& role, const QString& content,
                                          const QString& provider, const QString& model, int tokens) {
+    auto tx = db().begin_transaction();
+    if (tx.is_err())
+        return tx;
+
     QString id = QUuid::createUuid().toString(QUuid::WithoutBraces);
     auto r = exec_write("INSERT INTO chat_messages (id, session_id, role, content, provider, model, tokens_used) "
                         "VALUES (?, ?, ?, ?, ?, ?, ?)",
                         {id, session_id, role, content, provider, model, tokens});
-    if (r.is_err())
+    if (r.is_err()) {
+        db().rollback();
         return r;
+    }
 
     // Keep the session route aligned with the answer that users actually see.
     // User/system rows must not overwrite it with the currently selected route.
-    if (role == QLatin1String("assistant") && !provider.trimmed().isEmpty())
-        return exec_write("UPDATE chat_sessions SET message_count = message_count + 1, "
-                          "updated_at = datetime('now'), provider = ?, model = ? WHERE id = ?",
-                          {provider, model, session_id});
+    r = role == QLatin1String("assistant") && !provider.trimmed().isEmpty()
+            ? exec_write("UPDATE chat_sessions SET message_count = message_count + 1, "
+                         "updated_at = datetime('now'), provider = ?, model = ? WHERE id = ?",
+                         {provider, model, session_id})
+            : exec_write("UPDATE chat_sessions SET message_count = message_count + 1, "
+                         "updated_at = datetime('now') WHERE id = ?",
+                         {session_id});
+    if (r.is_err()) {
+        db().rollback();
+        return r;
+    }
 
-    // Update message count.
-    return exec_write("UPDATE chat_sessions SET message_count = message_count + 1, "
-                      "updated_at = datetime('now') WHERE id = ?",
-                      {session_id});
+    const auto committed = db().commit();
+    if (committed.is_err()) {
+        db().rollback();
+        return committed;
+    }
+    return Result<void>::ok();
 }
 
 Result<bool> ChatRepository::add_message_once(const QString& message_id, const QString& session_id,
