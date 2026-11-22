@@ -1431,8 +1431,7 @@ def _solver_bond_values(body: Mapping[str, Any], yield_rate: float | None = None
     coupon = _number(body, "coupon", "coupon_rate")
     maturity = _positive(body, "maturity", "time_to_maturity")
     face = float(body.get("face_value", 100.0))
-    frequency = max(1, int(body.get("frequency", 2)))
-    periods = max(1, round(maturity * frequency))
+    frequency, periods = _payment_schedule(body, maturity, "frequency", 2)
     rate = _number(body, "ytm", "yield", "yield_rate") if yield_rate is None else yield_rate
     if rate <= -frequency:
         raise ValueError("yield must be greater than -frequency")
@@ -2022,8 +2021,9 @@ def _bond_years(body: Mapping[str, Any]) -> float:
     return years
 
 
-def _payment_schedule(body: Mapping[str, Any], years: float, name: str) -> tuple[int, int]:
-    raw = float(body.get(name, 1))
+def _payment_schedule(body: Mapping[str, Any], years: float, name: str,
+                      default: int = 1) -> tuple[int, int]:
+    raw = float(body.get(name, default))
     frequency = int(raw)
     periods = round(years * frequency)
     if raw != frequency or not 1 <= frequency <= 366 or not 1 <= periods <= 10000:

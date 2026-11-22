@@ -152,6 +152,15 @@ class ByoQuantLibTest(unittest.TestCase):
         self.assertGreater(calibration["data"]["long_term_mean"], 0)
         self.assertEqual(curve["meta"]["fincept_credits"], 0)
 
+    def test_solver_bond_payment_schedules_are_bounded(self):
+        mod = load_module()
+        body = {"coupon": 0.05, "maturity": 5.0, "ytm": 0.05}
+        for frequency in (0, 367):
+            with self.subTest(frequency=frequency):
+                answer = mod.execute("solver/finance/duration", {**body, "frequency": frequency})
+                self.assertIn("payment schedule is outside local limits", answer.get("error", ""))
+                self.assertEqual(answer["meta"]["fincept_credits"], 0)
+
     def test_remaining_instrument_routes_are_local_and_zero_credit(self):
         mod = load_module()
         expected = {
