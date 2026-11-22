@@ -10,6 +10,7 @@
 
 #include "core/crypto/Totp.h"
 #include "core/logging/Logger.h"
+#include "core/privacy/LogRedact.h"
 #include "trading/adapter/BrokerEnumMap.h"
 #include "trading/brokers/BrokerHttp.h"
 #include "trading/brokers/BrokerModifyFields.h"
@@ -283,14 +284,14 @@ TokenExchangeResponse AngelOneBroker::exchange_token(const QString& api_key, con
 
     if (!resp.success) {
         result.error = checked_error(resp, "Login failed");
-        LOG_ERROR(TAG_AO, "Login failed: " + result.error);
+        LOG_ERROR(TAG_AO, "Login failed: " + privacy::redact_text(result.error));
         return result;
     }
 
     auto data = resp.json.value("data").toObject();
     if (!resp.json.value("status").toBool()) {
         result.error = checked_error(resp, "Login failed");
-        LOG_ERROR(TAG_AO, "Login rejected: " + result.error);
+        LOG_ERROR(TAG_AO, "Login rejected: " + privacy::redact_text(result.error));
         return result;
     }
 

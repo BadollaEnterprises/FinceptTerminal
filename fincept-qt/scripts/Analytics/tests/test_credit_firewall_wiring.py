@@ -216,6 +216,16 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertIn('#include "core/privacy/LogRedact.h"', quant_lab)
         self.assertGreaterEqual(quant_lab.count("privacy::redact_text"), 4)
 
+    def test_broker_auth_diagnostics_redact_provider_errors(self):
+        for relative, minimum in (
+            ("src/trading/brokers/angelone/AngelOneBroker.cpp", 2),
+            ("src/trading/brokers/zerodha/ZerodhaBroker.cpp", 2),
+        ):
+            with self.subTest(broker=relative):
+                source = (ROOT / relative).read_text(encoding="utf-8")
+                self.assertIn('#include "core/privacy/LogRedact.h"', source)
+                self.assertGreaterEqual(source.count("privacy::redact_text"), minimum)
+
     def test_macro_and_geopolitics_services_check_firewall(self):
         geopolitics = (ROOT / "src/services/geopolitics/GeopoliticsService.cpp").read_text(encoding="utf-8")
         macro = (ROOT / "src/services/economics/FinceptMacroService.cpp").read_text(encoding="utf-8")

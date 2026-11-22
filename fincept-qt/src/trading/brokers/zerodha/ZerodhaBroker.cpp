@@ -1,6 +1,7 @@
 #include "trading/brokers/zerodha/ZerodhaBroker.h"
 
 #include "core/logging/Logger.h"
+#include "core/privacy/LogRedact.h"
 #include "trading/adapter/BrokerEnumMap.h"
 #include "trading/brokers/BrokerClientOrderId.h"
 #include "trading/brokers/BrokerHttp.h"
@@ -189,7 +190,8 @@ TokenExchangeResponse ZerodhaBroker::exchange_token(const QString& api_key, cons
             result.error = kite_type.isEmpty() ? kite_msg : QString("%1: %2").arg(kite_type, kite_msg);
         else
             result.error = resp.error.isEmpty() ? QString("HTTP %1").arg(resp.status_code) : resp.error;
-        LOG_ERROR("Zerodha", QString("exchange_token failed: %1").arg(result.error));
+        LOG_ERROR("Zerodha",
+                  QString("exchange_token failed: %1").arg(privacy::redact_text(result.error)));
         return result;
     }
     if (resp.json.value("status").toString() == "success") {
@@ -203,7 +205,9 @@ TokenExchangeResponse ZerodhaBroker::exchange_token(const QString& api_key, cons
                  logf("Broker sign-in succeeded", {{"broker", "zerodha"}, {"account", log_mask(result.user_id)}}));
     } else {
         result.error = resp.json.value("message").toString("Token exchange failed");
-        LOG_ERROR("Zerodha", QString("exchange_token status!=success: %1").arg(result.error));
+        LOG_ERROR("Zerodha",
+                  QString("exchange_token status!=success: %1")
+                      .arg(privacy::redact_text(result.error)));
     }
     return result;
 }
