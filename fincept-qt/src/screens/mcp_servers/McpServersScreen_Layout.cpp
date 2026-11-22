@@ -3,6 +3,7 @@
 // Part of the partial-class split of McpServersScreen.cpp.
 
 #include "core/logging/Logger.h"
+#include "core/privacy/LogRedact.h"
 #include "core/session/ScreenStateManager.h"
 #include "mcp/McpManager.h"
 #include "mcp/McpMarketplace.h"
@@ -577,7 +578,7 @@ QWidget* McpServersScreen::build_server_card(const McpServerConfig& s) {
                             return;
                         if (r.is_err()) {
                             const QString msg = QString::fromStdString(r.error());
-                            LOG_ERROR("McpServers", "Start failed: " + msg);
+                            LOG_ERROR("McpServers", "Start failed: " + privacy::redact_text(msg));
                             QMessageBox::warning(self, tr("Server Failed to Start"), msg);
                         }
                         self->refresh_installed();
@@ -692,7 +693,9 @@ QWidget* McpServersScreen::build_server_card(const McpServerConfig& s) {
             srv.auto_start = !srv.auto_start;
             const auto r = McpManager::instance().save_server(srv);
             if (r.is_err())
-                LOG_ERROR("McpServers", "Autostart update failed: " + QString::fromStdString(r.error()));
+                LOG_ERROR("McpServers",
+                          "Autostart update failed: " +
+                              privacy::redact_text(QString::fromStdString(r.error())));
             break;
         }
         self->refresh_installed();
@@ -728,7 +731,7 @@ QWidget* McpServersScreen::build_server_card(const McpServerConfig& s) {
                             return;
                         if (r.is_err()) {
                             const QString msg = QString::fromStdString(r.error());
-                            LOG_ERROR("McpServers", "Restart failed: " + msg);
+                            LOG_ERROR("McpServers", "Restart failed: " + privacy::redact_text(msg));
                             QMessageBox::warning(self, tr("Server Failed to Restart"), msg);
                         }
                         self->refresh_installed();
@@ -774,7 +777,7 @@ QWidget* McpServersScreen::build_server_card(const McpServerConfig& s) {
                         return;
                     if (r.is_err()) {
                         const QString msg = QString::fromStdString(r.error());
-                        LOG_ERROR("McpServers", "Remove failed: " + msg);
+                        LOG_ERROR("McpServers", "Remove failed: " + privacy::redact_text(msg));
                         QMessageBox::warning(self, tr("Remove Server"), msg);
                     }
                     self->refresh_installed();

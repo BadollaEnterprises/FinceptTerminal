@@ -492,6 +492,16 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertIn("apply_config()", failed)
         self.assertIn("emit servers_changed()", failed)
 
+    def test_mcp_screen_diagnostics_redact_backend_errors(self):
+        for relative, minimum in (
+            ("src/screens/mcp_servers/McpServersScreen_Actions.cpp", 2),
+            ("src/screens/mcp_servers/McpServersScreen_Layout.cpp", 4),
+        ):
+            with self.subTest(source=relative):
+                source = (ROOT / relative).read_text(encoding="utf-8")
+                self.assertIn('#include "core/privacy/LogRedact.h"', source)
+                self.assertGreaterEqual(source.count("privacy::redact_text"), minimum)
+
     def test_deleting_active_provider_selects_deterministic_byo_fallback(self):
         source = (ROOT / "src/screens/settings/LlmConfigSection_Providers.cpp").read_text(encoding="utf-8")
         body = source[source.index("void LlmConfigSection::on_delete_provider()"):

@@ -5,6 +5,7 @@
 // Part of the partial-class split of McpServersScreen.cpp.
 
 #include "core/logging/Logger.h"
+#include "core/privacy/LogRedact.h"
 #include "core/session/ScreenStateManager.h"
 #include "mcp/McpManager.h"
 #include "mcp/McpMarketplace.h"
@@ -299,7 +300,7 @@ void McpServersScreen::on_install_server(int index) {
         on_view_changed(1);
     } else {
         const QString err = QString::fromStdString(r.error());
-        LOG_ERROR("McpServers", "Add failed: " + err);
+        LOG_ERROR("McpServers", "Add failed: " + privacy::redact_text(err));
         QMessageBox::warning(this, tr("Add Server"), tr("Could not save \"%1\":\n\n%2").arg(name, err));
     }
     dlg->deleteLater();
@@ -474,7 +475,7 @@ void McpServersScreen::on_add_server() {
         update_status_bar();
     } else {
         const QString err = QString::fromStdString(r.error());
-        LOG_ERROR("McpServers", "Failed: " + err);
+        LOG_ERROR("McpServers", "Failed: " + privacy::redact_text(err));
         QMessageBox::warning(this, tr("Add Server"), tr("Could not save \"%1\":\n\n%2").arg(name, err));
     }
     dlg->deleteLater();
