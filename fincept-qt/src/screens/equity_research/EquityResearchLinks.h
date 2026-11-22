@@ -29,8 +29,8 @@ TradeRoute trade_route(const QString& research_symbol);
 /// IGroupLinked — the event WindowFrame handles for every frame.
 void open_symbol_in(const QString& screen_id, const QString& symbol, const QString& exchange = {});
 
-/// Append "Open in Equity Trading / News / Backtesting" and "Add to watchlist ▸" for
-/// `symbol` (yfinance form) to `menu`. `context` anchors tooltips.
+/// Append "Open in Equity Trading / Relationship Map / News / Backtesting" and
+/// "Add to watchlist ▸" for `symbol` (yfinance form) to `menu`. `context` anchors tooltips.
 void add_open_in_actions(QMenu* menu, QWidget* context, const QString& symbol);
 
 /// One "add to <watchlist>" action per watchlist, appended to `menu`; a duplicate is refused

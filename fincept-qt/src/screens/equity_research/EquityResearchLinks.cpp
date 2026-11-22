@@ -1,6 +1,8 @@
 // src/screens/equity_research/EquityResearchLinks.cpp
 #include "screens/equity_research/EquityResearchLinks.h"
 
+#include "screens/equity_research/EquityResearchLinkPolicy.h"
+
 #include "core/events/EventBus.h"
 #include "storage/repositories/WatchlistRepository.h"
 
@@ -64,18 +66,36 @@ void add_open_in_actions(QMenu* menu, QWidget* context, const QString& symbol) {
     if (!menu || sym.isEmpty())
         return;
     const TradeRoute route = trade_route(sym);
-    auto* trade = menu->addAction(QCoreApplication::translate("EquityResearchLinks", "Open in Equity Trading (chart + order ticket)"));
-    trade->setEnabled(route.routable);
-    if (!route.routable)
-        trade->setToolTip(QCoreApplication::translate("EquityResearchLinks", "No broker route for this market"));
-    QObject::connect(trade, &QAction::triggered, menu,
-                     [route]() { open_symbol_in(QStringLiteral("equity_trading"), route.bare, route.order_exchange); });
-    // News searches headlines by ticker text — "RELIANCE", not "RELIANCE.NS".
-    QObject::connect(menu->addAction(QCoreApplication::translate("EquityResearchLinks", "Open in News")), &QAction::triggered, menu,
-                     [route]() { open_symbol_in(QStringLiteral("news"), route.bare, route.order_exchange); });
-    // Backtesting runs on yfinance history, so it takes the research form as-is.
-    QObject::connect(menu->addAction(QCoreApplication::translate("EquityResearchLinks", "Open in Backtesting")), &QAction::triggered, menu,
-                     [sym]() { open_symbol_in(QStringLiteral("backtesting"), sym); });
+    for (const auto& destination : open_in_destinations()) {
+        const QString screen_id = QLatin1String(destination.screen_id);
+        QString label;
+        if (screen_id == QLatin1String("equity_trading"))
+            label = QCoreApplication::translate("EquityResearchLinks", "Open in Equity Trading (chart + order ticket)");
+        else if (screen_id == QLatin1String("relationship_map"))
+            label = QCoreApplication::translate("EquityResearchLinks", "Open in Relationship Map (owners + peers)");
+        else if (screen_id == QLatin1String("news"))
+            label = QCoreApplication::translate("EquityResearchLinks", "Open in News");
+        else if (screen_id == QLatin1String("backtesting"))
+            label = QCoreApplication::translate("EquityResearchLinks", "Open in Backtesting");
+        else
+            continue;
+
+        auto* action = menu->addAction(label);
+        if (destination.symbol_form == OpenInSymbolForm::Trade) {
+            action->setEnabled(route.routable);
+            if (!route.routable)
+                action->setToolTip(QCoreApplication::translate("EquityResearchLinks", "No broker route for this market"));
+        }
+
+        // News searches headline text with the suffix-free ticker. Relationship Map
+        // and Backtesting use the research/source form so non-US listings keep their
+        // venue suffix. Equity Trading receives the broker form plus exchange.
+        const QString target_symbol = destination.symbol_form == OpenInSymbolForm::Research ? sym : route.bare;
+        const QString target_exchange = destination.symbol_form == OpenInSymbolForm::Research ? QString() : route.order_exchange;
+        QObject::connect(action, &QAction::triggered, menu, [screen_id, target_symbol, target_exchange]() {
+            open_symbol_in(screen_id, target_symbol, target_exchange);
+        });
+    }
     add_watchlist_entries(
         menu->addMenu(QCoreApplication::translate("EquityResearchLinks", "Add %1 to watchlist").arg(sym)), context, sym);
 }

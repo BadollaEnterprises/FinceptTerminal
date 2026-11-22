@@ -1347,6 +1347,11 @@ fincept_add_test(tst_equity_financials_analytics
 fincept_add_test(tst_equity_research_format
     tst_equity_research_format.cpp)
 
+# src/screens/equity_research/EquityResearchLinkPolicy.h — pure description of
+# every Equity Research "Open in…" destination and the symbol form it accepts.
+fincept_add_test(tst_equity_research_link_policy
+    tst_equity_research_link_policy.cpp)
+
 # One target that builds every suite and nothing of the app:
 #   cmake --build <build> --target fincept_unit_tests && ctest --test-dir <build>
 # (CI uses this, so a new suite is picked up without touching the workflow.)
