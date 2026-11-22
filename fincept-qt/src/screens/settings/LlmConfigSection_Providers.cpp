@@ -19,6 +19,7 @@
 #include "storage/repositories/LlmConfigRepository.h"
 #include "storage/repositories/LlmProfileRepository.h"
 #include "storage/repositories/SettingsRepository.h"
+#include "storage/secure/SecureStorage.h"
 #include "ui/theme/Theme.h"
 #include "ui/theme/ThemeManager.h"
 #include "ui/widgets/MnemonicText.h"
@@ -928,12 +929,19 @@ void LlmConfigSection::on_delete_provider() {
         return;
 
     auto removed = LlmConfigRepository::instance().delete_provider(provider);
+    QString cleanup_warning;
     if (removed.is_err()) {
         const QString error = QString::fromStdString(removed.error());
-        show_status(tr("Could not remove provider: ") + error, true);
-        LOG_ERROR(TAG_PROVIDERS,
-                  "delete_provider failed for " + provider + ": " + privacy::redact_text(error));
-        return;
+        if (SecureStorage::is_cleanup_failure(removed.error())) {
+            cleanup_warning = error;
+            LOG_ERROR(TAG_PROVIDERS,
+                      "delete_provider left an encrypted key for " + provider + ": " + privacy::redact_text(error));
+        } else {
+            show_status(tr("Could not remove provider: ") + error, true);
+            LOG_ERROR(TAG_PROVIDERS,
+                      "delete_provider failed for " + provider + ": " + privacy::redact_text(error));
+            return;
+        }
     }
 
     if (was_active) {
@@ -974,6 +982,8 @@ void LlmConfigSection::on_delete_provider() {
     }
     load_providers();
     emit config_changed();
+    if (!cleanup_warning.isEmpty())
+        show_status(tr("Provider removed, but encrypted API key cleanup failed: ") + cleanup_warning, true);
 }
 
 void LlmConfigSection::on_save_global() {

@@ -288,6 +288,46 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertIn("if (saved.is_err())", save)
         self.assertLess(save.index("if (saved.is_err())"), save.index("SecureStorage::instance().remove"))
 
+    def test_llm_secret_cleanup_failures_are_surfaced_and_reconciled(self):
+        config = (ROOT / "src/storage/repositories/LlmConfigRepository.cpp").read_text(encoding="utf-8")
+        profiles = (ROOT / "src/storage/repositories/LlmProfileRepository.cpp").read_text(encoding="utf-8")
+        secure = (ROOT / "src/storage/secure/SecureStorage.h").read_text(encoding="utf-8")
+        self.assertIn("kCleanupFailed", secure)
+        self.assertIn("is_cleanup_failure", secure)
+
+        spans = (
+            (config, "Result<void> LlmConfigRepository::delete_provider", "Result<LlmGlobalSettings>"),
+            (config, "Result<void> LlmConfigRepository::delete_model", None),
+            (profiles, "Result<void> LlmProfileRepository::delete_profile", "Result<void> LlmProfileRepository::set_default"),
+        )
+        for source, start, end in spans:
+            with self.subTest(method=start):
+                body = source[source.index(start):source.index(end) if end else len(source)]
+                self.assertIn("const auto cleaned = SecureStorage::instance().remove", body)
+                self.assertIn("if (cleaned.is_err())", body)
+                self.assertIn("SecureStorage::kCleanupFailed", body)
+                self.assertNotIn("(void)SecureStorage::instance().remove", body)
+
+        profile_save = profiles[profiles.index("Result<void> LlmProfileRepository::save_profile"):
+                                profiles.index("Result<void> LlmProfileRepository::delete_profile")]
+        self.assertIn("if (cleaned.is_err())", profile_save)
+        self.assertIn("SecureStorage::kCleanupFailed", profile_save)
+
+        provider_ui = (ROOT / "src/screens/settings/LlmConfigSection_Providers.cpp").read_text(encoding="utf-8")
+        provider_delete = provider_ui[provider_ui.index("void LlmConfigSection::on_delete_provider"):
+                                      provider_ui.index("void LlmConfigSection::on_save_global")]
+        self.assertIn("SecureStorage::is_cleanup_failure(removed.error())", provider_delete)
+        self.assertIn("load_providers()", provider_delete)
+        self.assertIn("emit config_changed()", provider_delete)
+
+        profile_ui = (ROOT / "src/screens/settings/LlmConfigSection_Profiles.cpp").read_text(encoding="utf-8")
+        profile_delete = profile_ui[profile_ui.index("void LlmConfigSection::on_delete_profile"):
+                                    profile_ui.index("void LlmConfigSection::on_set_default_profile")]
+        self.assertIn("SecureStorage::is_cleanup_failure(r.error())", profile_delete)
+        self.assertIn("clear_profile_form()", profile_delete)
+        self.assertIn("load_profiles()", profile_delete)
+        self.assertIn("emit config_changed()", profile_delete)
+
     def test_data_mapping_delete_is_atomic_and_keeps_secret_until_commit(self):
         source = (ROOT / "src/storage/repositories/DataMappingRepository.cpp").read_text(encoding="utf-8")
         body = source[source.index("Result<void> DataMappingRepository::remove"):

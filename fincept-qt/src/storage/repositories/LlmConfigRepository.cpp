@@ -139,7 +139,11 @@ Result<void> LlmConfigRepository::delete_provider(const QString& provider) {
     auto deleted = exec_write("DELETE FROM llm_configs WHERE provider = ?", {provider});
     if (deleted.is_err())
         return deleted;
-    (void)SecureStorage::instance().remove(provider_secret_key(provider));
+    const auto cleaned = SecureStorage::instance().remove(provider_secret_key(provider));
+    if (cleaned.is_err())
+        return Result<void>::err(std::string(SecureStorage::kCleanupFailed) +
+                                 " Provider was deleted, but its stored API key could not be removed: " +
+                                 cleaned.error());
     return deleted;
 }
 
@@ -237,7 +241,11 @@ Result<void> LlmConfigRepository::delete_model(const QString& id) {
     auto deleted = exec_write("DELETE FROM llm_model_configs WHERE id = ?", {id});
     if (deleted.is_err())
         return deleted;
-    (void)SecureStorage::instance().remove(model_secret_key(id));
+    const auto cleaned = SecureStorage::instance().remove(model_secret_key(id));
+    if (cleaned.is_err())
+        return Result<void>::err(std::string(SecureStorage::kCleanupFailed) +
+                                 " Model was deleted, but its stored API key could not be removed: " +
+                                 cleaned.error());
     return deleted;
 }
 

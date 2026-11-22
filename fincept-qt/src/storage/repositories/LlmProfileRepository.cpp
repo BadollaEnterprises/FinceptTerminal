@@ -188,7 +188,12 @@ Result<void> LlmProfileRepository::save_profile(const LlmProfile& p) {
     // after the row is safely updated. A failed save must preserve the usable
     // credential for the unchanged provider profile.
     if (harness) {
-        (void)SecureStorage::instance().remove(profile_secret_key(id));
+        const auto cleaned = SecureStorage::instance().remove(profile_secret_key(id));
+        if (cleaned.is_err())
+            return Result<void>::err(std::string(SecureStorage::kCleanupFailed) +
+                                     " Profile was converted to a harness, but its stored API key could not be "
+                                     "removed: " +
+                                     cleaned.error());
         return saved;
     }
     if (api_key.isEmpty())
@@ -208,7 +213,11 @@ Result<void> LlmProfileRepository::delete_profile(const QString& id) {
     auto deleted = exec_write("DELETE FROM llm_profiles WHERE id = ?", {id});
     if (deleted.is_err())
         return deleted;
-    (void)SecureStorage::instance().remove(profile_secret_key(id));
+    const auto cleaned = SecureStorage::instance().remove(profile_secret_key(id));
+    if (cleaned.is_err())
+        return Result<void>::err(std::string(SecureStorage::kCleanupFailed) +
+                                 " Profile was deleted, but its stored API key could not be removed: " +
+                                 cleaned.error());
     return deleted;
 }
 

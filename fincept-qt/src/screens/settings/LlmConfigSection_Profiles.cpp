@@ -18,6 +18,7 @@
 #include "storage/repositories/LlmConfigRepository.h"
 #include "storage/repositories/LlmProfileRepository.h"
 #include "storage/repositories/SettingsRepository.h"
+#include "storage/secure/SecureStorage.h"
 #include "ui/theme/Theme.h"
 #include "ui/theme/ThemeManager.h"
 
@@ -765,6 +766,15 @@ void LlmConfigSection::on_delete_profile() {
         load_profiles();
         emit config_changed();
         LOG_INFO(TAG_PROFILES, "LLM profile deleted: " + log_mask(profile_id));
+    } else if (SecureStorage::is_cleanup_failure(r.error())) {
+        const QString error = QString::fromStdString(r.error());
+        clear_profile_form();
+        load_profiles();
+        emit config_changed();
+        show_profile_status(tr("Profile deleted, but encrypted API key cleanup failed: ") + error, true);
+        LOG_ERROR(TAG_PROFILES,
+                  "delete_profile left an encrypted key for " + log_mask(profile_id) + ": " +
+                      privacy::redact_text(error));
     } else {
         const QString error = QString::fromStdString(r.error());
         show_profile_status(tr("Delete failed: ") + error, true);

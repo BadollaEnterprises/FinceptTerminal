@@ -40,6 +40,13 @@ class SecureStorage {
 
     /// Error text of retrieve() when nothing is stored under the key.
     static constexpr const char* kNotFound = "Not found";
+    /// Prefix for a partial deletion: the database row is already gone, but
+    /// encrypted credential cleanup failed and needs user-visible recovery.
+    static constexpr const char* kCleanupFailed = "[secret-cleanup-failed]";
+
+    static bool is_cleanup_failure(const std::string& error) {
+        return error.rfind(kCleanupFailed, 0) == 0;
+    }
 
     /// Tri-state read. Logs a failure once per key and kind (never the value).
     SecretRead read(const QString& key);
