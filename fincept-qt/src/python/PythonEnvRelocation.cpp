@@ -1,5 +1,7 @@
 #include "python/PythonEnvRelocation.h"
 
+#include "core/process/ProcessEnvironment.h"
+
 #include "core/logging/Logger.h"
 #include "core/privacy/LogRedact.h"
 
@@ -386,6 +388,7 @@ VenvVerdict verify_venv(const QString& root, const QString& venv) {
     }
     QProcess proc;
     QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+    process::strip_unmanaged_credentials(env);
     for (const char* key : {"PYTHONHOME", "PYTHONPATH", "VIRTUAL_ENV", "CONDA_PREFIX", "PYTHONSTARTUP", "PYTHONUSERBASE"})
         env.remove(QString::fromLatin1(key));
     proc.setProcessEnvironment(env);

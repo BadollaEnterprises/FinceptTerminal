@@ -4,6 +4,7 @@
 
 #include "core/config/EditionNames.h"
 #include "core/logging/Logger.h"
+#include "core/process/ProcessEnvironment.h"
 #include "mcp/server/McpClientProfile.h"
 #include "mcp/server/McpWire.h"
 
@@ -334,6 +335,8 @@ SelfCheckReport run_mcp_self_check(const SelfCheckOptions& options) {
         t.start();
         QProcess proc;
         QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+        process::strip_unmanaged_credentials(
+            env, QStringList{QString::fromLatin1(edition::kMcpTokenEnvVar)});
         env.remove(QString::fromLatin1(edition::kForeignMcpTokenEnvVar)); // never the other edition's token
         env.insert(QString::fromLatin1(edition::kMcpTokenEnvVar), options.token);
         proc.setProcessEnvironment(env);

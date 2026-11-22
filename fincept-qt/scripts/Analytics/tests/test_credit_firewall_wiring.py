@@ -156,6 +156,15 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertGreaterEqual(source.count("process::strip_unmanaged_credentials"), 2)
         self.assertIn("config_.env.keys()", source)
 
+    def test_mcp_self_check_only_passes_its_declared_token(self):
+        source = (ROOT / "src/mcp/server/McpServerSelfCheck.cpp").read_text(encoding="utf-8")
+        self.assertIn("process::strip_unmanaged_credentials", source)
+        self.assertIn("edition::kMcpTokenEnvVar", source)
+
+    def test_venv_verification_does_not_inherit_credentials(self):
+        source = (ROOT / "src/python/PythonEnvRelocation.cpp").read_text(encoding="utf-8")
+        self.assertIn("process::strip_unmanaged_credentials", source)
+
     def test_macro_and_geopolitics_services_check_firewall(self):
         geopolitics = (ROOT / "src/services/geopolitics/GeopoliticsService.cpp").read_text(encoding="utf-8")
         macro = (ROOT / "src/services/economics/FinceptMacroService.cpp").read_text(encoding="utf-8")
