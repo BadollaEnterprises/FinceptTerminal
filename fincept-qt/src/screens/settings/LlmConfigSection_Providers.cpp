@@ -682,6 +682,13 @@ void LlmConfigSection::load_providers() {
 
 void LlmConfigSection::populate_form(const QString& provider) {
     provider_edit_->setText(provider);
+    // Never carry a previous provider's secret into a form whose backing row
+    // has not been read successfully. Keep all spending/mutating actions
+    // disabled until the selected row (or its definitive absence) is known.
+    api_key_edit_->clear();
+    save_btn_->setEnabled(false);
+    test_btn_->setEnabled(false);
+    fetch_btn_->setEnabled(false);
 
     bool is_fincept = (provider.toLower() == "fincept");
 
@@ -701,6 +708,8 @@ void LlmConfigSection::populate_form(const QString& provider) {
         LOG_ERROR(TAG_PROVIDERS, "populate_form failed: " + privacy::redact_text(error));
         return;
     }
+    save_btn_->setEnabled(true);
+    test_btn_->setEnabled(true);
 
     for (const auto& p : result.value()) {
         if (p.provider.toLower() == provider.toLower()) {

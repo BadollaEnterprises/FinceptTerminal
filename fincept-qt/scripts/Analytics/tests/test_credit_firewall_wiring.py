@@ -481,6 +481,12 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertIn("if (result.is_err())", form)
         self.assertIn("Could not load provider settings", form)
         self.assertIn("privacy::redact_text(error)", form)
+        read = form.index("LlmConfigRepository::instance().list_providers()")
+        self.assertLess(form.index("api_key_edit_->clear()"), read)
+        self.assertLess(form.index("save_btn_->setEnabled(false)"), read)
+        self.assertLess(form.index("test_btn_->setEnabled(false)"), read)
+        self.assertGreater(form.index("save_btn_->setEnabled(true)"), form.index("if (result.is_err())"))
+        self.assertGreater(form.index("test_btn_->setEnabled(true)"), form.index("if (result.is_err())"))
 
         self.assertIn("if (gs.is_err())", load)
         self.assertIn("Could not read global LLM settings", load)
