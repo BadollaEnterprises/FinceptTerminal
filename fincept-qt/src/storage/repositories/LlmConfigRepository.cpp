@@ -98,10 +98,16 @@ Result<void> LlmConfigRepository::set_active(const QString& provider) {
     // One statement, so the swap is atomic: "clear all, then set one" as two writes
     // left no active provider if the second failed — or if `provider` did not exist
     // (an unknown name from an MCP tool call), because the first write had already
-    // cleared the current one. The EXISTS guard makes an unknown name a no-op.
-    return exec_write("UPDATE llm_configs SET is_active = CASE WHEN provider = ? THEN 1 ELSE 0 END "
-                      "WHERE EXISTS (SELECT 1 FROM llm_configs WHERE provider = ?)",
-                      {provider, provider});
+    // cleared the current one. The EXISTS guard leaves an unknown name alone;
+    // affected-row verification makes that no-op visible to every caller.
+    auto updated = db().execute("UPDATE llm_configs SET is_active = CASE WHEN provider = ? THEN 1 ELSE 0 END "
+                                "WHERE EXISTS (SELECT 1 FROM llm_configs WHERE provider = ?)",
+                                {provider, provider});
+    if (updated.is_err())
+        return Result<void>::err(updated.error());
+    if (updated.value().numRowsAffected() == 0)
+        return Result<void>::err("Provider not found");
+    return Result<void>::ok();
 }
 
 Result<void> LlmConfigRepository::delete_provider(const QString& provider) {

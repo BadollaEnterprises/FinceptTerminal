@@ -373,6 +373,14 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertIn("ON CONFLICT(id) DO UPDATE SET", body)
         self.assertIn("status = excluded.status", body)
 
+    def test_llm_provider_activation_rejects_unknown_provider(self):
+        source = (ROOT / "src/storage/repositories/LlmConfigRepository.cpp").read_text(encoding="utf-8")
+        body = source[source.index("Result<void> LlmConfigRepository::set_active"):
+                      source.index("Result<void> LlmConfigRepository::delete_provider")]
+        self.assertIn("auto updated = db().execute", body)
+        self.assertIn("numRowsAffected() == 0", body)
+        self.assertIn('Result<void>::err("Provider not found")', body)
+
     def test_local_chat_mode_diagnostics_scrub_conversation_storage_errors(self):
         source = (ROOT / "src/screens/chat_mode/ChatModeScreen.cpp").read_text(encoding="utf-8")
         self.assertIn('#include "core/privacy/LogRedact.h"', source)
