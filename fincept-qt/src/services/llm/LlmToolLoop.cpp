@@ -20,6 +20,7 @@
 #include "services/llm/LlmService.h"
 #include "services/llm/LlmSummaryPolicy.h"
 #include "services/llm/LlmToolActivity.h"
+#include "services/llm/LlmTransportPolicy.h"
 #include "services/llm/LlmUsage.h"
 
 #include <QElapsedTimer>
@@ -338,6 +339,9 @@ std::optional<LlmResponse> LlmService::try_extract_and_execute_text_tool_calls(c
                                                                                const QString& user_message,
                                                                                const QString& url,
                                                                                const QMap<QString, QString>& headers) {
+    if (!should_execute_text_tool_calls(detail::effective_tools_enabled(tools_enabled_)))
+        return std::nullopt;
+
     // ── Pattern 1: <tool_call>{"name":"...", "arguments":{...}}</tool_call>
     // ── Pattern 2: <invoke name="..." args='{"key":"val"}'>
     // ── Pattern 3: minimax:tool_call  CONTENT /minimax:tool_call

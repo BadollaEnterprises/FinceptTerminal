@@ -15,6 +15,7 @@ class TestAiChatEffortPolicy : public QObject {
     void metered_fincept_high_effort_mentions_fincept_credits();
     void deepseek_effort_builds_current_thinking_fields();
     void tool_calls_use_a_single_request_transport();
+    void text_tool_compatibility_respects_the_toggle();
 };
 
 void TestAiChatEffortPolicy::ordinary_effort_has_no_usage_warning() {
@@ -89,6 +90,11 @@ void TestAiChatEffortPolicy::deepseek_effort_builds_current_thinking_fields() {
 void TestAiChatEffortPolicy::tool_calls_use_a_single_request_transport() {
     QVERIFY(!fincept::ai_chat::should_stream_initial_request(true));
     QVERIFY(fincept::ai_chat::should_stream_initial_request(false));
+}
+
+void TestAiChatEffortPolicy::text_tool_compatibility_respects_the_toggle() {
+    QVERIFY(fincept::ai_chat::should_execute_text_tool_calls(true));
+    QVERIFY(!fincept::ai_chat::should_execute_text_tool_calls(false));
 }
 
 QTEST_GUILESS_MAIN(TestAiChatEffortPolicy)

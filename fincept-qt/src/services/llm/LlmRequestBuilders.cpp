@@ -66,8 +66,9 @@ QJsonObject LlmService::build_openai_request(const QString& user_message,
             req["stream_options"] = QJsonObject{{"include_usage", true}};
     }
 
-    // Send tools on streaming requests too — the stream path detects tool_calls and falls back
-    // to do_request to execute. Otherwise the model answers from training and tool calling silently breaks.
+    // Tool-enabled interactive turns are routed through do_request before this
+    // builder is called with stream=true, avoiding an abort-and-resubmit when a
+    // streamed tool call appears. Keep the builder policy-correct for every caller.
     const bool tools_effectively_on = detail::effective_tools_enabled(tools_enabled_);
     if (with_tools && tools_effectively_on && !groq_no_tools) {
         QJsonArray tools =
