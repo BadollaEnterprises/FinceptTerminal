@@ -3,6 +3,7 @@
 #include <QTest>
 
 using fincept::screens::equity_links::OpenInSymbolForm;
+using fincept::screens::equity_links::overview_shortcuts;
 using fincept::screens::equity_links::open_in_destinations;
 
 class TstEquityResearchLinkPolicy : public QObject {
@@ -11,6 +12,7 @@ class TstEquityResearchLinkPolicy : public QObject {
   private slots:
     void exposes_company_relationship_research();
     void keeps_symbol_forms_explicit();
+    void overview_shortcuts_cover_core_research_workflow();
 };
 
 void TstEquityResearchLinkPolicy::exposes_company_relationship_research() {
@@ -35,6 +37,19 @@ void TstEquityResearchLinkPolicy::keeps_symbol_forms_explicit() {
     QCOMPARE(destinations[2].symbol_form, OpenInSymbolForm::Bare);
     QCOMPARE(QLatin1String(destinations[3].screen_id), QLatin1String("backtesting"));
     QCOMPARE(destinations[3].symbol_form, OpenInSymbolForm::Research);
+}
+
+void TstEquityResearchLinkPolicy::overview_shortcuts_cover_core_research_workflow() {
+    const auto shortcuts = overview_shortcuts();
+    QCOMPARE(shortcuts.size(), std::size_t{8});
+
+    const std::array<const char*, 8> expected = {
+        "financials", "segments", "filings", "news", "earnings", "options", "ownership", "peers"};
+    for (std::size_t i = 0; i < expected.size(); ++i) {
+        QCOMPARE(QLatin1String(shortcuts[i].section), QLatin1String(expected[i]));
+        QVERIFY(shortcuts[i].label != nullptr);
+        QVERIFY(*shortcuts[i].label != '\0');
+    }
 }
 
 QTEST_GUILESS_MAIN(TstEquityResearchLinkPolicy)

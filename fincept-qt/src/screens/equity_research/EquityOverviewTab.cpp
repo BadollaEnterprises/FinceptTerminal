@@ -1,5 +1,6 @@
 // src/screens/equity_research/EquityOverviewTab.cpp
 #include "screens/equity_research/EquityOverviewTab.h"
+#include "screens/equity_research/EquityResearchLinkPolicy.h"
 
 #include "core/market/MarketSessions.h"
 #include "screens/equity_research/EquityResearchFormat.h"
@@ -191,6 +192,7 @@ void EquityOverviewTab::build_ui() {
     });
     vl->addWidget(status_);
     vl->addWidget(build_company_block());
+    vl->addWidget(build_shortcuts());
 
     returns_ = new ui::KpiStrip(content);
     returns_->set_max_columns(8);
@@ -259,6 +261,32 @@ QWidget* EquityOverviewTab::build_company_block() {
     dates_lbl_->setWordWrap(true);
     body->addWidget(dates_lbl_);
     return p;
+}
+
+QWidget* EquityOverviewTab::build_shortcuts() {
+    QVBoxLayout* body = nullptr;
+    QLabel* title = nullptr;
+    auto* panel = er_ui::panel(tr("RESEARCH SHORTCUTS"), &body, &title, this);
+    i18n_.insert(title, QT_TR_NOOP("RESEARCH SHORTCUTS"));
+
+    auto* grid = new QGridLayout;
+    grid->setContentsMargins(0, 0, 0, 0);
+    grid->setHorizontalSpacing(6);
+    grid->setVerticalSpacing(6);
+    const auto shortcuts = equity_links::overview_shortcuts();
+    for (std::size_t i = 0; i < shortcuts.size(); ++i) {
+        const auto& shortcut = shortcuts[i];
+        auto* button = new QPushButton(tr(shortcut.label), panel);
+        button->setObjectName(QStringLiteral("erBtn"));
+        button->setCursor(Qt::PointingHandCursor);
+        button->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        shortcut_i18n_.insert(button, shortcut.label);
+        const QString section = QString::fromLatin1(shortcut.section);
+        connect(button, &QPushButton::clicked, this, [this, section]() { emit section_requested(section); });
+        grid->addWidget(button, static_cast<int>(i / 4), static_cast<int>(i % 4));
+    }
+    body->addLayout(grid);
+    return panel;
 }
 
 QWidget* EquityOverviewTab::build_chart_panel() {
@@ -1111,6 +1139,8 @@ void EquityOverviewTab::changeEvent(QEvent* event) {
 
 void EquityOverviewTab::retranslateUi() {
     for (auto it = i18n_.constBegin(); it != i18n_.constEnd(); ++it)
+        it.key()->setText(tr(it.value()));
+    for (auto it = shortcut_i18n_.constBegin(); it != shortcut_i18n_.constEnd(); ++it)
         it.key()->setText(tr(it.value()));
     style_seg_->set_text(QStringLiteral("line"), tr("LINE"), tr("Close price with overlays, panes and comparisons"));
     style_seg_->set_text(QStringLiteral("candles"), tr("CANDLES"), tr("OHLC candlesticks with volume"));

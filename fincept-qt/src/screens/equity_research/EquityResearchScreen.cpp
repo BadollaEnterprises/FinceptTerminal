@@ -302,6 +302,8 @@ void EquityResearchScreen::build_ui() {
 
     // Built up front: the tabs that carry saved state (Peers, News) and the two opened most.
     overview_tab_ = new EquityOverviewTab(page_parent);
+    connect(overview_tab_, &EquityOverviewTab::section_requested, this,
+            [this](const QString& section) { open_section(section, {}); });
     financials_tab_ = new EquityFinancialsTab(page_parent);
     peers_tab_ = new EquityPeersTab(page_parent);
     news_tab_ = new EquityNewsTab(page_parent);

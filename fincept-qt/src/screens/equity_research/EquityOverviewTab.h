@@ -48,6 +48,11 @@ class EquityOverviewTab : public QWidget {
     explicit EquityOverviewTab(QWidget* parent = nullptr);
     void set_symbol(const QString& symbol);
 
+  signals:
+    /// Requests an existing Equity Research section; the owning screen performs
+    /// the navigation so this tab remains independent of the tab container.
+    void section_requested(const QString& section);
+
   protected:
     void changeEvent(QEvent* event) override;
 
@@ -61,6 +66,7 @@ class EquityOverviewTab : public QWidget {
     // Layout
     void build_ui();
     QWidget* build_company_block();
+    QWidget* build_shortcuts();
     QWidget* build_chart_panel();
     QWidget* build_side_panels();
     void retranslateUi();
@@ -131,6 +137,7 @@ class EquityOverviewTab : public QWidget {
     QLabel* desc_lbl_ = nullptr;
     QHash<QString, QLabel*> stats_; ///< stat key → value label
     QHash<QLabel*, const char*> i18n_; ///< static label → source text
+    QHash<QPushButton*, const char*> shortcut_i18n_; ///< overview shortcut → source text
     ui::LoadingOverlay* loading_overlay_ = nullptr;
 };
 
