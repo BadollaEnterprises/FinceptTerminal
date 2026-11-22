@@ -539,6 +539,36 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertLess(snapshot.index("if (!choice.config_error.isEmpty())"),
                         snapshot.index("ensure_config()"))
 
+    def test_agent_profile_resolution_fails_closed_on_storage_errors(self):
+        header = (ROOT / "src/storage/repositories/LlmProfileRepository.h").read_text(encoding="utf-8")
+        source = (ROOT / "src/storage/repositories/LlmProfileRepository.cpp").read_text(encoding="utf-8")
+        self.assertIn("QString config_error", header)
+        self.assertIn("Result<QString> read_assignment", header)
+        self.assertIn("Result<QString> LlmProfileRepository::read_assignment", source)
+        resolver = source[source.index("ResolvedLlmProfile LlmProfileRepository::resolve_for_context"):]
+        self.assertGreaterEqual(resolver.count("if (assignment.is_err())"), 2)
+        self.assertGreaterEqual(resolver.count("return resolution_error("), 4)
+        fallback = source[source.index("ResolvedLlmProfile LlmProfileRepository::legacy_fallback"):
+                          source.index("ResolvedLlmProfile LlmProfileRepository::resolve_for_context")]
+        self.assertIn("configs.list_providers()", fallback)
+        self.assertIn("if (rows.is_err())", fallback)
+        self.assertIn("return resolution_error(", fallback)
+
+        llm_service = (ROOT / "src/services/llm/LlmService.cpp").read_text(encoding="utf-8")
+        profile_json = llm_service[llm_service.index("QJsonObject LlmService::profile_to_json"):
+                                   llm_service.index("int LlmService::resolved_max_tokens")]
+        self.assertIn("p.config_error", profile_json)
+        self.assertIn('obj[QStringLiteral("configuration_error")]', profile_json)
+
+        quant = (ROOT / "src/services/ai_quant_lab/AIQuantLabService.cpp").read_text(encoding="utf-8")
+        config = quant[quant.index("QJsonObject AIQuantLabService::agent_llm_config"):
+                       quant.index("// ── Qlib core")]
+        self.assertIn("p.config_error", config)
+        self.assertIn("aiq_llm_error_config(p.config_error)", config)
+        self.assertIn('QStringLiteral("llm_configuration_error")', quant)
+        self.assertIn("if (profiles.is_err())", config)
+        self.assertGreaterEqual(quant.count("aiq_llm_configuration_error(llm)"), 3)
+
     def test_llm_api_keys_never_use_remote_plaintext_endpoints(self):
         service = (ROOT / "src/services/llm/LlmService.cpp").read_text(encoding="utf-8")
         models = (ROOT / "src/services/llm/LlmModelsApi.cpp").read_text(encoding="utf-8")

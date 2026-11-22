@@ -56,6 +56,9 @@ struct LlmProfileAssignment {
 /// Convenience struct — everything a caller needs to make an LLM request.
 /// Returned by resolve_for_context(); never contains nulls after resolution.
 struct ResolvedLlmProfile {
+    /// A persistence/credential read failure. Callers must stop instead of
+    /// inferring a different provider from whatever API keys are available.
+    QString config_error;
     QString profile_id;   // which profile was chosen (empty = legacy fallback)
     QString profile_name; // human-readable label
     QString provider;
@@ -117,7 +120,8 @@ class LlmProfileRepository : public BaseRepository<LlmProfile> {
     /// Resolve the effective LLM profile for a context using the 4-level chain.
     /// context_type examples: "ai_chat", "agent", "team", "team_coordinator"
     /// context_id:  agent/team id, or empty for type-level queries.
-    /// Never fails — worst case returns a zero-valued ResolvedLlmProfile.
+    /// Read failures return a zero-provider profile with config_error set; a
+    /// caller must surface that error rather than infer another provider.
     /// For the agent runtime: an assignment to a harness profile is passed over
     /// (the next level answers). Terminal-AI features resolve through ModelRouter.
     ResolvedLlmProfile resolve_for_context(const QString& context_type, const QString& context_id = {}) const;
@@ -127,6 +131,7 @@ class LlmProfileRepository : public BaseRepository<LlmProfile> {
 
     static LlmProfile map_profile(QSqlQuery& q);
     static QString type_default_key(const QString& context_type);
+    Result<QString> read_assignment(const QString& context_type, const QString& context_id) const;
     ResolvedLlmProfile profile_to_resolved(const LlmProfile& p) const;
     ResolvedLlmProfile legacy_fallback() const;
 };

@@ -42,6 +42,14 @@ bool runtime_profile_allowed(const QString& provider) {
         return false;
     return normalized != QLatin1String("fincept") || policy::fincept_metered_services_enabled();
 }
+
+ResolvedLlmProfile resolution_error(const QString& what, const std::string& detail) {
+    ResolvedLlmProfile r;
+    r.config_error = QStringLiteral("Could not read %1: %2")
+                         .arg(what, privacy::redact_text(QString::fromStdString(detail)));
+    LOG_WARN("LlmProfileRepo", r.config_error);
+    return r;
+}
 } // namespace
 
 // ── Singleton ────────────────────────────────────────────────────────────────
@@ -288,6 +296,16 @@ Result<void> LlmProfileRepository::remove_assignment(const QString& context_type
 }
 
 QString LlmProfileRepository::get_assignment(const QString& context_type, const QString& context_id) const {
+    const auto r = read_assignment(context_type, context_id);
+    if (r.is_err()) {
+        LOG_WARN("LlmProfileRepo", privacy::redact_text(QString::fromStdString(r.error())));
+        return {};
+    }
+    return r.value();
+}
+
+Result<QString> LlmProfileRepository::read_assignment(const QString& context_type,
+                                                      const QString& context_id) const {
     QVariant ctx_id = context_id.isEmpty() ? QVariant(QMetaType(QMetaType::QString)) : QVariant(context_id);
     QString sql = context_id.isEmpty() ? "SELECT profile_id FROM llm_profile_assignments "
                                          "WHERE context_type = ? AND context_id IS NULL LIMIT 1"
@@ -298,11 +316,11 @@ QString LlmProfileRepository::get_assignment(const QString& context_type, const 
 
     auto r = db().execute(sql, params);
     if (r.is_err())
-        return {};
+        return Result<QString>::err(r.error());
     auto& q = r.value();
     if (!q.next())
-        return {};
-    return q.value(0).toString();
+        return Result<QString>::ok({});
+    return Result<QString>::ok(q.value(0).toString());
 }
 
 // ── Resolution ────────────────────────────────────────────────────────────────
@@ -338,26 +356,31 @@ ResolvedLlmProfile LlmProfileRepository::legacy_fallback() const {
     // A saved retired/hosted active row is skipped before its key can enter an
     // agent payload; prefer the configured DeepSeek row, then another BYO row.
     auto& configs = LlmConfigRepository::instance();
+    const auto rows = configs.list_providers();
+    if (rows.is_err())
+        return resolution_error(QStringLiteral("LLM providers"), rows.error());
+
     LlmConfig chosen;
-    if (auto active = configs.get_active_provider(); active.is_ok() &&
-        runtime_profile_allowed(active.value().provider))
-        chosen = active.value();
+    for (const LlmConfig& row : rows.value()) {
+        if (row.is_active && runtime_profile_allowed(row.provider)) {
+            chosen = row;
+            break;
+        }
+    }
     if (chosen.provider.isEmpty()) {
-        if (auto rows = configs.list_providers(); rows.is_ok()) {
-            const QString preferred = policy::default_llm_provider();
+        const QString preferred = policy::default_llm_provider();
+        for (const LlmConfig& row : rows.value())
+            if (runtime_profile_allowed(row.provider) &&
+                row.provider.compare(preferred, Qt::CaseInsensitive) == 0) {
+                chosen = row;
+                break;
+            }
+        if (chosen.provider.isEmpty())
             for (const LlmConfig& row : rows.value())
-                if (runtime_profile_allowed(row.provider) &&
-                    row.provider.compare(preferred, Qt::CaseInsensitive) == 0) {
+                if (runtime_profile_allowed(row.provider)) {
                     chosen = row;
                     break;
                 }
-            if (chosen.provider.isEmpty())
-                for (const LlmConfig& row : rows.value())
-                    if (runtime_profile_allowed(row.provider)) {
-                        chosen = row;
-                        break;
-                    }
-        }
     }
 
     ResolvedLlmProfile rp;
@@ -370,12 +393,12 @@ ResolvedLlmProfile LlmProfileRepository::legacy_fallback() const {
 
     // Pull global temperature/max_tokens
     auto gs = db().execute("SELECT temperature, max_tokens FROM llm_global_settings WHERE id = 1");
-    if (gs.is_ok()) {
-        auto& gq = gs.value();
-        if (gq.next()) {
-            rp.temperature = gq.value(0).toDouble();
-            rp.max_tokens = gq.value(1).toInt();
-        }
+    if (gs.is_err())
+        return resolution_error(QStringLiteral("global LLM settings"), gs.error());
+    auto& gq = gs.value();
+    if (gq.next()) {
+        rp.temperature = gq.value(0).toDouble();
+        rp.max_tokens = gq.value(1).toInt();
     }
     if (rp.max_tokens == 0)
         rp.max_tokens = 4096;
@@ -390,10 +413,15 @@ ResolvedLlmProfile LlmProfileRepository::resolve_for_context(const QString& cont
     // runtime an assignment to one is passed over and the next level answers.
     // ── Level 1: entity-specific assignment ──────────────────────────────────
     if (!context_id.isEmpty()) {
-        QString pid = get_assignment(context_type, context_id);
+        const auto assignment = read_assignment(context_type, context_id);
+        if (assignment.is_err())
+            return resolution_error(QStringLiteral("LLM model assignments"), assignment.error());
+        const QString pid = assignment.value();
         if (!pid.isEmpty()) {
             auto pr = get_profile(pid);
-            if (pr.is_ok() && runtime_profile_allowed(pr.value().provider)) {
+            if (pr.is_err())
+                return resolution_error(QStringLiteral("assigned LLM profile"), pr.error());
+            if (runtime_profile_allowed(pr.value().provider)) {
                 LOG_DEBUG("LlmProfileRepo",
                           QString("Resolved [%1/%2] → profile '%3'").arg(context_type, context_id, pr.value().name));
                 return profile_to_resolved(pr.value());
@@ -404,10 +432,15 @@ ResolvedLlmProfile LlmProfileRepository::resolve_for_context(const QString& cont
     // ── Level 2: type-level default assignment ────────────────────────────────
     {
         QString type_key = type_default_key(context_type);
-        QString pid = get_assignment(type_key, {});
+        const auto assignment = read_assignment(type_key, {});
+        if (assignment.is_err())
+            return resolution_error(QStringLiteral("LLM model assignments"), assignment.error());
+        const QString pid = assignment.value();
         if (!pid.isEmpty()) {
             auto pr = get_profile(pid);
-            if (pr.is_ok() && runtime_profile_allowed(pr.value().provider)) {
+            if (pr.is_err())
+                return resolution_error(QStringLiteral("assigned LLM profile"), pr.error());
+            if (runtime_profile_allowed(pr.value().provider)) {
                 LOG_DEBUG("LlmProfileRepo",
                           QString("Resolved [%1] via type-default → profile '%2'").arg(context_type, pr.value().name));
                 return profile_to_resolved(pr.value());
@@ -419,19 +452,18 @@ ResolvedLlmProfile LlmProfileRepository::resolve_for_context(const QString& cont
     {
         auto r = db().execute(QString(kSelectCols) +
                               "WHERE is_default = 1 AND lower(provider) NOT LIKE 'harness:%' LIMIT 1");
-        if (r.is_ok()) {
-            auto& q = r.value();
-            if (q.next()) {
-                LlmProfile p = map_profile(q);
-                const auto hydrated = hydrate_profile_key(p);
-                if (hydrated.is_err()) {
-                    LOG_WARN("LlmProfileRepo",
-                             privacy::redact_text(QString::fromStdString(hydrated.error())));
-                } else if (runtime_profile_allowed(p.provider)) {
-                    LOG_DEBUG("LlmProfileRepo",
-                              QString("Resolved [%1] via global default → profile '%2'").arg(context_type, p.name));
-                    return profile_to_resolved(p);
-                }
+        if (r.is_err())
+            return resolution_error(QStringLiteral("default LLM profile"), r.error());
+        auto& q = r.value();
+        if (q.next()) {
+            LlmProfile p = map_profile(q);
+            const auto hydrated = hydrate_profile_key(p);
+            if (hydrated.is_err()) {
+                return resolution_error(QStringLiteral("default LLM profile credentials"), hydrated.error());
+            } else if (runtime_profile_allowed(p.provider)) {
+                LOG_DEBUG("LlmProfileRepo",
+                          QString("Resolved [%1] via global default → profile '%2'").arg(context_type, p.name));
+                return profile_to_resolved(p);
             }
         }
     }

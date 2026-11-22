@@ -34,6 +34,14 @@ namespace {
 QString aiq_cache_prefix(const QString& module_id) {
     return QStringLiteral("aiquant:") + module_id + QLatin1Char(':');
 }
+
+QJsonObject aiq_llm_error_config(const QString& error) {
+    return QJsonObject{{QStringLiteral("llm_configuration_error"), privacy::redact_text(error)}};
+}
+
+QString aiq_llm_configuration_error(const QJsonObject& config) {
+    return config.value(QStringLiteral("llm_configuration_error")).toString().trimmed();
+}
 } // namespace
 
 // ── Singleton ────────────────────────────────────────────────────────────────
@@ -236,6 +244,8 @@ QJsonObject AIQuantLabService::agent_llm_config(const QJsonObject& params) const
         // Lab, same keys QuantModulePanel builds.
         const ResolvedLlmProfile p =
             LlmProfileRepository::instance().resolve_for_context(QStringLiteral("ai_quant_lab"));
+        if (!p.config_error.isEmpty())
+            return aiq_llm_error_config(p.config_error);
         if (!p.provider.isEmpty())
             chosen = QJsonObject{{QStringLiteral("llm_provider"), p.provider},
                                  {QStringLiteral("llm_api_key"), p.api_key},
@@ -258,15 +268,16 @@ QJsonObject AIQuantLabService::agent_llm_config(const QJsonObject& params) const
     // the user's configured DeepSeek profile.
     const QString byo_provider = policy::default_llm_provider();
     const auto profiles = LlmProfileRepository::instance().list_profiles();
-    if (profiles.is_ok()) {
-        for (const LlmProfile& p : profiles.value()) {
-            if (p.provider.compare(byo_provider, Qt::CaseInsensitive) == 0)
-                return finalize(QJsonObject{{QStringLiteral("llm_provider"), p.provider},
-                                            {QStringLiteral("llm_api_key"), p.api_key},
-                                            {QStringLiteral("llm_model"), p.model_id},
-                                            {QStringLiteral("llm_base_url"), p.base_url},
-                                            {QStringLiteral("llm_max_tokens"), p.max_tokens}});
-        }
+    if (profiles.is_err())
+        return aiq_llm_error_config(
+            QStringLiteral("Could not read LLM profiles: %1").arg(QString::fromStdString(profiles.error())));
+    for (const LlmProfile& p : profiles.value()) {
+        if (p.provider.compare(byo_provider, Qt::CaseInsensitive) == 0)
+            return finalize(QJsonObject{{QStringLiteral("llm_provider"), p.provider},
+                                        {QStringLiteral("llm_api_key"), p.api_key},
+                                        {QStringLiteral("llm_model"), p.model_id},
+                                        {QStringLiteral("llm_base_url"), p.base_url},
+                                        {QStringLiteral("llm_max_tokens"), p.max_tokens}});
     }
     // No BYO profile yet: fail visibly for a missing user key instead of
     // silently falling back to Fincept credits.
@@ -785,6 +796,10 @@ void AIQuantLabService::run_deep_agent(const QJsonObject& params) {
     // deepagents/cli.py hands `config` to create_model(); an empty block means
     // "no provider" — resolve it here for a caller that sent none.
     QJsonObject llm = agent_llm_config(params);
+    if (const QString error = aiq_llm_configuration_error(llm); !error.isEmpty()) {
+        emit error_occurred(QStringLiteral("deep_agent"), error);
+        return;
+    }
     // The Fincept LLM authenticates with the signed-in Fincept API key. A
     // profile's stored key is usually empty for this provider (it inherits),
     // and the script then refused to run ("No Fincept API key"). Only this
@@ -926,6 +941,10 @@ void AIQuantLabService::rd_start(const QString& command, const QString& kind, co
         return;
     }
     const QJsonObject llm = agent_llm_config(params);
+    if (const QString error = aiq_llm_configuration_error(llm); !error.isEmpty()) {
+        rd_emit(command, {{"success", false}, {"error", error}});
+        return;
+    }
     if (llm.isEmpty()) {
         rd_emit(command, {{"success", false},
                           {"error", QStringLiteral("No LLM configured for AI Quant Lab — pick an LLM profile "
@@ -1260,6 +1279,10 @@ void AIQuantLabService::rd_agent_resume_task(const QString& task_id, const QJson
     if (!config.isEmpty())
         call_params["config"] = config;
     const QJsonObject llm = agent_llm_config(call_params);
+    if (const QString error = aiq_llm_configuration_error(llm); !error.isEmpty()) {
+        rd_emit(QStringLiteral("resume_task"), {{"success", false}, {"error", error}});
+        return;
+    }
     if (llm.isEmpty()) {
         rd_emit(QStringLiteral("resume_task"),
                 {{"success", false}, {"error", QStringLiteral("No LLM configured for AI Quant Lab")}});

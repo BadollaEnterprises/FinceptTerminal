@@ -702,6 +702,10 @@ QJsonObject LlmService::profile_to_json(const ResolvedLlmProfile& p) {
     // Only fields the Python model constructor accepts. profile_id / profile_name are internal metadata —
     // sending them lands in extra_model_kwargs and fails as unexpected kwargs.
     QJsonObject obj;
+    if (!p.config_error.isEmpty()) {
+        obj[QStringLiteral("configuration_error")] = privacy::redact_text(p.config_error);
+        return obj;
+    }
     obj["provider"] = p.provider;
     obj["model_id"] = p.model_id;
     obj["api_key"] = p.api_key;
