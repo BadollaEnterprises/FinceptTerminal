@@ -74,6 +74,19 @@ class PublicDataTest(unittest.TestCase):
         self.assertEqual(result["source"], "Yahoo Finance")
         self.assertEqual(result["rows"][0]["close"], 102.0)
 
+    def test_yahoo_symbol_is_escaped_as_one_path_segment(self):
+        module = load_module(self)
+        seen = []
+        original = module._get
+        module._get = lambda url, json_response=False: (
+            seen.append(url) or {"chart": {"result": [{"timestamp": [], "indicators": {"quote": [{}]}}]}}
+        )
+        try:
+            module.fetch("yahoo", {"symbol": "A/B"})
+        finally:
+            module._get = original
+        self.assertIn("/chart/A%2FB?", seen[0])
+
     def test_gdelt_failure_falls_back_to_public_geopolitics_rss(self):
         module = load_module(self)
         rss = """<rss><channel><item><title>Global update</title>

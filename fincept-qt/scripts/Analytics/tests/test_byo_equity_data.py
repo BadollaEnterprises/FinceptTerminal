@@ -38,6 +38,25 @@ class ByoEquityDataTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "response exceeds 8 bytes"):
             mod._read_json_response(io.BytesIO(b'{"payload":"too large"}'), max_bytes=8)
 
+    def test_option_symbol_is_escaped_as_one_path_segment(self):
+        mod = load_module()
+        seen = []
+
+        def fake_nasdaq(path):
+            seen.append(path)
+            return {
+                "lastTrade": "LAST TRADE: $10.00 (AS OF NOV 20, 2026 11:01 AM ET)",
+                "table": {"rows": [
+                    {"expirygroup": "November 20, 2026", "strike": None},
+                    {"expirygroup": "", "expiryDate": "Nov 20", "strike": "10.00",
+                     "c_Bid": "1.00", "c_Ask": "1.10", "c_Openinterest": "5"},
+                ]},
+            }
+
+        mod._nasdaq = fake_nasdaq
+        mod._fetch_options({"symbol": "A/B"})
+        self.assertIn("/quote/A%2FB/option-chain?", seen[0])
+
     def test_public_session_enriches_only_supported_future_us_listing(self):
         mod = load_equity_research_module()
         calls = []

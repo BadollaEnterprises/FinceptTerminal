@@ -350,7 +350,7 @@ def _period_start(period: str) -> datetime:
 
 def _yahoo_history_bars(symbol: str, period: str = "1y", *, get_json=_get_json):
     params = urllib.parse.urlencode({"range": period, "interval": "1d", "events": "history"})
-    url = (f"https://query1.finance.yahoo.com/v8/finance/chart/{urllib.parse.quote(symbol)}?" + params)
+    url = (f"https://query1.finance.yahoo.com/v8/finance/chart/{urllib.parse.quote(symbol, safe='')}?" + params)
     payload = get_json(url)
     results = ((payload.get("chart") or {}).get("result") or [])
     if not results:
@@ -383,7 +383,7 @@ def _history_bars(symbol: str, period: str = "1y", *, get_json=_get_json):
               "todate": end.date().isoformat(), "limit": 5000}
     last_error = None
     for asset_class in _asset_classes(symbol):
-        url = (f"https://api.nasdaq.com/api/quote/{urllib.parse.quote(request_symbol)}/historical?" +
+        url = (f"https://api.nasdaq.com/api/quote/{urllib.parse.quote(request_symbol, safe='')}/historical?" +
                urllib.parse.urlencode({"assetclass": asset_class, **params}))
         try:
             payload = get_json(url)
@@ -464,7 +464,7 @@ def _cboe_option_chain(symbol: str, *, get_json=_get_json):
                   else [base, "_" + base])
     last_error = None
     for candidate in candidates:
-        url = f"https://cdn.cboe.com/api/global/delayed_quotes/options/{urllib.parse.quote(candidate)}.json"
+        url = f"https://cdn.cboe.com/api/global/delayed_quotes/options/{urllib.parse.quote(candidate, safe='')}.json"
         try:
             data = get_json(url).get("data") or {}
             options = data.get("options") or []
@@ -511,7 +511,7 @@ def _option_chain(symbol: str, *, get_json=_get_json):
     last_error = None
     for asset_class in _asset_classes(symbol):
         params = urllib.parse.urlencode({"assetclass": asset_class, "limit": 5000})
-        url = f"https://api.nasdaq.com/api/quote/{urllib.parse.quote(symbol)}/option-chain?{params}"
+        url = f"https://api.nasdaq.com/api/quote/{urllib.parse.quote(symbol, safe='')}/option-chain?{params}"
         try:
             payload = get_json(url)
             data = payload.get("data") or {}

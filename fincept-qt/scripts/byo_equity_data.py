@@ -613,10 +613,10 @@ def _fetch_options(request: Mapping[str, Any]) -> Dict[str, Any]:
         raise ValueError("A symbol is required")
     query = urllib.parse.urlencode({"assetclass": "stocks", "limit": 5000})
     try:
-        raw = _nasdaq(f"/api/quote/{urllib.parse.quote(symbol)}/option-chain?{query}")
+        raw = _nasdaq(f"/api/quote/{urllib.parse.quote(symbol, safe='')}/option-chain?{query}")
     except Exception:
         query = urllib.parse.urlencode({"assetclass": "etf", "limit": 5000})
-        raw = _nasdaq(f"/api/quote/{urllib.parse.quote(symbol)}/option-chain?{query}")
+        raw = _nasdaq(f"/api/quote/{urllib.parse.quote(symbol, safe='')}/option-chain?{query}")
     return parse_option_chain(symbol, raw, expiration=str(request.get("expiration") or ""),
                               strikes_around_atm=int(request.get("strikes_around_atm") or 20),
                               page=int(request.get("page") or 1), page_size=int(request.get("page_size") or 100))
@@ -626,7 +626,7 @@ def _fetch_analyst(request: Mapping[str, Any]) -> Dict[str, Any]:
     symbol = str(request.get("symbol") or "").strip().upper()
     if not symbol:
         raise ValueError("A symbol is required")
-    quoted = urllib.parse.quote(symbol)
+    quoted = urllib.parse.quote(symbol, safe="")
     with ThreadPoolExecutor(max_workers=4) as pool:
         futures = [pool.submit(_nasdaq, path) for path in (
             f"/api/quote/{quoted}/info?assetclass=stocks", f"/api/analyst/{quoted}/ratings",
@@ -639,7 +639,7 @@ def _fetch_ownership(request: Mapping[str, Any]) -> Dict[str, Any]:
     symbol = str(request.get("symbol") or "").strip().upper()
     if not symbol:
         raise ValueError("A symbol is required")
-    quoted = urllib.parse.quote(symbol)
+    quoted = urllib.parse.quote(symbol, safe="")
     with ThreadPoolExecutor(max_workers=2) as pool:
         institutional = pool.submit(_nasdaq, f"/api/company/{quoted}/institutional-holdings")
         insider = pool.submit(_nasdaq, f"/api/company/{quoted}/insider-trades")

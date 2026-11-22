@@ -233,12 +233,13 @@ def fetch(command: str, args: Mapping[str, Any]) -> Dict[str, Any]:
     if command == "world_bank":
         country = str(args.get("country", "all")).strip()
         indicator = str(args.get("indicator", "NY.GDP.MKTP.KD.ZG")).strip()
-        url = f"https://api.worldbank.org/v2/country/{urllib.parse.quote(country)}/indicator/{urllib.parse.quote(indicator)}?format=json&per_page=200"
+        url = (f"https://api.worldbank.org/v2/country/{urllib.parse.quote(country, safe='')}/indicator/"
+               f"{urllib.parse.quote(indicator, safe='')}?format=json&per_page=200")
         return parse_world_bank(_get(url, json_response=True), indicator)
     if command == "imf":
         indicator = str(args.get("indicator", "NGDP_RPCH")).strip().upper()
         country = str(args.get("country", "IND")).strip().upper()
-        series = urllib.parse.quote(f"{country}.{indicator}")
+        series = urllib.parse.quote(f"{country}.{indicator}", safe="")
         url = f"https://api.db.nomics.world/v22/series/IMF/WEO:latest/{series}?observations=1"
         return parse_imf(_get(url, json_response=True), indicator, country)
     if command == "gdelt":
@@ -266,12 +267,12 @@ def fetch(command: str, args: Mapping[str, Any]) -> Dict[str, Any]:
             return result
         yahoo_symbol = symbol[:-3] if symbol.endswith(".us") else symbol
         params = {"range": str(args.get("range", "1y")), "interval": str(args.get("interval", "1d"))}
-        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{urllib.parse.quote(yahoo_symbol.upper())}?" + urllib.parse.urlencode(params)
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{urllib.parse.quote(yahoo_symbol.upper(), safe='')}?" + urllib.parse.urlencode(params)
         return parse_yahoo(_get(url, json_response=True), yahoo_symbol)
     if command == "yahoo":
         symbol = str(args.get("symbol", "SPY")).strip().upper()
         params = {"range": str(args.get("range", "1y")), "interval": str(args.get("interval", "1d"))}
-        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{urllib.parse.quote(symbol)}?" + urllib.parse.urlencode(params)
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{urllib.parse.quote(symbol, safe='')}?" + urllib.parse.urlencode(params)
         return parse_yahoo(_get(url, json_response=True), symbol)
     if command == "rss":
         return parse_feed(_get(str(args.get("url", "")).strip()))

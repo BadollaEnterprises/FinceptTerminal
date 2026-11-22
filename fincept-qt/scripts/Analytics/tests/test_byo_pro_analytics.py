@@ -56,6 +56,19 @@ class ByoProAnalyticsTest(unittest.TestCase):
         self.assertIn("fromdate=", seen[0])
         self.assertNotIn("import yfinance", SCRIPT.read_text(encoding="utf-8"))
 
+    def test_market_symbol_is_escaped_as_one_path_segment(self):
+        mod = load_module()
+        seen = []
+
+        def get_json(url):
+            seen.append(url)
+            return {"data": {"tradesTable": {"rows": [
+                {"date": "11/19/2026", "close": "$10.00"},
+            ]}}}
+
+        mod._history("A/B", get_json=get_json)
+        self.assertIn("/quote/A%2FB/historical?", seen[0])
+
     def test_nasdaq_history_bars_capture_volume_for_technical_rating(self):
         mod = load_module()
 
