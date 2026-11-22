@@ -37,6 +37,12 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertIn("build_python_env(QStringList{})", session)
         self.assertIn("build_python_env(QStringList{})", daemon)
 
+    def test_agent_subprocesses_receive_model_keys_only_in_private_payloads(self):
+        agents = (ROOT / "src/services/agents/AgentService.cpp").read_text(encoding="utf-8")
+        quant = (ROOT / "src/services/ai_quant_lab/AIQuantLabService.cpp").read_text(encoding="utf-8")
+        self.assertIn("build_python_env(QStringList{})", agents)
+        self.assertIn("py.build_python_env(QStringList{})", quant)
+
     def test_macro_and_geopolitics_services_check_firewall(self):
         geopolitics = (ROOT / "src/services/geopolitics/GeopoliticsService.cpp").read_text(encoding="utf-8")
         macro = (ROOT / "src/services/economics/FinceptMacroService.cpp").read_text(encoding="utf-8")

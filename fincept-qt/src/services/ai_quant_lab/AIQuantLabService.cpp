@@ -976,7 +976,10 @@ bool AIQuantLabService::rd_spawn(const QString& task_id, const QJsonObject& llm_
         payload["resume_from"] = resume_from;
 
     auto* proc = new QProcess(this);
-    proc->setProcessEnvironment(py.build_python_env());
+    // The resolved BYO LLM configuration (including its key) is already sent
+    // in the private stdin payload below. Do not expose unrelated stored keys
+    // through this long-running research process's environment as well.
+    proc->setProcessEnvironment(py.build_python_env(QStringList{}));
     proc->setWorkingDirectory(py.scripts_dir());
     // The loop and everything it starts form one tree (Windows: a kill-on-close job the child
     // joins before it runs, no console window; POSIX: its own process group). STOP and quit

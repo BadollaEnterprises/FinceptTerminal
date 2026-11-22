@@ -678,7 +678,10 @@ QJsonObject AgentService::build_payload(const QString& action, const QJsonObject
 }
 
 QProcessEnvironment AgentService::agent_process_env() const {
-    QProcessEnvironment env = python::PythonRunner::instance().build_python_env();
+    // Model/tool credentials are carried in the per-run stdin payload, where
+    // build_payload() can apply provider policy. Keeping the process base
+    // secretless avoids duplicating every stored key in every agent child.
+    QProcessEnvironment env = python::PythonRunner::instance().build_python_env(QStringList{});
     env.insert(QStringLiteral("FINCEPT_AGENT_DATA_DIR"), agent_data_dir());
     return env;
 }
