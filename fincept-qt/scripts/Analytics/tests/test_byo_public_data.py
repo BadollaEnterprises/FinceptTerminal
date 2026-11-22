@@ -88,6 +88,24 @@ class PublicDataTest(unittest.TestCase):
         self.assertEqual(result["fallback_from"], "GDELT DOC 2.0")
         self.assertEqual(result["rows"][0]["domain"], "example.test")
 
+    def test_gdelt_result_limit_is_clamped_to_supported_range(self):
+        module = load_module(self)
+        seen = []
+        original = module._get
+
+        def fake_get(url, json_response=False):
+            seen.append(url)
+            return {"articles": [{"title": "Update", "url": "https://example.test/story"}]}
+
+        module._get = fake_get
+        try:
+            module.fetch("gdelt", {"limit": -50})
+            module.fetch("gdelt", {"limit": 1000})
+        finally:
+            module._get = original
+        self.assertIn("maxrecords=1", seen[0])
+        self.assertIn("maxrecords=250", seen[1])
+
     def test_public_fetch_rejects_local_files_and_private_networks(self):
         module = load_module(self)
 

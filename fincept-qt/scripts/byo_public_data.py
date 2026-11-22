@@ -243,7 +243,8 @@ def fetch(command: str, args: Mapping[str, Any]) -> Dict[str, Any]:
         return parse_imf(_get(url, json_response=True), indicator, country)
     if command == "gdelt":
         query = str(args.get("query", "economy OR markets")).strip()
-        params = {"query": query, "mode": "artlist", "maxrecords": min(int(args.get("limit", 50)), 250),
+        limit = max(1, min(int(args.get("limit", 50)), 250))
+        params = {"query": query, "mode": "artlist", "maxrecords": limit,
                   "format": "json", "sort": "datedesc"}
         try:
             result = parse_gdelt(_get("https://api.gdeltproject.org/api/v2/doc/doc?" +
