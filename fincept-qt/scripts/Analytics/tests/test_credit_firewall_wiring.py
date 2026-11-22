@@ -254,6 +254,21 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertGreaterEqual(source.count("privacy::redact_text(result.error)"), 2)
         self.assertNotIn('{"error", result.error}', source)
 
+    def test_broker_response_redactor_covers_identity_fields(self):
+        source = (ROOT / "src/trading/brokers/BrokerLogRedact.h").read_text(encoding="utf-8")
+        for key in (
+            "dhanclientid",
+            "client_id",
+            "user_id",
+            "account_number",
+            "first_name",
+            "last_name",
+            "address",
+            "dateofbirth",
+        ):
+            with self.subTest(key=key):
+                self.assertIn(f'QStringLiteral("{key}")', source)
+
     def test_portfolio_import_logs_do_not_persist_rejected_rows(self):
         source = (ROOT / "src/services/portfolio/PortfolioService_ImportExport.cpp").read_text(encoding="utf-8")
         self.assertIn('#include "core/privacy/LogRedact.h"', source)

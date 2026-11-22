@@ -42,9 +42,18 @@ inline bool is_secret_key(const QString& key) {
 
     // Direct PII — not a credential, but still not log material.
     static const QSet<QString> kExact = {
-        QStringLiteral("email"),  QStringLiteral("emailid"),  QStringLiteral("email_id"),  QStringLiteral("phone"),
-        QStringLiteral("mobile"), QStringLiteral("mobileno"), QStringLiteral("mobile_no"), QStringLiteral("pan"),
-        QStringLiteral("otp"),    QStringLiteral("sid"),
+        QStringLiteral("email"),          QStringLiteral("emailid"),       QStringLiteral("email_id"),
+        QStringLiteral("phone"),          QStringLiteral("mobile"),        QStringLiteral("mobileno"),
+        QStringLiteral("mobile_no"),      QStringLiteral("pan"),           QStringLiteral("otp"),
+        QStringLiteral("sid"),            QStringLiteral("dhanclientid"),  QStringLiteral("dhanclientname"),
+        QStringLiteral("clientid"),       QStringLiteral("client_id"),     QStringLiteral("clientcode"),
+        QStringLiteral("client_code"),    QStringLiteral("userid"),        QStringLiteral("user_id"),
+        QStringLiteral("idirect_userid"), QStringLiteral("ucc"),           QStringLiteral("accountid"),
+        QStringLiteral("account_id"),     QStringLiteral("accountnumber"), QStringLiteral("account_number"),
+        QStringLiteral("name"),           QStringLiteral("fullname"),      QStringLiteral("full_name"),
+        QStringLiteral("firstname"),      QStringLiteral("first_name"),    QStringLiteral("lastname"),
+        QStringLiteral("last_name"),      QStringLiteral("address"),       QStringLiteral("dob"),
+        QStringLiteral("dateofbirth"),
     };
     if (kExact.contains(k))
         return true;
