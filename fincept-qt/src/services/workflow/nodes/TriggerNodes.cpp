@@ -366,8 +366,11 @@ void register_trigger_nodes(NodeRegistry& registry) {
                 }
 
                 const double threshold = params.value("threshold").toDouble(25.0);
-                fincept::python::PythonRunner::instance().run(
-                    "yfinance_data.py", {"quote", "^VIX"}, [cb, event, threshold](const fincept::python::PythonResult& res) {
+                fincept::python::PythonRunner::RunOptions opts;
+                opts.credential_allowlist = QStringList{};
+                fincept::python::PythonRunner::instance().run_with_options(
+                    "yfinance_data.py", {"quote", "^VIX"}, opts,
+                    [cb, event, threshold](const fincept::python::PythonResult& res) {
                         if (!res.success) {
                             cb(false, {}, res.error.isEmpty() ? QStringLiteral("VIX quote request failed") : res.error);
                             return;
@@ -428,8 +431,10 @@ void register_trigger_nodes(NodeRegistry& registry) {
                 // "buy AAPL when it is above $200" fired its order at ANY price. A run is a
                 // manual "check now" (there is no scheduler), so look at the live quote and only
                 // let the workflow continue when the condition actually holds.
-                fincept::python::PythonRunner::instance().run(
-                    "yfinance_data.py", {"quote", symbol},
+                fincept::python::PythonRunner::RunOptions opts;
+                opts.credential_allowlist = QStringList{};
+                fincept::python::PythonRunner::instance().run_with_options(
+                    "yfinance_data.py", {"quote", symbol}, opts,
                     [cb, symbol, condition, threshold](const fincept::python::PythonResult& res) {
                         if (!res.success) {
                             cb(false, {}, res.error.isEmpty() ? QStringLiteral("Quote request failed") : res.error);

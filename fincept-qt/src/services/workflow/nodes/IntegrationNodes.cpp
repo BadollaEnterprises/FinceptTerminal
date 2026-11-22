@@ -129,8 +129,12 @@ void register_integration_nodes(NodeRegistry& registry) {
 
                 const QByteArray args_json = QJsonDocument(args).toJson(QJsonDocument::Compact);
 
-                PythonRunner::instance().run(
-                    "spreadsheet.py", {"--args", "-"},
+                PythonRunner::RunOptions opts;
+                opts.stdin_data = args_json;
+                // Google credentials are supplied as an explicit managed file path.
+                opts.credential_allowlist = QStringList{};
+                PythonRunner::instance().run_with_options(
+                    "spreadsheet.py", {"--args", "-"}, opts,
                     [cb](const fincept::python::PythonResult& res) {
                         if (!res.success) {
                             cb(false, {}, res.error.isEmpty() ? "spreadsheet.py failed" : res.error);
@@ -147,8 +151,7 @@ void register_integration_nodes(NodeRegistry& registry) {
                             return;
                         }
                         cb(true, doc.isObject() ? QJsonValue(doc.object()) : QJsonValue(doc.array()), {});
-                    },
-                    {}, args_json);
+                    });
             },
     });
 

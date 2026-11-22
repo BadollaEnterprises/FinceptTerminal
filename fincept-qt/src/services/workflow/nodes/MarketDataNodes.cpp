@@ -20,10 +20,19 @@ using fincept::python::PythonRunner;
 
 namespace {
 
+QStringList market_data_credentials_for_script(const QString& script) {
+    const QString name = script.toLower().section(QLatin1Char('/'), -1);
+    if (name == QLatin1String("fred_data.py") || name == QLatin1String("fred_economic_data.py"))
+        return {QStringLiteral("FRED_API_KEY")};
+    return {};
+}
+
 // Helper: run a Python script and parse the JSON result, calling cb with the outcome.
 void run_python_json(const QString& script, const QStringList& args,
                      std::function<void(bool, QJsonValue, QString)> cb) {
-    PythonRunner::instance().run(script, args, [cb](const PythonResult& res) {
+    PythonRunner::RunOptions opts;
+    opts.credential_allowlist = market_data_credentials_for_script(script);
+    PythonRunner::instance().run_with_options(script, args, opts, [cb](const PythonResult& res) {
         if (!res.success) {
             cb(false, {}, res.error);
             return;
@@ -57,6 +66,7 @@ void run_python_json(const QString& script, const QStringList& args,
 void mkt_run_sec_json(const QStringList& args, std::function<void(bool, QJsonValue, QString)> cb) {
     PythonRunner::RunOptions opts;
     opts.expect_json = false;
+    opts.credential_allowlist = QStringList{};
     PythonRunner::instance().run_with_options("sec_data.py", args, opts, [cb](const PythonResult& res) {
         if (!res.success) {
             cb(false, {}, res.error.isEmpty() ? QStringLiteral("sec_data.py failed") : res.error);

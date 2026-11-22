@@ -112,6 +112,20 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertGreaterEqual(bridge.count("code_opts.credential_allowlist = QStringList{}"), 2)
         self.assertGreaterEqual(bridge.count("run_code_with_options"), 2)
 
+    def test_workflow_script_nodes_use_least_privilege_credentials(self):
+        analytics = (ROOT / "src/services/workflow/nodes/AnalyticsNodes.cpp").read_text(encoding="utf-8")
+        triggers = (ROOT / "src/services/workflow/nodes/TriggerNodes.cpp").read_text(encoding="utf-8")
+        integration = (ROOT / "src/services/workflow/nodes/IntegrationNodes.cpp").read_text(encoding="utf-8")
+        market = (ROOT / "src/services/workflow/nodes/MarketDataNodes.cpp").read_text(encoding="utf-8")
+        geopolitics = (ROOT / "src/services/geopolitics/GeopoliticsService.cpp").read_text(encoding="utf-8")
+        self.assertGreaterEqual(analytics.count("credential_allowlist = QStringList{}"), 2)
+        self.assertGreaterEqual(triggers.count("credential_allowlist = QStringList{}"), 2)
+        self.assertIn("opts.stdin_data = args_json", integration)
+        self.assertIn("opts.credential_allowlist = QStringList{}", integration)
+        self.assertIn("market_data_credentials_for_script", market)
+        self.assertIn("opts.credential_allowlist = market_data_credentials_for_script(script)", market)
+        self.assertIn("opts.credential_allowlist = QStringList{}", geopolitics)
+
     def test_macro_and_geopolitics_services_check_firewall(self):
         geopolitics = (ROOT / "src/services/geopolitics/GeopoliticsService.cpp").read_text(encoding="utf-8")
         macro = (ROOT / "src/services/economics/FinceptMacroService.cpp").read_text(encoding="utf-8")

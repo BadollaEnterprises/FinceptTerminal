@@ -99,7 +99,10 @@ GeopoliticsService::GeopoliticsService(QObject* parent) : QObject(parent) {}
 void GeopoliticsService::run_python(const QString& script, const QStringList& args, const QString& context,
                                     std::function<void(bool, const QString&)> cb) {
     QPointer<GeopoliticsService> self = this;
-    python::PythonRunner::instance().run(script, args, [self, context, cb](python::PythonResult result) {
+    python::PythonRunner::RunOptions opts;
+    opts.credential_allowlist = QStringList{};
+    python::PythonRunner::instance().run_with_options(script, args, opts,
+                                                      [self, context, cb](python::PythonResult result) {
         if (!self)
             return;
         cb(result.success, result.success ? result.output : result.error);

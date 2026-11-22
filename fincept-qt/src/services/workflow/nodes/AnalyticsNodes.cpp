@@ -29,7 +29,9 @@ namespace {
 // Helper: run a Python script and parse the JSON result.
 void analytics_run_python_json(const QString& script, const QStringList& args,
                                std::function<void(bool, QJsonValue, QString)> cb) {
-    PythonRunner::instance().run(script, args, [cb](const PythonResult& res) {
+    PythonRunner::RunOptions opts;
+    opts.credential_allowlist = QStringList{};
+    PythonRunner::instance().run_with_options(script, args, opts, [cb](const PythonResult& res) {
         if (!res.success) {
             cb(false, {}, res.error);
             return;
@@ -62,8 +64,11 @@ void analytics_run_python_json(const QString& script, const QStringList& args,
 // Fetch daily closes for one symbol through the same yfinance_data.py command the market nodes use.
 void an_fetch_closes(const QString& symbol, const QString& period,
                      std::function<void(bool, QVector<double>, QString)> done) {
-    PythonRunner::instance().run(
-        "yfinance_data.py", {"historical_period", symbol, period, "1d"}, [done, symbol](const PythonResult& res) {
+    PythonRunner::RunOptions opts;
+    opts.credential_allowlist = QStringList{};
+    PythonRunner::instance().run_with_options(
+        "yfinance_data.py", {"historical_period", symbol, period, "1d"}, opts,
+        [done, symbol](const PythonResult& res) {
             if (!res.success) {
                 done(false, {}, res.error);
                 return;
