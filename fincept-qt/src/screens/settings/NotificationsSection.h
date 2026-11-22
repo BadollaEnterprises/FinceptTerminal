@@ -45,8 +45,8 @@ class NotificationsSection : public QWidget {
     /// provider stays off until a read succeeds (RETRY reads again). A damaged
     /// secret (it can never be read) is kept until the user enters it again.
     void reload_provider(const QString& provider_id);
-    /// Validates then persists one provider. Returns false (and, for invalid input,
-    /// fills *error_out) when nothing was written.
+    /// Validates then persists one provider. Returns false and fills *error_out for
+    /// invalid input or a storage failure; earlier fields may already be persisted.
     bool save_provider_fields(const QString& provider_id, const ProviderWidgets& pw, QString* error_out = nullptr);
 
     /// Re-apply tr() lookups to every widget whose text we keep a handle to.

@@ -3,6 +3,7 @@
 #include "screens/settings/NotificationsSection.h"
 
 #include "core/logging/Logger.h"
+#include "core/privacy/LogRedact.h"
 #include "screens/settings/SettingsRowHelpers.h"
 #include "screens/settings/SettingsStyles.h"
 #include "services/notifications/NotificationService.h"
@@ -162,28 +163,35 @@ QString notif_secret_handle(const QString& setting_key) {
 /// Persist one secret field the way BaseProvider::set_secret does: the encrypted
 /// copy is authoritative and the plaintext column is blanked — but only once the
 /// encrypted store succeeded, so an unavailable keychain never loses the value.
-void notif_store_secret(SettingsRepository& repo, const QString& setting_key, const QString& value,
-                        const QString& category) {
+Result<void> notif_store_secret(SettingsRepository& repo, const QString& setting_key, const QString& value,
+                                const QString& category) {
     const QString handle = notif_secret_handle(setting_key);
     if (value.isEmpty()) {
         const auto rm = SecureStorage::instance().remove(handle);
-        if (rm.is_err())
+        if (rm.is_err()) {
             LOG_WARN("Settings", QString("Could not clear stored secret for '%1': %2")
-                                     .arg(setting_key, QString::fromStdString(rm.error())));
-        repo.set(setting_key, QString{}, category);
-        return;
+                                     .arg(setting_key,
+                                          privacy::redact_text(QString::fromStdString(rm.error()))));
+            return rm;
+        }
+        return repo.set(setting_key, QString{}, category);
     }
     // Blank the plaintext row only once the encrypted copy was written AND read back equal.
     const auto st = SecureStorage::instance().store_verified(handle, value);
     if (st.is_ok()) {
-        repo.set(setting_key, QString{}, category);
-    } else {
-        LOG_WARN("Settings", logf("Notification credential kept in settings, secure storage write not confirmed",
-                                  {{"key", setting_key}, {"error", QString::fromStdString(st.error())}}));
-        repo.set(setting_key, value, category);
-        // Reads prefer a stored copy: the value the user just replaced must not shadow it.
-        SecureStorage::instance().remove(handle);
+        return repo.set(setting_key, QString{}, category);
     }
+    LOG_WARN("Settings", logf("Notification credential kept in settings, secure storage write not confirmed",
+                              {{"key", setting_key},
+                               {"error", privacy::redact_text(QString::fromStdString(st.error()))}}));
+    const auto fallback = repo.set(setting_key, value, category);
+    // Reads prefer a stored copy: the value the user just replaced must not shadow it.
+    const auto cleanup = SecureStorage::instance().remove(handle);
+    if (fallback.is_err())
+        return fallback;
+    if (cleanup.is_err())
+        return cleanup;
+    return fallback;
 }
 
 const ProviderDef* notif_find_def(const QString& provider_id) {
@@ -854,8 +862,16 @@ bool NotificationsSection::save_provider_fields(const QString& provider_id, cons
     auto& repo = SettingsRepository::instance();
     const QString cat = QString("notif_%1").arg(provider_id);
 
-    if (pw.enabled)
-        repo.set(cat + ".enabled", pw.enabled->isChecked() ? "1" : "0", cat);
+    if (pw.enabled) {
+        const auto enabled_saved = repo.set(cat + ".enabled", pw.enabled->isChecked() ? "1" : "0", cat);
+        if (enabled_saved.is_err()) {
+            const QString detail = privacy::redact_text(QString::fromStdString(enabled_saved.error()));
+            if (error_out)
+                *error_out = tr("Could not save %1: %2").arg(def->name, detail);
+            LOG_WARN("Settings", QStringLiteral("Notification provider enabled state was not saved: %1").arg(detail));
+            return false;
+        }
+    }
 
     for (const auto& fd : def->fields) {
         QLineEdit* edit = pw.fields.value(fd.key, nullptr);
@@ -863,10 +879,17 @@ bool NotificationsSection::save_provider_fields(const QString& provider_id, cons
             continue;
         const QString value = edit->text().trimmed();
         const QString setting_key = cat + "." + fd.key;
-        if (notif_field_is_secret(provider_id, fd))
-            notif_store_secret(repo, setting_key, value, cat);
-        else
-            repo.set(setting_key, value, cat);
+        const auto field_saved = notif_field_is_secret(provider_id, fd)
+                                     ? notif_store_secret(repo, setting_key, value, cat)
+                                     : repo.set(setting_key, value, cat);
+        if (field_saved.is_err()) {
+            const QString detail = privacy::redact_text(QString::fromStdString(field_saved.error()));
+            if (error_out)
+                *error_out = tr("Could not save %1 — %2: %3")
+                                 .arg(def->name, tr(fd.label.toUtf8().constData()), detail);
+            LOG_WARN("Settings", QStringLiteral("Notification provider field was not saved: %1").arg(detail));
+            return false;
+        }
     }
     if (!damaged.isEmpty())
         reload_provider(provider_id); // the damaged rows were replaced: read them back

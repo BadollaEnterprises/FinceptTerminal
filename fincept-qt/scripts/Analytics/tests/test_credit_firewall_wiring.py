@@ -324,6 +324,21 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertLess(load_path.index("if (res.is_err())"), load_path.index("loaded_ = true"))
         self.assertIn("return;", load_path[load_path.index("if (res.is_err())"):load_path.index("loaded_ = true")])
 
+    def test_notification_provider_save_propagates_secret_and_settings_write_failures(self):
+        section = (ROOT / "src/screens/settings/NotificationsSection.cpp").read_text(encoding="utf-8")
+        helper = section[section.index("notif_store_secret"):section.index("const ProviderDef* notif_find_def")]
+        save = section[section.index("bool NotificationsSection::save_provider_fields"):]
+        self.assertIn("Result<void> notif_store_secret", section)
+        self.assertIn("return rm;", helper)
+        self.assertIn("const auto fallback", helper)
+        self.assertIn("const auto cleanup", helper)
+        self.assertIn("if (cleanup.is_err())", helper)
+        self.assertIn("const auto enabled_saved", save)
+        self.assertIn("const auto field_saved", save)
+        self.assertGreaterEqual(save.count(".is_err()"), 2)
+        self.assertIn("Could not save", save)
+        self.assertIn("privacy::redact_text", save)
+
     def test_llm_settings_diagnostics_scrub_storage_errors_and_profile_identity(self):
         providers = (ROOT / "src/screens/settings/LlmConfigSection_Providers.cpp").read_text(encoding="utf-8")
         profiles = (ROOT / "src/screens/settings/LlmConfigSection_Profiles.cpp").read_text(encoding="utf-8")
