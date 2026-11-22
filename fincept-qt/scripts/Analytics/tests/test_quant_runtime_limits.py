@@ -13,6 +13,7 @@ QUANT_MODULES = ANALYTICS / "quant" / "quant_modules_3042.py"
 ECONOMICS_ENGINE = ANALYTICS / "economics" / "analytics_engine.py"
 PORTFOLIO_RISK = ANALYTICS / "portfolioManagement" / "risk_management.py"
 FUNCTIME_SERVICE = ANALYTICS / "functime_wrapper" / "functime_service.py"
+LBO_MODEL = ANALYTICS / "corporateFinance" / "lbo" / "lbo_model.py"
 
 
 def load_limits_module():
@@ -135,6 +136,18 @@ class QuantRuntimeLimitsTest(unittest.TestCase):
         expected = 'min(MAX_FORECAST_HORIZON, _safe_int(data.get("horizon", 14)))'
         self.assertIn(expected, forecast)
         self.assertIn(expected, intervals)
+
+    def test_lbo_model_bounds_projection_years_before_projection_loop(self):
+        source = LBO_MODEL.read_text(encoding="utf-8")
+        build = source[source.index("def build_complete_model("):
+                       source.index("def _project(")]
+        self.assertIn(
+            'bounded_positive_int(projection_years, "projection_years", MAX_PROJECTION_YEARS)',
+            build,
+        )
+        self.assertLess(
+            build.index("bounded_positive_int("), build.index("self._project("),
+        )
 
 
 if __name__ == "__main__":

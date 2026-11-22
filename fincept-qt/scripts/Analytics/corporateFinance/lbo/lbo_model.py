@@ -30,6 +30,10 @@ from corporateFinance.lbo.capital_structure import CapitalStructureBuilder
 from corporateFinance.lbo.debt_schedule import DebtSchedule
 from corporateFinance.lbo.returns_calculator import ReturnsCalculator
 from corporateFinance.lbo.exit_analysis import ExitAnalyzer
+from quant.runtime_limits import bounded_positive_int
+
+
+MAX_PROJECTION_YEARS = 20
 
 class LBOModel:
     """Complete Leveraged Buyout Model"""
@@ -57,6 +61,8 @@ class LBOModel:
         exit equity = exit EV - (debt - cash). Returns are measured on total equity (sponsor + rollover +
         management), the same claim the exit equity value represents.
         """
+
+        projection_years = bounded_positive_int(projection_years, "projection_years", MAX_PROJECTION_YEARS)
 
         self.capital_structure = CapitalStructureBuilder(self.entry_ev, self.entry_ebitda)
         tranches_in = self.assumptions.get('debt_tranches')
