@@ -16,7 +16,7 @@ ChatSession ChatRepository::map_session(QSqlQuery& q) {
 
 ChatMessage ChatRepository::map_message(QSqlQuery& q) {
     return {q.value(0).toString(), q.value(1).toString(), q.value(2).toString(), q.value(3).toString(),
-            q.value(4).toString(), q.value(5).toString(), q.value(6).toInt(),    q.value(7).toString()};
+            q.value(4).toString(), q.value(5).toString(), q.value(6).toLongLong(), q.value(7).toString()};
 }
 
 Result<ChatSession> ChatRepository::create_session(const QString& title, const QString& provider,
@@ -60,7 +60,7 @@ Result<void> ChatRepository::delete_session(const QString& id) {
 }
 
 Result<void> ChatRepository::add_message(const QString& session_id, const QString& role, const QString& content,
-                                         const QString& provider, const QString& model, int tokens) {
+                                         const QString& provider, const QString& model, qint64 tokens) {
     auto tx = db().begin_transaction();
     if (tx.is_err())
         return tx;
@@ -98,7 +98,7 @@ Result<void> ChatRepository::add_message(const QString& session_id, const QStrin
 
 Result<bool> ChatRepository::add_message_once(const QString& message_id, const QString& session_id,
                                               const QString& role, const QString& content, const QString& provider,
-                                              const QString& model, int tokens) {
+                                              const QString& model, qint64 tokens) {
     auto tx = db().begin_transaction();
     if (tx.is_err())
         return Result<bool>::err(tx.error());

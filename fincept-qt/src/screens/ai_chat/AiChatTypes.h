@@ -191,7 +191,7 @@ struct Turn {
     QString model;
     QString route_label;             ///< "Claude Code · sonnet · high" when the service gave one
     QDateTime when;                  ///< local time; invalid = unknown
-    int tokens = 0;                  ///< total tokens as reported (0 = not reported)
+    qint64 tokens = 0;               ///< total tokens as reported (0 = not reported)
     int prompt_tokens = -1;          ///< this run only (-1 = not known)
     int completion_tokens = -1;
     int cached_prompt_tokens = -1;   ///< subset of prompt_tokens served from provider cache

@@ -156,7 +156,7 @@ class AiChatScreen : public QWidget,
     QHash<QString, QString> snippets_;     // session id → last message, this run
     bool unread_ = false;                  // an answer arrived while the tab was hidden
     std::vector<ai_chat::ConversationMessage> history_;
-    int total_tokens_ = 0;
+    qint64 total_tokens_ = 0;
     int total_messages_ = 0;
     // This run's answers only (the database keeps totals, not in / out / cost).
     qint64 run_prompt_tokens_ = -1;

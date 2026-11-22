@@ -16,6 +16,7 @@ class TestChatRepository : public QObject {
   private slots:
     void initTestCase();
     void stable_message_id_is_inserted_once();
+    void token_usage_round_trips_as_64_bit();
     void add_message_rolls_back_when_session_update_fails();
     void add_message_once_releases_failed_commit();
     void cleanupTestCase();
@@ -54,6 +55,23 @@ void TestChatRepository::stable_message_id_is_inserted_once() {
     const auto session = repo.get_session(created.value().id);
     QVERIFY(session.is_ok());
     QCOMPARE(session.value().message_count, 1);
+}
+
+void TestChatRepository::token_usage_round_trips_as_64_bit() {
+    auto& repo = ChatRepository::instance();
+    const auto created = repo.create_session(QStringLiteral("Long-running usage"));
+    QVERIFY(created.is_ok());
+
+    constexpr qint64 large_usage = 3'000'000'000LL;
+    const auto saved = repo.add_message(created.value().id, QStringLiteral("assistant"),
+                                        QStringLiteral("Persist the complete token count"),
+                                        QStringLiteral("deepseek"), QStringLiteral("deepseek-chat"), large_usage);
+    QVERIFY(saved.is_ok());
+
+    const auto messages = repo.get_messages(created.value().id);
+    QVERIFY(messages.is_ok());
+    QCOMPARE(messages.value().size(), 1);
+    QCOMPARE(messages.value().constFirst().tokens_used, large_usage);
 }
 
 void TestChatRepository::add_message_rolls_back_when_session_update_fails() {
