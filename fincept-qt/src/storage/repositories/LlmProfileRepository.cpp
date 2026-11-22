@@ -4,6 +4,7 @@
 
 #include "core/logging/Logger.h"
 #include "core/policy/CommunityPolicy.h"
+#include "core/privacy/LogRedact.h"
 #include "storage/repositories/LlmConfigRepository.h"
 #include "storage/secure/SecureStorage.h"
 
@@ -19,6 +20,19 @@ namespace {
 // plaintext column so legacy rows keep working and no key is lost.
 QString profile_secret_key(const QString& id) {
     return QStringLiteral("llm:apikey:profile:") + id;
+}
+
+Result<void> hydrate_profile_key(LlmProfile& p) {
+    if (p.is_harness() || !p.api_key.isEmpty() || p.id.isEmpty())
+        return Result<void>::ok();
+    const SecretRead sr = SecureStorage::instance().read(profile_secret_key(p.id));
+    if (sr.failed())
+        return Result<void>::err(QString("Could not read secure storage for LLM profile '%1': %2")
+                                     .arg(p.name, sr.reason())
+                                     .toStdString());
+    if (sr.found())
+        p.api_key = sr.value;
+    return Result<void>::ok();
 }
 
 bool runtime_profile_allowed(const QString& provider) {
@@ -54,17 +68,6 @@ LlmProfile LlmProfileRepository::map_profile(QSqlQuery& q) {
     p.created_at = q.value(10).toString();
     p.updated_at = q.value(11).toString();
     p.reasoning_effort = q.value(12).toString(); // v061
-    if (p.is_harness())
-        return p; // a harness profile never carries a key (nothing to decrypt)
-    // Decrypt the api_key from SecureStorage when the column is blank (encrypted
-    // row); a non-empty column is a legacy plaintext value, used as-is.
-    if (p.api_key.isEmpty() && !p.id.isEmpty()) {
-        // Error ≠ "nothing stored": the key stays empty for this load only; save()
-        // stores a key only when one is given, so an unread key is never overwritten.
-        const SecretRead sr = SecureStorage::instance().read(profile_secret_key(p.id));
-        if (sr.found())
-            p.api_key = sr.value;
-    }
     return p;
 }
 
@@ -87,11 +90,25 @@ Result<QVector<LlmProfile>> LlmProfileRepository::list_profiles() const {
                        return !runtime_profile_allowed(p.provider);
                    }),
                    profiles.end());
+    for (auto& profile : profiles) {
+        const auto hydrated = hydrate_profile_key(profile);
+        if (hydrated.is_err())
+            return Result<QVector<LlmProfile>>::err(hydrated.error());
+    }
     return Result<QVector<LlmProfile>>::ok(std::move(profiles));
 }
 
 Result<QVector<LlmProfile>> LlmProfileRepository::list_all_profiles() const {
-    return query_list(QString(kSelectCols) + "ORDER BY name", {}, map_profile);
+    auto result = query_list(QString(kSelectCols) + "ORDER BY name", {}, map_profile);
+    if (result.is_err())
+        return result;
+    auto profiles = result.value();
+    for (auto& profile : profiles) {
+        const auto hydrated = hydrate_profile_key(profile);
+        if (hydrated.is_err())
+            return Result<QVector<LlmProfile>>::err(hydrated.error());
+    }
+    return Result<QVector<LlmProfile>>::ok(std::move(profiles));
 }
 
 Result<QVector<LlmProfileAssignment>> LlmProfileRepository::list_assignments() const {
@@ -111,7 +128,14 @@ Result<QVector<LlmProfileAssignment>> LlmProfileRepository::list_assignments() c
 }
 
 Result<LlmProfile> LlmProfileRepository::get_profile(const QString& id) const {
-    return query_one(QString(kSelectCols) + "WHERE id = ?", {id}, map_profile);
+    auto result = query_one(QString(kSelectCols) + "WHERE id = ?", {id}, map_profile);
+    if (result.is_err())
+        return result;
+    auto profile = result.value();
+    const auto hydrated = hydrate_profile_key(profile);
+    if (hydrated.is_err())
+        return Result<LlmProfile>::err(hydrated.error());
+    return Result<LlmProfile>::ok(std::move(profile));
 }
 
 Result<void> LlmProfileRepository::save_profile(const LlmProfile& p) {
@@ -399,7 +423,11 @@ ResolvedLlmProfile LlmProfileRepository::resolve_for_context(const QString& cont
             auto& q = r.value();
             if (q.next()) {
                 LlmProfile p = map_profile(q);
-                if (runtime_profile_allowed(p.provider)) {
+                const auto hydrated = hydrate_profile_key(p);
+                if (hydrated.is_err()) {
+                    LOG_WARN("LlmProfileRepo",
+                             privacy::redact_text(QString::fromStdString(hydrated.error())));
+                } else if (runtime_profile_allowed(p.provider)) {
                     LOG_DEBUG("LlmProfileRepo",
                               QString("Resolved [%1] via global default → profile '%2'").arg(context_type, p.name));
                     return profile_to_resolved(p);
