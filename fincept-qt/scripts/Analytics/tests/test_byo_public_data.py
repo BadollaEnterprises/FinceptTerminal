@@ -112,6 +112,21 @@ class PublicDataTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "public HTTP"):
             module._validate_public_url("https://feeds.example.com/news.xml", resolver=private_dns)
 
+    def test_feed_parser_drops_non_web_article_links(self):
+        module = load_module(self)
+        feed = """<rss><channel>
+            <item><title>Unsafe</title><link>javascript:alert(1)</link></item>
+            <item><title>Local file</title><link>file:///etc/passwd</link></item>
+            <item><title>Safe</title><link>https://news.example.test/story</link></item>
+        </channel></rss>"""
+        result = module.parse_feed(feed)
+        self.assertEqual(result["rows"], [{
+            "title": "Safe",
+            "url": "https://news.example.test/story",
+            "published": "",
+            "domain": "news.example.test",
+        }])
+
 
 if __name__ == "__main__":
     unittest.main()

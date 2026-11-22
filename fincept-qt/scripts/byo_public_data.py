@@ -96,6 +96,22 @@ def _float(value):
         return None
 
 
+def _article_web_url(value: Any) -> str:
+    text = str(value or "").strip()
+    parsed = urllib.parse.urlsplit(text)
+    if parsed.scheme.lower() not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password:
+        return ""
+    host = parsed.hostname.rstrip(".").lower()
+    if host == "localhost" or host.endswith((".localhost", ".local")):
+        return ""
+    try:
+        if not ipaddress.ip_address(host).is_global:
+            return ""
+    except ValueError:
+        pass
+    return text
+
+
 def parse_fred_csv(text: str, series: str) -> Dict[str, Any]:
     rows = []
     for row in csv.DictReader(io.StringIO(text)):
@@ -137,9 +153,10 @@ def parse_imf(payload: Mapping[str, Any], indicator: str, country: str) -> Dict[
 def parse_gdelt(payload: Mapping[str, Any]) -> Dict[str, Any]:
     rows = []
     for item in payload.get("articles", []):
-        if not item.get("title") or not item.get("url"):
+        url = _article_web_url(item.get("url"))
+        if not item.get("title") or not url:
             continue
-        rows.append({"title": item["title"], "url": item["url"], "seen_at": item.get("seendate", ""),
+        rows.append({"title": item["title"], "url": url, "seen_at": item.get("seendate", ""),
                      "domain": item.get("domain", ""), "language": item.get("language", "")})
     return {"source": "GDELT DOC 2.0", "rows": rows, "cost_route": "public_zero_credit",
             "fincept_credits": 0}
@@ -182,6 +199,7 @@ def parse_feed(text: str) -> Dict[str, Any]:
         if not link:
             atom_link = node.find("{http://www.w3.org/2005/Atom}link")
             link = atom_link.get("href", "") if atom_link is not None else ""
+        link = _article_web_url(link)
         if value("title") and link:
             rows.append({"title": value("title"), "url": link,
                          "published": value("pubDate") or value("updated"),
