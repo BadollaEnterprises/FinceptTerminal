@@ -126,6 +126,14 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertIn("opts.credential_allowlist = market_data_credentials_for_script(script)", market)
         self.assertIn("opts.credential_allowlist = QStringList{}", geopolitics)
 
+    def test_yahoo_market_workers_are_explicitly_secretless(self):
+        market = (ROOT / "src/services/markets/MarketDataService.cpp").read_text(encoding="utf-8")
+        resolver = (ROOT / "src/services/instruments/InstrumentResolverSources.cpp").read_text(encoding="utf-8")
+        self.assertIn("mds_public_python_options", market)
+        self.assertNotIn("PythonRunner::instance().run(", market)
+        self.assertIn("isrs_public_python_options", resolver)
+        self.assertNotIn("PythonRunner::instance().run(", resolver)
+
     def test_macro_and_geopolitics_services_check_firewall(self):
         geopolitics = (ROOT / "src/services/geopolitics/GeopoliticsService.cpp").read_text(encoding="utf-8")
         macro = (ROOT / "src/services/economics/FinceptMacroService.cpp").read_text(encoding="utf-8")

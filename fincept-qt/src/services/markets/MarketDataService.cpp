@@ -42,6 +42,12 @@ namespace {
 
 namespace mk = fincept::core::market;
 
+python::PythonRunner::RunOptions mds_public_python_options() {
+    python::PythonRunner::RunOptions opts;
+    opts.credential_allowlist = QStringList{};
+    return opts;
+}
+
 // Yahoo throttles per client for a minute or more; retrying a rate-limited
 // topic on the normal 2 s rung only extends the throttle.
 constexpr std::chrono::milliseconds mds_kRateLimitRetry{60'000};
@@ -883,8 +889,9 @@ void MarketDataService::refresh_info(const QStringList& symbols) {
     ++traffic_.info_chunks;
     // PythonRunner runs batch_info as a subprocess (it is not one of the
     // actions it routes to the serial daemon) — on purpose, see header.
-    python::PythonRunner::instance().run(
-        QStringLiteral("yfinance_data.py"), args, [self, chunk, rest, t0](python::PythonResult result) {
+    python::PythonRunner::instance().run_with_options(
+        QStringLiteral("yfinance_data.py"), args, mds_public_python_options(),
+        [self, chunk, rest, t0](python::PythonResult result) {
             // The service is a process-lifetime singleton; the guard only
             // matters during shutdown, when nobody is subscribed anyway.
             if (!self)
@@ -1155,8 +1162,9 @@ void MarketDataService::flush_batch() {
     args << "batch_quotes";
     args.append(all_symbols);
 
-    python::PythonRunner::instance().run(
-        "yfinance_data.py", args, [this, requests = std::move(requests)](python::PythonResult result) {
+    python::PythonRunner::instance().run_with_options(
+        "yfinance_data.py", args, mds_public_python_options(),
+        [this, requests = std::move(requests)](python::PythonResult result) {
             QVector<QuoteData> all_quotes;
             QString batch_failure;     // why the whole batch produced nothing, if known
             QJsonObject quote_errors;  // per-symbol reasons (object-shaped replies only)
@@ -1311,8 +1319,8 @@ void MarketDataService::fetch_info(const QString& symbol, InfoCallback cb) {
     // ── Call 1: get_info ──────────────────────────────────────────────────────
     QStringList args1;
     args1 << "info" << symbol;
-    python::PythonRunner::instance().run("yfinance_data.py", args1,
-                                         [shared, symbol, try_complete](python::PythonResult result) {
+    python::PythonRunner::instance().run_with_options("yfinance_data.py", args1, mds_public_python_options(),
+                                                      [shared, symbol, try_complete](python::PythonResult result) {
                                              shared->info_done = true;
                                              if (!result.success) {
                                                  LOG_WARN("MarketData", "get_info failed for " + symbol);
@@ -1344,8 +1352,8 @@ void MarketDataService::fetch_info(const QString& symbol, InfoCallback cb) {
     // ── Call 2: financial_ratios ──────────────────────────────────────────────
     QStringList args2;
     args2 << "financial_ratios" << symbol;
-    python::PythonRunner::instance().run("yfinance_data.py", args2,
-                                         [shared, symbol, try_complete](python::PythonResult result) {
+    python::PythonRunner::instance().run_with_options("yfinance_data.py", args2, mds_public_python_options(),
+                                                      [shared, symbol, try_complete](python::PythonResult result) {
                                              shared->ratios_done = true;
                                              if (!result.success) {
                                                  LOG_WARN("MarketData", "financial_ratios failed for " + symbol);
@@ -1625,7 +1633,8 @@ void MarketDataService::flush_name_requests() {
     ++traffic_.quote_names_calls;
 
     QPointer<MarketDataService> self = this;
-    python::PythonRunner::instance().run("yfinance_data.py", args, [self, batch](python::PythonResult result) {
+    python::PythonRunner::instance().run_with_options(
+        "yfinance_data.py", args, mds_public_python_options(), [self, batch](python::PythonResult result) {
         if (!self)
             return;
         if (result.success && !result.output.trimmed().isEmpty()) {

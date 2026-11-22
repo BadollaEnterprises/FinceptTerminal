@@ -31,6 +31,12 @@ namespace {
 
 namespace ci = core::instrument;
 
+python::PythonRunner::RunOptions isrs_public_python_options() {
+    python::PythonRunner::RunOptions opts;
+    opts.credential_allowlist = QStringList{};
+    return opts;
+}
+
 QString isrs_recent_path(const QString& key) {
     QString profile = ProfileManager::instance().active().trimmed();
     if (profile.isEmpty())
@@ -97,8 +103,9 @@ ResolverSources isrs_production_sources() {
         QPointer<QObject> ctx(context);
         const QString upper = query.trimmed().toUpper();
         const QString isin = ci::is_valid_isin(upper) ? upper : QString();
-        python::PythonRunner::instance().run(
+        python::PythonRunner::instance().run_with_options(
             QStringLiteral("yfinance_data.py"), {QStringLiteral("search"), query, QString::number(limit)},
+            isrs_public_python_options(),
             [ctx, isin, done = std::move(done)](python::PythonResult r) {
                 if (!ctx)
                     return;
@@ -120,8 +127,9 @@ ResolverSources isrs_production_sources() {
 
     s.yahoo_validate = [](const QString& text, QObject* context, ResolverSources::RemoteDone done) {
         QPointer<QObject> ctx(context);
-        python::PythonRunner::instance().run(
+        python::PythonRunner::instance().run_with_options(
             QStringLiteral("yfinance_data.py"), {QStringLiteral("resolve_symbol"), text},
+            isrs_public_python_options(),
             [ctx, done = std::move(done)](python::PythonResult r) {
                 if (!ctx)
                     return;
