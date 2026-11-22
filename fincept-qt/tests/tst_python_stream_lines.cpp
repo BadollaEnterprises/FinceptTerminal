@@ -81,11 +81,21 @@ class TstPythonStreamLines : public QObject {
         QVERIFY(should_strip_unmanaged_credential(QStringLiteral("MY_SERVICE_PAT"), managed));
         QVERIFY(should_strip_unmanaged_credential(QStringLiteral("DOCKER_AUTH_CONFIG"), managed));
         QVERIFY(should_strip_unmanaged_credential(QStringLiteral("CSRF_TOKEN"), managed));
+        QVERIFY(should_strip_unmanaged_credential(QStringLiteral("SSH_AUTH_SOCK"), managed));
+        QVERIFY(should_strip_unmanaged_credential(QStringLiteral("KUBECONFIG"), managed));
+        QVERIFY(should_strip_unmanaged_credential(QStringLiteral("DATABASE_URL"), managed));
+        QVERIFY(should_strip_unmanaged_credential(QStringLiteral("AWS_SHARED_CREDENTIALS_FILE"), managed));
+        QVERIFY(should_strip_unmanaged_credential(QStringLiteral("SERVICE_TOKEN_FILE"), managed));
+        QVERIFY(should_strip_unmanaged_credential(QStringLiteral("CLIENT_KEY_FILE"), managed));
+        QVERIFY(should_strip_unmanaged_credential(QStringLiteral("TOKEN"), managed));
+        QVERIFY(should_strip_unmanaged_credential(QStringLiteral("PASSWORD"), managed));
 
         QVERIFY(!should_strip_unmanaged_credential(QStringLiteral("FINNHUB_API_KEY"), managed));
         QVERIFY(!should_strip_unmanaged_credential(QStringLiteral("PATH"), managed));
         QVERIFY(!should_strip_unmanaged_credential(QStringLiteral("PYTHONPATH"), managed));
         QVERIFY(!should_strip_unmanaged_credential(QStringLiteral("TOKENIZERS_PARALLELISM"), managed));
+        QVERIFY(!should_strip_unmanaged_credential(QStringLiteral("DISPLAY"), managed));
+        QVERIFY(!should_strip_unmanaged_credential(QStringLiteral("HOME"), managed));
     }
 
     void empty_credential_allowlist_withholds_all_managed_keys() {

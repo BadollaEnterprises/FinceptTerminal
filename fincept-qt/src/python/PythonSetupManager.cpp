@@ -9,6 +9,7 @@
 
 #include "core/config/AppPaths.h"
 #include "core/logging/Logger.h"
+#include "core/process/ProcessEnvironment.h"
 #include "core/process/ProcessTree.h"
 #include "core/privacy/LogRedact.h"
 #include "core/telemetry/UsageReporter.h"
@@ -855,6 +856,7 @@ QString PythonSetupManager::expected_marker(const QString& requirements_filename
 
 QProcessEnvironment PythonSetupManager::uv_environment() const {
     QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+    process::strip_unmanaged_credentials(env);
 
     // A user's uv / Python configuration must not redirect the app's own
     // environments (UV_PROJECT_ENVIRONMENT, UV_SYSTEM_PYTHON, UV_PYTHON, a

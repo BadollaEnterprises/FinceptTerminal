@@ -20,8 +20,27 @@ inline bool should_strip_unmanaged_credential(const QString& key, const QStringL
 
     static const QStringList kExact = {
         QStringLiteral("AWS_ACCESS_KEY_ID"),
+        QStringLiteral("AWS_SHARED_CREDENTIALS_FILE"),
+        QStringLiteral("AZURE_AUTH_LOCATION"),
+        QStringLiteral("DATABASE_URL"),
         QStringLiteral("DOCKER_AUTH_CONFIG"),
+        QStringLiteral("DOCKER_CONFIG"),
+        QStringLiteral("GPG_AGENT_INFO"),
         QStringLiteral("GOOGLE_APPLICATION_CREDENTIALS"),
+        QStringLiteral("KUBECONFIG"),
+        QStringLiteral("MONGODB_URI"),
+        QStringLiteral("MYSQL_PWD"),
+        QStringLiteral("NETRC"),
+        QStringLiteral("NPM_CONFIG_USERCONFIG"),
+        QStringLiteral("PGPASSFILE"),
+        QStringLiteral("PGPASSWORD"),
+        QStringLiteral("REDIS_URL"),
+        QStringLiteral("SSH_AUTH_SOCK"),
+        QStringLiteral("API_KEY"),
+        QStringLiteral("PASSWORD"),
+        QStringLiteral("PRIVATE_KEY"),
+        QStringLiteral("SECRET"),
+        QStringLiteral("TOKEN"),
     };
     if (kExact.contains(upper))
         return true;
@@ -33,6 +52,9 @@ inline bool should_strip_unmanaged_credential(const QString& key, const QStringL
         QStringLiteral("_AUTH_TOKEN"),    QStringLiteral("_SESSION_TOKEN"),
         QStringLiteral("_PASSWORD"),      QStringLiteral("_PRIVATE_KEY"),
         QStringLiteral("_TOKEN"),         QStringLiteral("_PAT"),
+        QStringLiteral("_CREDENTIALS"),   QStringLiteral("_CREDENTIALS_FILE"),
+        QStringLiteral("_TOKEN_FILE"),    QStringLiteral("_KEY_FILE"),
+        QStringLiteral("_COOKIE"),        QStringLiteral("_COOKIE_JAR"),
     };
     for (const QString& suffix : kSuffixes) {
         if (upper.endsWith(suffix))

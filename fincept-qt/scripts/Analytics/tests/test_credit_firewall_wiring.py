@@ -182,6 +182,13 @@ class CreditFirewallWiringTest(unittest.TestCase):
                 source = (ROOT / path).read_text(encoding="utf-8")
                 self.assertIn("process::strip_unmanaged_credentials", source)
 
+    def test_python_package_manager_does_not_inherit_credentials(self):
+        source = (ROOT / "src/python/PythonSetupManager.cpp").read_text(encoding="utf-8")
+        start = source.index("QProcessEnvironment PythonSetupManager::uv_environment() const")
+        end = source.index("\n}\n", start)
+        implementation = source[start:end]
+        self.assertIn("process::strip_unmanaged_credentials", implementation)
+
     def test_macro_and_geopolitics_services_check_firewall(self):
         geopolitics = (ROOT / "src/services/geopolitics/GeopoliticsService.cpp").read_text(encoding="utf-8")
         macro = (ROOT / "src/services/economics/FinceptMacroService.cpp").read_text(encoding="utf-8")
