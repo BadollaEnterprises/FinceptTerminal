@@ -3,6 +3,7 @@
 #include "auth/ConstantTime.h"
 #include "auth/LoopbackGuard.h"
 #include "core/logging/Logger.h"
+#include "core/privacy/LogRedact.h"
 
 #include <QHostAddress>
 #include <QRandomGenerator>
@@ -232,7 +233,7 @@ void RedirectServer::handle_new_connection() {
             // Keep listening: this was a stray request (favicon, a probe, a
             // provider error page) and the real redirect may still be coming.
             // Stopping the timeout here would leave the dialog waiting forever.
-            LOG_WARN("RedirectServer", "No token in redirect: " + error_msg);
+            LOG_WARN("RedirectServer", "No token in redirect: " + privacy::redact_text(error_msg));
             emit error(error_msg);
         }
     });

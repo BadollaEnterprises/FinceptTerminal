@@ -14,6 +14,7 @@
 #include "trading/websocket/FyersWebSocket.h"
 
 #include "core/logging/Logger.h"
+#include "core/privacy/LogRedact.h"
 #include "trading/brokers/BrokerHttp.h"
 
 #include <QJsonArray>
@@ -372,7 +373,7 @@ void FyersWebSocket::on_binary_message(const QByteArray& data) {
                 log_fyers_stream_state(this, true);
                 emit connected();
             } else {
-                LOG_ERROR(TAG, QString("Auth failed: %1").arg(val));
+                LOG_ERROR(TAG, QString("Auth failed: %1").arg(privacy::redact_text(val)));
                 emit error_occurred("HSM auth failed: " + val);
             }
             break;
@@ -720,7 +721,9 @@ void FyersWebSocket::resolve_and_subscribe(const QStringList& symbols) {
             for (const auto& t : topics)
                 LOG_DEBUG("FyersWS", QString("  topic: %1").arg(t));
         } else {
-            LOG_ERROR("FyersWS", QString("Token resolve failed: %1 (HTTP %2)").arg(resp.error).arg(resp.status_code));
+            LOG_ERROR("FyersWS", QString("Token resolve failed: %1 (HTTP %2)")
+                                     .arg(privacy::redact_text(resp.error))
+                                     .arg(resp.status_code));
         }
 
         QMetaObject::invokeMethod(

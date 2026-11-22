@@ -12,6 +12,7 @@
 #include "trading/websocket/UpstoxWebSocket.h"
 
 #include "core/logging/Logger.h"
+#include "core/privacy/LogRedact.h"
 #include "network/websocket/WebSocketClient.h"
 #include "trading/brokers/BrokerHttp.h"
 #include "trading/instruments/InstrumentService.h"
@@ -606,7 +607,8 @@ void UpstoxWebSocket::on_text_message(const QString& msg) {
     if (obj.value("status").toString() == QLatin1String("failed")) {
         const QString method = obj.value("method").toString();
         const QString error = obj.value("error").toString();
-        LOG_ERROR(TAG_UPSTOX_WS, logf("Upstox feed request failed", {{"method", method}, {"error", error}}));
+        LOG_ERROR(TAG_UPSTOX_WS,
+                  logf("Upstox feed request failed", {{"method", method}, {"error", privacy::redact_text(error)}}));
         emit error_occurred(QString("Upstox %1 failed: %2").arg(method, error));
     }
 }
@@ -623,7 +625,8 @@ QString UpstoxWebSocket::fetch_ws_url() const {
     BrokerHttpResponse resp = BrokerHttp::instance().get(kAuthEndpoint, headers);
     if (!resp.success) {
         LOG_ERROR(TAG_UPSTOX_WS,
-                  logf("Upstox feed authorize failed", {{"status", resp.status_code}, {"error", resp.error}}));
+                  logf("Upstox feed authorize failed",
+                       {{"status", resp.status_code}, {"error", privacy::redact_text(resp.error)}}));
         return QString();
     }
     // { "status":"success", "data": { "authorized_redirect_uri": "wss://..." } }

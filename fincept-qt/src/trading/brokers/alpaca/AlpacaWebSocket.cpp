@@ -1,6 +1,7 @@
 #include "trading/brokers/alpaca/AlpacaWebSocket.h"
 
 #include "core/logging/Logger.h"
+#include "core/privacy/LogRedact.h"
 #include "network/websocket/WebSocketClient.h"
 #include "trading/AccountManager.h"
 #include "trading/BrokerRegistry.h"
@@ -146,7 +147,7 @@ void AlpacaWebSocket::on_ws_disconnected() {
 }
 
 void AlpacaWebSocket::on_ws_error(const QString& error) {
-    LOG_ERROR(kTag, "WebSocket error: " + error);
+    LOG_ERROR(kTag, "WebSocket error: " + privacy::redact_text(error));
     emit error_occurred(error);
 }
 
@@ -301,14 +302,15 @@ void AlpacaWebSocket::handle_error(const QJsonObject& msg) {
     // One line per error frame, by kind.
     if (code == 402) {
         LOG_ERROR(kTag, logf("Alpaca stream authentication failed, invalid credentials",
-                             {{"code", code}, {"error", err_msg}}));
+                             {{"code", code}, {"error", privacy::redact_text(err_msg)}}));
         emit error_occurred("Authentication failed: " + err_msg);
     } else if (code == 406) {
         LOG_WARN(kTag, logf("Alpaca stream connection limit exceeded, another session may be active",
-                            {{"code", code}, {"error", err_msg}}));
+                            {{"code", code}, {"error", privacy::redact_text(err_msg)}}));
         emit error_occurred("Connection limit exceeded");
     } else {
-        LOG_ERROR(kTag, logf("Alpaca stream error", {{"code", code}, {"error", err_msg}}));
+        LOG_ERROR(kTag,
+                  logf("Alpaca stream error", {{"code", code}, {"error", privacy::redact_text(err_msg)}}));
         emit error_occurred(QString("Error %1: %2").arg(code).arg(err_msg));
     }
 }

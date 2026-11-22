@@ -17,6 +17,7 @@
 #include "trading/websocket/AngelOneWebSocket.h"
 
 #include "core/logging/Logger.h"
+#include "core/privacy/LogRedact.h"
 #include "trading/instruments/InstrumentService.h"
 
 #include <QDateTime>
@@ -185,14 +186,14 @@ void AngelOneWebSocket::on_text_message(const QString& msg) {
     // Angel One sends a JSON text message to acknowledge the auth/connect.
     // We resubscribe when we see any non-error response after connect.
     // Format: { "type": "connected" } or error variants.
-    LOG_DEBUG(TAG_AO_WS, QString("Text msg: %1").arg(msg.left(200)));
+    LOG_DEBUG(TAG_AO_WS, QString("Text frame received chars=%1").arg(msg.size()));
 
     auto doc = QJsonDocument::fromJson(msg.toUtf8());
     if (doc.isObject()) {
         QString type = doc.object().value("type").toString();
         if (type == "error") {
             QString err = doc.object().value("message").toString();
-            LOG_ERROR(TAG_AO_WS, QString("Auth error: %1").arg(err));
+            LOG_ERROR(TAG_AO_WS, QString("Auth error: %1").arg(privacy::redact_text(err)));
             emit error_occurred(err);
             return;
         }

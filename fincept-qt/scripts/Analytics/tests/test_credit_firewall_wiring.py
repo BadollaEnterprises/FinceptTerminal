@@ -232,6 +232,22 @@ class CreditFirewallWiringTest(unittest.TestCase):
                 self.assertIn('#include "core/privacy/LogRedact.h"', source)
                 self.assertGreaterEqual(source.count("privacy::redact_text"), minimum)
 
+    def test_broker_stream_auth_diagnostics_redact_provider_frames(self):
+        paths = {
+            "src/trading/auth/RedirectServer.cpp": 1,
+            "src/trading/brokers/alpaca/AlpacaWebSocket.cpp": 4,
+            "src/trading/websocket/AngelOneWebSocket.cpp": 1,
+            "src/trading/websocket/FyersWebSocket.cpp": 2,
+            "src/trading/websocket/UpstoxWebSocket.cpp": 2,
+        }
+        for relative, minimum in paths.items():
+            with self.subTest(stream=relative):
+                source = (ROOT / relative).read_text(encoding="utf-8")
+                self.assertIn('#include "core/privacy/LogRedact.h"', source)
+                self.assertGreaterEqual(source.count("privacy::redact_text"), minimum)
+        angel = (ROOT / "src/trading/websocket/AngelOneWebSocket.cpp").read_text(encoding="utf-8")
+        self.assertNotIn("msg.left(200)", angel)
+
     def test_portfolio_import_logs_do_not_persist_rejected_rows(self):
         source = (ROOT / "src/services/portfolio/PortfolioService_ImportExport.cpp").read_text(encoding="utf-8")
         self.assertIn('#include "core/privacy/LogRedact.h"', source)
