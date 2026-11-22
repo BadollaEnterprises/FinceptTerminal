@@ -590,7 +590,12 @@ void LlmConfigSection::on_profile_provider_changed(const QString& provider) {
     // Pre-fill api_key from saved provider if present and field is empty
     if (profile_api_key_edit_->text().isEmpty()) {
         auto providers = LlmConfigRepository::instance().list_providers();
-        if (providers.is_ok()) {
+        if (providers.is_err()) {
+            const QString error = QString::fromStdString(providers.error());
+            show_profile_status(tr("Could not read provider credentials: ") + error, true);
+            LOG_ERROR(TAG_PROFILES,
+                      "list_providers failed during profile provider change: " + privacy::redact_text(error));
+        } else {
             for (const auto& p : providers.value()) {
                 if (p.provider.toLower() == provider.toLower() && !p.api_key.isEmpty()) {
                     profile_api_key_edit_->setText(p.api_key);

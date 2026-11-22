@@ -447,6 +447,13 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertIn("Could not load provider settings", form)
         self.assertIn("privacy::redact_text(error)", form)
 
+        self.assertIn("if (gs.is_err())", load)
+        self.assertIn("Could not read global LLM settings", load)
+        self.assertIn("auto fixed_saved", load)
+        self.assertIn("if (fixed_saved.is_err())", load)
+        self.assertIn("Could not persist Max Tokens correction", load)
+        self.assertEqual(load.count("gs = LlmConfigRepository::instance().get_global_settings()"), 1)
+
     def test_llm_settings_surfaces_profile_read_failures(self):
         source = (ROOT / "src/screens/settings/LlmConfigSection_Profiles.cpp").read_text(encoding="utf-8")
         self.assertIn('#include "core/privacy/LogRedact.h"', source)
@@ -462,6 +469,12 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertIn("if (r.is_err())", selected)
         self.assertIn("Could not load LLM profile", selected)
         self.assertIn("privacy::redact_text(error)", selected)
+
+        changed = source[source.index("void LlmConfigSection::on_profile_provider_changed"):
+                         source.index("void LlmConfigSection::on_save_profile()")]
+        self.assertIn("if (providers.is_err())", changed)
+        self.assertIn("Could not read provider credentials", changed)
+        self.assertIn("privacy::redact_text(error)", changed)
 
         save = source[source.index("void LlmConfigSection::on_save_profile()"):
                       source.index("void LlmConfigSection::on_delete_profile()")]

@@ -605,26 +605,37 @@ void LlmConfigSection::load_providers() {
 
     // Load global settings
     auto gs = LlmConfigRepository::instance().get_global_settings();
-    if (gs.is_ok()) {
-        if (fincept_active && gs.value().max_tokens > tokens_max) {
+    if (gs.is_err()) {
+        const QString error = QString::fromStdString(gs.error());
+        show_status(tr("Could not read global LLM settings: ") + error, true);
+        LOG_ERROR(TAG_PROVIDERS, "get_global_settings failed: " + privacy::redact_text(error));
+    } else {
+        LlmGlobalSettings displayed = gs.value();
+        if (fincept_active && displayed.max_tokens > tokens_max) {
             // Saved before this ceiling existed (the control allowed 32000):
             // the Fincept API answered every chat with a 422. Store the
             // ceiling so the panel shows what is actually sent.
-            LlmGlobalSettings fixed = gs.value();
+            LlmGlobalSettings fixed = displayed;
             LOG_INFO(TAG_PROVIDERS, QString("Max Tokens %1 exceeds the Fincept limit — lowered to %2")
                                         .arg(fixed.max_tokens)
                                         .arg(tokens_max));
             fixed.max_tokens = tokens_max;
-            if (LlmConfigRepository::instance().save_global_settings(fixed).is_ok()) {
-                gs = LlmConfigRepository::instance().get_global_settings();
+            displayed = fixed;
+            auto fixed_saved = LlmConfigRepository::instance().save_global_settings(fixed);
+            if (fixed_saved.is_err()) {
+                const QString error = QString::fromStdString(fixed_saved.error());
+                show_status(tr("Could not persist Max Tokens correction: ") + error, true);
+                LOG_ERROR(TAG_PROVIDERS,
+                          "save corrected global settings failed: " + privacy::redact_text(error));
+            } else {
                 emit config_changed();
             }
         }
-        temp_spin_->setValue(gs.value().temperature);
-        tokens_spin_->setValue(gs.value().max_tokens);
-        system_prompt_->setPlainText(gs.value().system_prompt);
+        temp_spin_->setValue(displayed.temperature);
+        tokens_spin_->setValue(displayed.max_tokens);
+        system_prompt_->setPlainText(displayed.system_prompt);
         if (tool_rounds_spin_)
-            tool_rounds_spin_->setValue(gs.value().max_tool_rounds);
+            tool_rounds_spin_->setValue(displayed.max_tool_rounds);
     }
 
     QVariantMap budget_values;
