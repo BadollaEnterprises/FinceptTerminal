@@ -44,6 +44,7 @@ _PROVIDER_API_KEY_NAMES = tuple(f"{provider.upper()}_API_KEY" for provider in _L
 _DEFAULT_EMBEDDING = "text-embedding-3-small"
 _DEFAULT_OUTPUT_TOKENS = 4096
 _MAX_OUTPUT_TOKENS = 2_000_000
+_SINGLE_ATTEMPT_BACKEND = "single_attempt_backend.SingleAttemptLiteLLMBackend"
 
 
 def _bounded_output_tokens(value: Any) -> int:
@@ -136,6 +137,14 @@ def apply_llm_config(config: dict[str, Any]) -> dict[str, str]:
         env_vars[name] = "1"
         os.environ[name] = "1"
 
+    # RD-Agent separately auto-continues a max-token response up to five more
+    # times. Use our project-owned backend so one agent step means at most one
+    # provider request. Set the prefixed form too for compatible versions that
+    # resolve the backend from LiteLLMSettings instead of base LLMSettings.
+    for name in ("BACKEND", "LITELLM_BACKEND"):
+        env_vars[name] = _SINGLE_ATTEMPT_BACKEND
+        os.environ[name] = _SINGLE_ATTEMPT_BACKEND
+
     # --- Embedding model ---
     embedding_model = config.get("llm_embedding_model", _DEFAULT_EMBEDDING)
     env_vars["EMBEDDING_MODEL"] = embedding_model
@@ -149,5 +158,6 @@ def clear_llm_config() -> None:
     for key in ("CHAT_MODEL", "OPENAI_API_KEY", "ANTHROPIC_API_KEY",
                 "CHAT_OPENAI_BASE_URL", "OPENAI_API_BASE", "CHAT_MAX_TOKENS",
                 "LITELLM_CHAT_MAX_TOKENS", "MAX_RETRY", "LITELLM_MAX_RETRY",
+                "BACKEND", "LITELLM_BACKEND",
                 "EMBEDDING_MODEL", *_PROVIDER_API_KEY_NAMES):
         os.environ.pop(key, None)

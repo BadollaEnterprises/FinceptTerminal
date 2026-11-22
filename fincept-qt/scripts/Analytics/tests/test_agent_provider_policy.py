@@ -42,6 +42,7 @@ LLM_PROFILE_HEADER = MODULE.parents[3] / "src" / "storage" / "repositories" / "L
 RDAGENT_CLI = MODULE.parent.parent / "rdagents" / "cli.py"
 RDAGENT_LOOPS = RDAGENT_CLI.with_name("loops.py")
 RDAGENT_CONFIG = RDAGENT_CLI.with_name("config.py")
+RDAGENT_BACKEND = RDAGENT_CLI.with_name("single_attempt_backend.py")
 
 
 def load_module():
@@ -652,12 +653,17 @@ class AgentProviderPolicyTest(unittest.TestCase):
             self.assertEqual(values["DEEPSEEK_API_KEY"], "owned")
             self.assertEqual(values["MAX_RETRY"], "1")
             self.assertEqual(values["LITELLM_MAX_RETRY"], "1")
+            self.assertEqual(
+                values["BACKEND"],
+                "single_attempt_backend.SingleAttemptLiteLLMBackend",
+            )
             config.clear_llm_config()
             self.assertNotIn("DEEPSEEK_API_KEY", os.environ)
             self.assertNotIn("OPENAI_API_BASE", os.environ)
             self.assertNotIn("CHAT_MAX_TOKENS", os.environ)
             self.assertNotIn("MAX_RETRY", os.environ)
             self.assertNotIn("LITELLM_MAX_RETRY", os.environ)
+            self.assertNotIn("BACKEND", os.environ)
 
         with mock.patch.dict(os.environ, {}, clear=True):
             values = config.apply_llm_config({
@@ -670,6 +676,14 @@ class AgentProviderPolicyTest(unittest.TestCase):
                 "llm_provider": "deepseek", "llm_api_key": "owned", "llm_max_tokens": "bad",
             })
             self.assertEqual(values["CHAT_MAX_TOKENS"], "4096")
+
+    def test_rd_agent_disables_hidden_length_continuation_calls(self):
+        self.assertTrue(RDAGENT_BACKEND.exists())
+        source = RDAGENT_BACKEND.read_text(encoding="utf-8")
+        self.assertIn("class SingleAttemptLiteLLMBackend", source)
+        self.assertIn("super()._create_chat_completion_inner_function", source)
+        self.assertIn('finish_reason == "length"', source)
+        self.assertIn("fincept_length_limit", source)
 
     def test_agent_payload_uses_one_resolved_api_config_not_mixed_active_fields(self):
         service = AGENT_SERVICE.read_text(encoding="utf-8")
