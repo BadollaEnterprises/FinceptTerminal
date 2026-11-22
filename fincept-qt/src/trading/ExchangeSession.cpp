@@ -295,9 +295,10 @@ bool ExchangeSession::start_ws(const QString& primary_symbol, const QStringList&
     // Every Python spawn must inherit the shared base env (PYTHONIOENCODING,
     // PYTHONDONTWRITEBYTECODE, FINCEPT_DATA_DIR, PYTHONPATH, …). This process
     // previously called neither setProcessEnvironment nor build_python_env(),
-    // so the WS bridge ran without any of them. Broker credentials ride in
-    // this env too — see the SECURITY note below.
-    QProcessEnvironment ws_env = python::PythonRunner::instance().build_python_env();
+    // so the WS bridge ran without any of them. Start from a secretless base:
+    // public exchange streams need no stored credentials, while the broker
+    // branch below inserts only the selected broker's values.
+    QProcessEnvironment ws_env = python::PythonRunner::instance().build_python_env(QStringList{});
 
     if (session_is_broker_stream(exchange_id_)) {
         script_path = session_resolve_script_path("exchange/broker_ws_bridge.py");
@@ -352,9 +353,9 @@ bool ExchangeSession::start_ws(const QString& primary_symbol, const QStringList&
         // Win32_Process.CommandLine on Windows with no elevation,
         // /proc/<pid>/cmdline on Linux) and is captured by crash dumps and EDR
         // telemetry — passing them there undoes SecureStorage entirely.
-        // build_python_env() already carries 17+ other credential keys this
-        // way. broker_ws_bridge.py reads os.environ first and only falls back
-        // to argv so an older caller still works.
+        // broker_ws_bridge.py reads these dedicated values first and only
+        // falls back to argv so an older caller still works. The base
+        // environment above deliberately contains no unrelated stored keys.
         ws_env.insert(QStringLiteral("BROKER_API_KEY"), creds.api_key);
         ws_env.insert(QStringLiteral("BROKER_ACCESS_TOKEN"), creds.access_token);
         if (!feed_token.isEmpty())

@@ -248,9 +248,10 @@ void ExchangeDaemonPool::launch() {
     // search) could not be encoded and was never written, and the caller waited
     // out its 15 s. It also lacked FINCEPT_DATA_DIR, so it kept its markets cache
     // apart from ws_stream's. start() always runs on this object's thread (the
-    // main thread, see the constructor); build_python_env() reads SecureStorage,
-    // which is safe from any thread.
-    process_->setProcessEnvironment(python::PythonRunner::instance().build_python_env());
+    // main thread, see the constructor). Credentials are sent to the daemon in
+    // its bounded request protocol, so the long-lived process environment must
+    // not also retain every key stored in Settings.
+    process_->setProcessEnvironment(python::PythonRunner::instance().build_python_env(QStringList{}));
 
     QStringList args;
     args << "-u" << "-B" << script_path;

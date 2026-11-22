@@ -31,6 +31,12 @@ class CreditFirewallWiringTest(unittest.TestCase):
         source = (ROOT / "src/services/python_cli/PythonCliService.cpp").read_text(encoding="utf-8")
         self.assertGreaterEqual(source.count("credential_allowlist = QStringList{}"), 2)
 
+    def test_market_stream_processes_do_not_inherit_unrelated_credentials(self):
+        session = (ROOT / "src/trading/ExchangeSession.cpp").read_text(encoding="utf-8")
+        daemon = (ROOT / "src/trading/ExchangeDaemonPool.cpp").read_text(encoding="utf-8")
+        self.assertIn("build_python_env(QStringList{})", session)
+        self.assertIn("build_python_env(QStringList{})", daemon)
+
     def test_macro_and_geopolitics_services_check_firewall(self):
         geopolitics = (ROOT / "src/services/geopolitics/GeopoliticsService.cpp").read_text(encoding="utf-8")
         macro = (ROOT / "src/services/economics/FinceptMacroService.cpp").read_text(encoding="utf-8")
