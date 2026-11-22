@@ -454,6 +454,11 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertIn("Could not persist Max Tokens correction", load)
         self.assertEqual(load.count("gs = LlmConfigRepository::instance().get_global_settings()"), 1)
 
+        save_global = source[source.index("void LlmConfigSection::on_save_global()"):
+                             source.index("void LlmConfigSection::on_test_connection()")]
+        self.assertIn("Failed to save global settings: ", save_global)
+        self.assertIn("privacy::redact_text(error)", save_global)
+
     def test_llm_settings_surfaces_profile_read_failures(self):
         source = (ROOT / "src/screens/settings/LlmConfigSection_Profiles.cpp").read_text(encoding="utf-8")
         self.assertIn('#include "core/privacy/LogRedact.h"', source)

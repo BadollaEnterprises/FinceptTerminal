@@ -976,7 +976,9 @@ void LlmConfigSection::on_save_global() {
 
     auto r = LlmConfigRepository::instance().save_global_settings(gs);
     if (r.is_err()) {
-        show_status(tr("Failed to save global settings"), true);
+        const QString error = QString::fromStdString(r.error());
+        show_status(tr("Failed to save global settings: ") + error, true);
+        LOG_ERROR(TAG_PROVIDERS, "save_global_settings failed: " + privacy::redact_text(error));
         return;
     }
 
