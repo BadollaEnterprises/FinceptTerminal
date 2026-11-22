@@ -39,6 +39,7 @@ _LITELLM_PREFIXES: dict[str, str] = {
     "openrouter": "openrouter/",
 }
 _PROVIDER_API_KEY_NAMES = tuple(f"{provider.upper()}_API_KEY" for provider in _LITELLM_PREFIXES)
+_DYNAMIC_API_KEY_NAMES: set[str] = set()
 
 # Default embedding model
 _DEFAULT_EMBEDDING = "text-embedding-3-small"
@@ -70,6 +71,13 @@ def apply_llm_config(config: dict[str, Any]) -> dict[str, str]:
     Returns:
         Dict of env vars that were set (for logging/debugging).
     """
+    # Remove only provider-key variables this module set on the previous call.
+    # The universal OPENAI_API_KEY is populated again below. This prevents a
+    # provider switch from exposing the prior task's credential to LiteLLM.
+    for stale_key in tuple(_DYNAMIC_API_KEY_NAMES):
+        os.environ.pop(stale_key, None)
+    _DYNAMIC_API_KEY_NAMES.clear()
+
     provider   = str(config.get("llm_provider") or "openai").lower()
     api_key    = config.get("llm_api_key", "")
     model      = config.get("llm_model", "gpt-4o")
@@ -104,6 +112,7 @@ def apply_llm_config(config: dict[str, Any]) -> dict[str, str]:
     provider_key = f"{provider.upper()}_API_KEY"
     env_vars[provider_key] = api_key
     os.environ[provider_key] = api_key
+    _DYNAMIC_API_KEY_NAMES.add(provider_key)
 
     # Anthropic also reads its own env var
     if provider == "anthropic":
@@ -159,5 +168,6 @@ def clear_llm_config() -> None:
                 "CHAT_OPENAI_BASE_URL", "OPENAI_API_BASE", "CHAT_MAX_TOKENS",
                 "LITELLM_CHAT_MAX_TOKENS", "MAX_RETRY", "LITELLM_MAX_RETRY",
                 "BACKEND", "LITELLM_BACKEND",
-                "EMBEDDING_MODEL", *_PROVIDER_API_KEY_NAMES):
+                "EMBEDDING_MODEL", *_PROVIDER_API_KEY_NAMES, *_DYNAMIC_API_KEY_NAMES):
         os.environ.pop(key, None)
+    _DYNAMIC_API_KEY_NAMES.clear()

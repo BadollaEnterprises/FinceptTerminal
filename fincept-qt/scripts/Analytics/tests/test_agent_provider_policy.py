@@ -713,6 +713,19 @@ class AgentProviderPolicyTest(unittest.TestCase):
             })
             self.assertEqual(values["CHAT_MAX_TOKENS"], "4096")
 
+        with mock.patch.dict(os.environ, {}, clear=True):
+            config.apply_llm_config({
+                "llm_provider": "google", "llm_api_key": "google-owned",
+            })
+            self.assertEqual(os.environ["GOOGLE_API_KEY"], "google-owned")
+            config.apply_llm_config({
+                "llm_provider": "xai", "llm_api_key": "xai-owned",
+            })
+            self.assertNotIn("GOOGLE_API_KEY", os.environ)
+            self.assertEqual(os.environ["XAI_API_KEY"], "xai-owned")
+            config.clear_llm_config()
+            self.assertNotIn("XAI_API_KEY", os.environ)
+
     def test_rd_agent_disables_hidden_length_continuation_calls(self):
         self.assertTrue(RDAGENT_BACKEND.exists())
         source = RDAGENT_BACKEND.read_text(encoding="utf-8")
