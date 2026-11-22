@@ -313,6 +313,17 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertIn("offline cache unavailable", fetch_path)
         self.assertIn("privacy::redact_text", fetch_path)
 
+    def test_feed_load_retries_after_subscription_storage_failure(self):
+        service = (ROOT / "src/services/feeds/FeedMonitor.cpp").read_text(encoding="utf-8")
+        load_path = service[
+            service.index("void FeedMonitor::ensure_loaded"):
+            service.index("QVector<FeedSubscription> FeedMonitor::subscriptions")
+        ]
+        self.assertIn("if (res.is_err())", load_path)
+        self.assertIn("privacy::redact_text(QString::fromStdString(res.error()))", load_path)
+        self.assertLess(load_path.index("if (res.is_err())"), load_path.index("loaded_ = true"))
+        self.assertIn("return;", load_path[load_path.index("if (res.is_err())"):load_path.index("loaded_ = true")])
+
     def test_llm_settings_diagnostics_scrub_storage_errors_and_profile_identity(self):
         providers = (ROOT / "src/screens/settings/LlmConfigSection_Providers.cpp").read_text(encoding="utf-8")
         profiles = (ROOT / "src/screens/settings/LlmConfigSection_Profiles.cpp").read_text(encoding="utf-8")

@@ -53,23 +53,27 @@ FeedMonitor::FeedMonitor() : QObject(nullptr) {
 void FeedMonitor::ensure_loaded() {
     if (loaded_)
         return;
-    loaded_ = true;
     const auto res = FeedSubscriptionRepository::instance().list_all();
-    if (res.is_ok()) {
-        for (const auto& sub : res.value()) {
-            Entry e;
-            e.sub = sub;
-            // Seed the in-memory cache from stored history so cached items show
-            // immediately (and survive a feed being down on first fetch).
-            if (sub.persist) {
-                const auto cached = FeedItemRepository::instance().recent(sub.id, kMaxItems);
-                if (cached.is_ok())
-                    e.items = cached.value();
-            }
-            feeds_.insert(sub.id, e);
-            if (sub.enabled)
-                arm_timer(sub);
+    if (res.is_err()) {
+        LOG_WARN(kFeedMonitorTag,
+                 QStringLiteral("Could not load feed subscriptions: %1")
+                     .arg(privacy::redact_text(QString::fromStdString(res.error()))));
+        return;
+    }
+    loaded_ = true;
+    for (const auto& sub : res.value()) {
+        Entry e;
+        e.sub = sub;
+        // Seed the in-memory cache from stored history so cached items show
+        // immediately (and survive a feed being down on first fetch).
+        if (sub.persist) {
+            const auto cached = FeedItemRepository::instance().recent(sub.id, kMaxItems);
+            if (cached.is_ok())
+                e.items = cached.value();
         }
+        feeds_.insert(sub.id, e);
+        if (sub.enabled)
+            arm_timer(sub);
     }
 }
 
