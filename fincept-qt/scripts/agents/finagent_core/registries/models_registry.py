@@ -7,6 +7,7 @@ Provides lazy loading and standardized model creation.
 from typing import Dict, Any, Optional, List
 import logging
 import os
+from urllib.parse import urlsplit
 
 logger = logging.getLogger(__name__)
 
@@ -279,6 +280,24 @@ class ModelsRegistry:
             parsed = cls._DEFAULT_OUTPUT_TOKENS
         return min(parsed, cls._MAX_OUTPUT_TOKENS)
 
+    @staticmethod
+    def endpoint_allowed(provider: str, endpoint: Any) -> bool:
+        """Allow remote API keys only over TLS; plaintext is loopback-only."""
+        raw = str(endpoint or "").strip()
+        if str(provider or "").strip().lower() == "atlascloud" or "atlascloud" in raw.lower():
+            return False
+        try:
+            parsed = urlsplit(raw)
+            host = (parsed.hostname or "").lower()
+            scheme = parsed.scheme.lower()
+        except ValueError:
+            return False
+        loopback = host == "localhost" or host.endswith(".localhost") or host == "::1"
+        if not loopback and host.startswith("127."):
+            octets = host.split(".")
+            loopback = len(octets) == 4 and all(part.isdigit() and 0 <= int(part) <= 255 for part in octets)
+        return bool(host) and (scheme == "https" or (scheme == "http" and loopback))
+
     @classmethod
     def create_model(
         cls,
@@ -319,6 +338,8 @@ class ModelsRegistry:
             raise ValueError(
                 f"LLM provider '{provider_lower}' is disabled. Configure a user-owned provider such as DeepSeek."
             )
+        if provider_lower == "atlascloud":
+            raise ValueError("Refusing an insecure or blocked LLM endpoint")
 
         if provider_lower not in cls.MODEL_CATALOG:
             # Unknown provider - treat as OpenAI-compatible with custom base_url
@@ -359,6 +380,20 @@ class ModelsRegistry:
         if config.get("api_key_env") and not final_api_key:
             logger.warning(f"No API key found for {provider}. Expected: {config['api_key_env']}")
 
+        # Validate a key-bearing custom endpoint before importing or
+        # constructing any provider adapter. This keeps the policy fail-closed
+        # even when an optional SDK is unavailable.
+        kwarg_base_url = kwargs.pop("base_url", None)
+        base_url_key = f"{provider.upper()}_BASE_URL"
+        effective_base_url = (
+            kwarg_base_url
+            or (api_keys or {}).get(base_url_key)
+            or config.get("base_url")
+        )
+        if effective_base_url and not cls.endpoint_allowed(provider_lower, effective_base_url):
+            raise ValueError("Refusing an insecure or blocked LLM endpoint")
+        max_tok = cls.output_token_limit(kwargs.pop("max_tokens", None))
+
         try:
             # Dynamic import (the probe turns a missing package into a reason
             # that names it, instead of a bare AttributeError/ImportError)
@@ -381,18 +416,6 @@ class ModelsRegistry:
                 "cohere", "meta", "cerebras", "sambanova", "nebius",
                 "internlm", "dashscope", "siliconflow",
             }
-
-            # Always pop base_url from kwargs so it never leaks via catch-all
-            kwarg_base_url = kwargs.pop("base_url", None)
-
-            # Resolve the effective base_url (kwarg takes priority over api_keys dict)
-            base_url_key = f"{provider.upper()}_BASE_URL"
-            effective_base_url = (
-                kwarg_base_url
-                or (api_keys or {}).get(base_url_key)
-                or config.get("base_url")
-            )
-            max_tok = cls.output_token_limit(kwargs.pop("max_tokens", None))
 
             # If a custom base_url is set for a provider that normally doesn't
             # accept one (e.g. anthropic with a MiniMax/OpenRouter-compatible

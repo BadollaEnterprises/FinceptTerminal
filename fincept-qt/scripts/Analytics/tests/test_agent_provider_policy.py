@@ -522,6 +522,18 @@ class AgentProviderPolicyTest(unittest.TestCase):
         create = source[source.index("def create_model(") :]
         self.assertIn('max_tok = cls.output_token_limit(kwargs.pop("max_tokens", None))', create)
 
+    def test_agent_model_registry_rejects_insecure_or_blocked_key_endpoints(self):
+        models = load_path("finagent_models_registry_endpoints", MODEL_REGISTRY).ModelsRegistry
+        self.assertTrue(models.endpoint_allowed("deepseek", "https://proxy.example/v1"))
+        self.assertTrue(models.endpoint_allowed("deepseek", "http://localhost:8080/v1"))
+        self.assertTrue(models.endpoint_allowed("deepseek", "http://127.9.8.7:8080/v1"))
+        self.assertFalse(models.endpoint_allowed("deepseek", "http://proxy.example/v1"))
+        self.assertFalse(models.endpoint_allowed("deepseek", "ftp://proxy.example/v1"))
+        self.assertFalse(models.endpoint_allowed("deepseek", "https://api.atlascloud.ai/v1"))
+        self.assertFalse(models.endpoint_allowed("atlascloud", "https://proxy.example/v1"))
+        with self.assertRaisesRegex(ValueError, "insecure or blocked"):
+            models.create_model("deepseek", api_key="owned", base_url="http://proxy.example/v1")
+
     def test_rd_agent_rejects_retired_providers_before_applying_llm_config(self):
         cli = load_path("finagent_rdagent_cli", RDAGENT_CLI)
         check = getattr(cli, "_provider_policy_error", None)
