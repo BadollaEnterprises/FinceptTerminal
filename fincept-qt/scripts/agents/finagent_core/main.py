@@ -44,65 +44,13 @@ if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
 from finagent_core.provider_policy import resolved_configuration_error
+from finagent_core.input_budget import (
+    DEFAULT_INPUT_MAX_CHARS,
+    input_budget_error as _input_budget_error,
+)
 
 # Timeout for discovery operations (seconds)
 DISCOVERY_TIMEOUT = 30.0
-DEFAULT_INPUT_MAX_CHARS = 48_000
-MAX_INPUT_MAX_CHARS = 2_000_000
-
-
-def _text_chars(value: Any) -> int:
-    """Count text inside an instruction value without serialising secrets or tools."""
-    if isinstance(value, str):
-        return len(value)
-    if isinstance(value, dict):
-        return sum(_text_chars(item) for item in value.values())
-    if isinstance(value, (list, tuple)):
-        return sum(_text_chars(item) for item in value)
-    return 0
-
-
-def _instruction_chars(value: Any) -> int:
-    """Count instruction fields recursively while ignoring unrelated config text."""
-    if not isinstance(value, dict):
-        return 0
-    total = 0
-    for key, item in value.items():
-        normalized = str(key).strip().lower()
-        if normalized in {"instructions", "system_instruction", "system_prompt"}:
-            total += _text_chars(item)
-        elif isinstance(item, dict):
-            total += _instruction_chars(item)
-        elif isinstance(item, (list, tuple)):
-            total += sum(_instruction_chars(entry) for entry in item)
-    return total
-
-
-def _input_budget_error(params: Any, config: Any, limit: Any) -> str | None:
-    """Reject oversized user prompt material before any provider SDK is loaded."""
-    try:
-        parsed_limit = int(limit)
-    except (TypeError, ValueError, OverflowError):
-        parsed_limit = DEFAULT_INPUT_MAX_CHARS
-    parsed_limit = max(0, min(parsed_limit, MAX_INPUT_MAX_CHARS))
-    if parsed_limit == 0:
-        return None
-
-    safe_params = params if isinstance(params, dict) else {}
-    query_chars = sum(
-        len(safe_params.get(key, ""))
-        for key in ("query", "answer")
-        if isinstance(safe_params.get(key), str)
-    )
-    total = query_chars + _instruction_chars(safe_params) + _instruction_chars(config)
-    if total <= parsed_limit:
-        return None
-    return (
-        f"Agent input is {total} characters, above the configured "
-        f"{parsed_limit}-character BYO AI request guardrail. "
-        "No provider request was sent. Shorten the query or instructions, or raise "
-        "History Chars in Settings > LLM Configuration."
-    )
 
 
 import re as _re

@@ -25,6 +25,9 @@ LLM_SERVICE_HEADER = MODULE.parents[3] / "src" / "services" / "llm" / "LlmServic
 LLM_SERVICE_SOURCE = LLM_SERVICE_HEADER.with_suffix(".cpp")
 AGENT_MAIN = MODULE.with_name("main.py")
 AGENT_BUDGET = MODULE.parent / "agentic" / "budget.py"
+INPUT_BUDGET = MODULE.parent / "input_budget.py"
+DEEPAGENT_CLI = MODULE.parent.parent / "deepagents" / "cli.py"
+AI_QUANT_SERVICE = MODULE.parents[3] / "src" / "services" / "ai_quant_lab" / "AIQuantLabService.cpp"
 LOCAL_AGENT_ENGINE = MODULE.parents[3] / "src" / "services" / "agent_tasks" / "LocalAgentEngine.cpp"
 AGENTS_PANEL = MODULE.parents[3] / "src" / "screens" / "agent_config" / "AgentsViewPanel.cpp"
 TEAMS_PANEL = MODULE.parents[3] / "src" / "screens" / "agent_config" / "TeamsViewPanel.cpp"
@@ -91,6 +94,34 @@ class AgentProviderPolicyTest(unittest.TestCase):
         payload = service[service.index("QJsonObject AgentService::build_payload"):]
         self.assertIn('payload["input_max_chars"]', payload)
         self.assertIn("kLlmHistoryCharsKey", payload)
+
+    def test_ai_quant_agents_share_the_terminal_input_budget(self):
+        budget = load_path("finagent_shared_input_budget", INPUT_BUDGET)
+        self.assertIsNone(budget.input_budget_error({"task": "short"}, {}, 48_000))
+        self.assertIn(
+            "No provider request was sent",
+            budget.input_budget_error({"research_goal": "x" * 48_001}, {}, 48_000),
+        )
+
+        deepagent = DEEPAGENT_CLI.read_text(encoding="utf-8")
+        execute = deepagent[deepagent.index("def cmd_execute_task"):
+                            deepagent.index("# Internal execution helpers")]
+        self.assertIn("input_budget_error(", execute)
+        self.assertLess(execute.index("input_budget_error("), execute.index("provider_policy_error("))
+
+        rdagent = RDAGENT_CLI.read_text(encoding="utf-8")
+        run = rdagent[rdagent.index("def cmd_run_task"):
+                      rdagent.index("def cmd_start_mcp_server")]
+        self.assertIn("input_budget_error(", run)
+        self.assertLess(run.index("input_budget_error("), run.index("apply_llm_config("))
+
+        service = AI_QUANT_SERVICE.read_text(encoding="utf-8")
+        deep_run = service[service.index("void AIQuantLabService::run_deep_agent"):
+                           service.index("void AIQuantLabService::deep_agent_check_status")]
+        rd_spawn = service[service.index("bool AIQuantLabService::rd_spawn"):
+                           service.index("void AIQuantLabService::rd_handle_line")]
+        self.assertIn('payload["input_max_chars"]', deep_run)
+        self.assertIn('payload["input_max_chars"]', rd_spawn)
 
     def test_agentic_tasks_have_cost_conscious_implicit_budgets(self):
         budget = load_path("finagent_budget_defaults", AGENT_BUDGET)

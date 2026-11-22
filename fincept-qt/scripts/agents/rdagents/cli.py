@@ -37,6 +37,7 @@ sys.path.insert(0, str(_HERE))
 sys.path.insert(0, str(_HERE.parent))
 
 from finagent_core.provider_policy import DEPRECATED_PROVIDERS
+from finagent_core.input_budget import DEFAULT_INPUT_MAX_CHARS, input_budget_error
 
 logging.basicConfig(
     stream=sys.stderr,
@@ -177,6 +178,10 @@ def cmd_run_task(params: dict[str, Any]) -> None:
     llm_config = params.get("config") or {}
     if policy_error := _provider_policy_error(llm_config):
         fail(policy_error)
+    if budget_error := input_budget_error(
+        params, llm_config, params.get("input_max_chars", DEFAULT_INPUT_MAX_CHARS)
+    ):
+        fail(budget_error)
     try:
         _prepare_process_env(workspace_path)
         # Must precede the rdagent import: rdagent's LLM settings (CHAT_MODEL ...)

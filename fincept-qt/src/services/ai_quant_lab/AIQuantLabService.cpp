@@ -2,6 +2,7 @@
 #include "services/ai_quant_lab/AIQuantLabService.h"
 
 #include "auth/AuthManager.h"
+#include "core/config/AppConfig.h"
 #include "core/config/AppPaths.h"
 #include "core/logging/Logger.h"
 #include "core/policy/CommunityPolicy.h"
@@ -42,6 +43,15 @@ QJsonObject aiq_llm_error_config(const QString& error) {
 
 QString aiq_llm_configuration_error(const QJsonObject& config) {
     return config.value(QStringLiteral("llm_configuration_error")).toString().trimmed();
+}
+
+int aiq_input_max_chars() {
+    ai_chat::LlmBudgetSettings settings;
+    settings.history_chars =
+        AppConfig::instance()
+            .get(ai_chat::kLlmHistoryCharsKey, QVariant(ai_chat::kDefaultLlmHistoryChars))
+            .toInt();
+    return ai_chat::validate_llm_budget_settings(settings).history_chars;
 }
 } // namespace
 
@@ -794,6 +804,7 @@ void AIQuantLabService::run_deep_agent(const QJsonObject& params) {
     payload["agent_type"] = params.contains("agent_type") ? params["agent_type"] : QJsonValue("general");
     if (params.contains("thread_id"))
         payload["thread_id"] = params["thread_id"];
+    payload["input_max_chars"] = aiq_input_max_chars();
     // deepagents/cli.py hands `config` to create_model(); an empty block means
     // "no provider" — resolve it here for a caller that sent none.
     QJsonObject llm = agent_llm_config(params);
@@ -1012,6 +1023,7 @@ bool AIQuantLabService::rd_spawn(const QString& task_id, const QJsonObject& llm_
     payload["workspace"] = it->workspace;
     payload["max_iterations"] = it->max_iterations;
     payload["config"] = llm_config;
+    payload["input_max_chars"] = aiq_input_max_chars();
     if (!resume_from.isEmpty())
         payload["resume_from"] = resume_from;
 

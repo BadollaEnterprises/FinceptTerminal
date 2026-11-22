@@ -42,11 +42,14 @@ logging.basicConfig(
 _HERE = Path(__file__).resolve().parent
 if str(_HERE) not in sys.path:
     sys.path.insert(0, str(_HERE))
+if str(_HERE.parent) not in sys.path:
+    sys.path.insert(0, str(_HERE.parent))
 
 logger = logging.getLogger(__name__)
 
 from models import create_model, extract_text, provider_policy_error, recursion_limit, supports_tool_calling
 from subagents import list_agent_types, list_subagent_names, AGENT_SUBAGENTS
+from finagent_core.input_budget import DEFAULT_INPUT_MAX_CHARS, input_budget_error
 
 # ---------------------------------------------------------------------------
 # Availability check (import deepagents lazily so CLI starts fast)
@@ -105,6 +108,11 @@ def cmd_execute_task(params: dict[str, Any]) -> dict[str, Any]:
         return _error("task is required")
 
     context_data = params.get("context", {})
+
+    if budget_error := input_budget_error(
+        params, config, params.get("input_max_chars", DEFAULT_INPUT_MAX_CHARS)
+    ):
+        return _error(budget_error)
 
     policy_error = provider_policy_error(config)
     if policy_error:
