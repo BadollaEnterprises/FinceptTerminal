@@ -206,11 +206,43 @@ Result<void> LlmProfileRepository::set_default(const QString& id) {
 
 Result<void> LlmProfileRepository::assign_profile(const QString& context_type, const QString& context_id,
                                                   const QString& profile_id) {
-    QVariant ctx_id = context_id.isEmpty() ? QVariant(QMetaType(QMetaType::QString)) : QVariant(context_id);
-    return exec_write("INSERT OR REPLACE INTO llm_profile_assignments "
-                      "  (context_type, context_id, profile_id, updated_at) "
-                      "VALUES (?, ?, ?, datetime('now'))",
-                      {context_type, ctx_id, profile_id});
+    if (context_id.isEmpty()) {
+        // SQLite UNIQUE indexes allow multiple NULLs, so the table's
+        // UNIQUE(context_type, context_id) cannot replace a type-level default.
+        // Delete every historical duplicate and insert one row atomically.
+        auto tx = db().begin_transaction();
+        if (tx.is_err())
+            return tx;
+        auto cleared = exec_write("DELETE FROM llm_profile_assignments "
+                                  "WHERE context_type = ? AND context_id IS NULL",
+                                  {context_type});
+        if (cleared.is_err()) {
+            db().rollback();
+            return cleared;
+        }
+        const QVariant null_context{QMetaType(QMetaType::QString)};
+        auto inserted = exec_write("INSERT INTO llm_profile_assignments "
+                                   "(context_type, context_id, profile_id, updated_at) "
+                                   "VALUES (?, ?, ?, datetime('now'))",
+                                   {context_type, null_context, profile_id});
+        if (inserted.is_err()) {
+            db().rollback();
+            return inserted;
+        }
+        auto committed = db().commit();
+        if (committed.is_err()) {
+            db().rollback();
+            return committed;
+        }
+        return Result<void>::ok();
+    }
+
+    return exec_write("INSERT INTO llm_profile_assignments "
+                      "(context_type, context_id, profile_id, updated_at) "
+                      "VALUES (?, ?, ?, datetime('now')) "
+                      "ON CONFLICT(context_type, context_id) DO UPDATE SET "
+                      "profile_id = excluded.profile_id, updated_at = datetime('now')",
+                      {context_type, context_id, profile_id});
 }
 
 Result<void> LlmProfileRepository::remove_assignment(const QString& context_type, const QString& context_id) {

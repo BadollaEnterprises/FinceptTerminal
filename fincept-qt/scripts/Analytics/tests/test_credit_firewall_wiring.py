@@ -381,6 +381,16 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertIn("numRowsAffected() == 0", body)
         self.assertIn('Result<void>::err("Provider not found")', body)
 
+    def test_llm_type_default_assignment_replaces_nullable_row_atomically(self):
+        source = (ROOT / "src/storage/repositories/LlmProfileRepository.cpp").read_text(encoding="utf-8")
+        body = source[source.index("Result<void> LlmProfileRepository::assign_profile"):
+                      source.index("Result<void> LlmProfileRepository::remove_assignment")]
+        self.assertIn("if (context_id.isEmpty())", body)
+        self.assertIn("db().begin_transaction()", body)
+        self.assertIn("context_id IS NULL", body)
+        self.assertIn("db().commit()", body)
+        self.assertIn("ON CONFLICT(context_type, context_id) DO UPDATE SET", body)
+
     def test_local_chat_mode_diagnostics_scrub_conversation_storage_errors(self):
         source = (ROOT / "src/screens/chat_mode/ChatModeScreen.cpp").read_text(encoding="utf-8")
         self.assertIn('#include "core/privacy/LogRedact.h"', source)
