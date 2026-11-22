@@ -82,8 +82,10 @@ PythonCliService& PythonCliService::instance() {
 }
 
 void PythonCliService::run(const QString& script, const QStringList& args, CliCallback cb) {
-    fincept::python::PythonRunner::instance().run(
-        script, args, [cb = std::move(cb), script](const fincept::python::PythonResult& result) {
+    fincept::python::PythonRunner::RunOptions options;
+    options.credential_allowlist = QStringList{};
+    fincept::python::PythonRunner::instance().run_with_options(
+        script, args, options, [cb = std::move(cb), script](const fincept::python::PythonResult& result) {
             pcs_deliver(script, result, /*cancelled=*/false, cb);
         });
 }
@@ -96,6 +98,7 @@ void PythonCliService::run(const QString& script, const QStringList& args, const
     ro.cancel_token = options.cancel_token;
     ro.stdin_data = options.stdin_data;
     ro.max_output_bytes = options.max_output_bytes;
+    ro.credential_allowlist = QStringList{};
     const auto token = options.cancel_token;
     PythonRunner::instance().run_with_options(
         script, args, ro, [cb = std::move(cb), script, token](const fincept::python::PythonResult& result) {

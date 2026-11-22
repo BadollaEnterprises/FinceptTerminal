@@ -27,6 +27,10 @@ class CreditFirewallWiringTest(unittest.TestCase):
         ]
         self.assertIn("opts.credential_allowlist = info->env_keys", run)
 
+    def test_generic_one_shot_analytics_are_secretless(self):
+        source = (ROOT / "src/services/python_cli/PythonCliService.cpp").read_text(encoding="utf-8")
+        self.assertGreaterEqual(source.count("credential_allowlist = QStringList{}"), 2)
+
     def test_macro_and_geopolitics_services_check_firewall(self):
         geopolitics = (ROOT / "src/services/geopolitics/GeopoliticsService.cpp").read_text(encoding="utf-8")
         macro = (ROOT / "src/services/economics/FinceptMacroService.cpp").read_text(encoding="utf-8")
