@@ -16,7 +16,7 @@ third-party data or platform services can be replaced by an LLM.
 | Cache accounting survives restart | Pass | Provider cache-hit usage is written through local usage metrics and covered by the live smoke diagnostic. |
 | Native regression suite | Pass | 146 of 146 tests passed after the command-catalog regression was added. |
 | Analytics regression suite | Pass | 246 of 246 tests passed. |
-| Packaged application diagnostics | Pass | All 10 packaged CI self-tests passed with the bundled Qt offscreen plugin on `fd6a663`. The packaged component catalog also passed the retired-provider-name scan. |
+| Packaged application diagnostics | Pass | All 14 self-tests exposed by the `fd6a663` macOS bundle passed with the bundled Qt offscreen plugin. Discovery was rerun through the fail-closed wrapper on `2eb2959`; the four suites formerly omitted by the stale fallback all passed. The packaged component catalog also passed the retired-provider-name scan. |
 | macOS bundle integrity | Pass for local distribution | `codesign --verify --deep --strict` passed after the clean `fd6a663` release rebuild. The bundle is ad-hoc signed. OpenSSL 3.5.9 is bundle-relative, arm64, and built for macOS 13.0. |
 | Live unlocked UI walkthrough | Pass | The signed release was unlocked locally. AI Chat displayed `DeepSeek / deepseek-flash`, `0 credits`, and billing to the user's DeepSeek key; Settings displayed all five BYO guardrails; `AAPL DES` opened Overview and `MSFT financials` opened Financials. |
 | Cross-platform packaging contracts | Pass locally; hosted rerun blocked | Hosted lint run [44961400096](https://github.com/BadollaEnterprises/FinceptTerminal/actions/runs/44961400096) passed the architecture-specific OpenSSL/zlib, Qt host-tool, PE-filter fixture, and release-workflow contracts on `31721fd`. Through `bbbbd33`, ten local packaging-script tests cover architecture filtering, release-plugin selection, VC dependency closure, and rejection of non-redistributable debug CRT/UCRT files; GitHub paused fork workflows before those revisions could receive a hosted rerun. |
@@ -85,7 +85,7 @@ used as a substitute for factual market feeds.
 ## Remaining release blockers
 
 1. Re-enable GitHub Actions for the fork and rebuild both Windows x64 and ARM64
-   on `bbbbd33` or later. Each artifact must pass `check_windows_pe_arch.py`
+   on `2eb2959` or later. Each artifact must pass `check_windows_pe_arch.py`
    and `check_windows_dependency_closure.py`; independently inspect the
    uploaded artifacts before declaring either target ready.
 2. Replace ad-hoc signing with Developer ID signing and complete notarization.

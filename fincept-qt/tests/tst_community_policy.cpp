@@ -49,6 +49,8 @@ class CommunityPolicyTest : public QObject {
     void shipped_marketing_metadata_omits_retired_backends() {
         const QStringList paths = {
             QStringLiteral(FINCEPT_SOURCE_DIR "/../README.md"),
+            QStringLiteral(FINCEPT_SOURCE_DIR "/scripts/ai_quant_lab/README.md"),
+            QStringLiteral(FINCEPT_SOURCE_DIR "/scripts/agents/finagent_core/README.md"),
             QStringLiteral(FINCEPT_SOURCE_DIR "/packaging/linux/fincept-terminal.appdata.xml"),
             QStringLiteral(FINCEPT_SOURCE_DIR "/packaging/flatpak/in.fincept.FinceptTerminal.metainfo.xml"),
         };

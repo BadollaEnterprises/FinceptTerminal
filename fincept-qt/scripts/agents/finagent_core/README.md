@@ -38,7 +38,7 @@ response = agent.run("Analyze AAPL", config)
 ```json
 {
   "model": {
-    "provider": "openai|anthropic|google|groq|ollama|deepseek",
+    "provider": "openai|anthropic|google|groq|deepseek",
     "model_id": "gpt-4-turbo",
     "temperature": 0.7,
     "max_tokens": 4096
@@ -85,8 +85,7 @@ The full action list is in `main()`'s docstring.
 | Anthropic | claude-sonnet-4-5, claude-3-5-sonnet, claude-3-opus |
 | Google | gemini-2.0-flash, gemini-1.5-pro |
 | Groq | llama-3.3-70b, mixtral-8x7b |
-| Ollama | llama3.3, mistral, mixtral (local) |
-| DeepSeek | deepseek-chat, deepseek-coder |
+| DeepSeek | deepseek-flash, deepseek-v4-pro |
 
 ## Supported Tools
 

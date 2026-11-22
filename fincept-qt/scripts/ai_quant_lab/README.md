@@ -231,7 +231,7 @@ weights = optimize_portfolio(
 - **Benchmark**: Index for comparison
 
 ### RDAgent Configuration
-- **LLM model**: GPT-4, Claude, Llama (via Ollama)
+- **LLM model**: DeepSeek, GPT, Claude, or Gemini through a user-owned API key
 - **Knowledge base**: SQLite, vector DB
 - **Hypothesis count**: Number of hypotheses per run
 - **Evaluation criteria**: Sharpe, returns, drawdown
@@ -244,7 +244,7 @@ weights = optimize_portfolio(
 - **Online Learning**: River (incremental ML)
 - **Data**: Pandas, NumPy
 - **Optimization**: SciPy, cvxpy
-- **LLM**: Ollama (local), OpenAI API
+- **LLM**: BYO DeepSeek, OpenAI, Anthropic, or Gemini API
 - **Database**: SQLite (knowledge base), MLflow (experiments)
 - **Language**: Python 3.11+
 
