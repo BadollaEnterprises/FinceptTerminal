@@ -9,6 +9,7 @@
 #include "core/events/EventBus.h"
 #include "core/logging/Logger.h"
 #include "core/policy/CommunityPolicy.h"
+#include "core/privacy/LogRedact.h"
 #include "core/session/ScreenStateManager.h"
 #include "screens/ai_chat/AiChatComposer.h"
 #include "screens/ai_chat/AiChatScreen.h"
@@ -118,7 +119,8 @@ void AiChatScreen::load_sessions() {
             sessions_cache_.append(row);
         }
     } else {
-        LOG_ERROR(kAicSessionsTag, "list_sessions failed: " + QString::fromStdString(result.error()));
+        LOG_ERROR(kAicSessionsTag,
+                  "list_sessions failed: " + privacy::redact_text(QString::fromStdString(result.error())));
     }
     if (sessions_) {
         sessions_->set_sessions(sessions_cache_);
@@ -161,7 +163,8 @@ void AiChatScreen::create_new_session() {
     auto result = ChatRepository::instance().create_session(title, ai_chat::LlmService::instance().active_provider(),
                                                             ai_chat::LlmService::instance().active_model());
     if (result.is_err()) {
-        LOG_ERROR(kAicSessionsTag, "create_new_session failed: " + QString::fromStdString(result.error()));
+        LOG_ERROR(kAicSessionsTag,
+                  "create_new_session failed: " + privacy::redact_text(QString::fromStdString(result.error())));
         return;
     }
     active_session_id_ = result.value().id;
@@ -207,7 +210,8 @@ void AiChatScreen::load_messages(const QString& session_id) {
 
     auto result = ChatRepository::instance().get_messages(session_id);
     if (result.is_err()) {
-        LOG_ERROR(kAicSessionsTag, "get_messages failed: " + QString::fromStdString(result.error()));
+        LOG_ERROR(kAicSessionsTag,
+                  "get_messages failed: " + privacy::redact_text(QString::fromStdString(result.error())));
         show_start_page(false);
         add_notice(aichat::NoticeKind::Info,
                    tr("Could not load this conversation: %1").arg(QString::fromStdString(result.error())));
