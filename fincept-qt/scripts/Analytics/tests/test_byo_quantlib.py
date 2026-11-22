@@ -1637,6 +1637,30 @@ class ByoQuantLibTest(unittest.TestCase):
         self.assertEqual(len(correlation["data"]["stressed_correlation_matrix"]), 3)
         self.assertGreater(tail["data"]["expected_shortfall"], tail["data"]["var"])
 
+    def test_risk_confidence_levels_are_bounded(self):
+        mod = load_module()
+        cases = (
+            ("portfolio/risk/var", {
+                "weights": [1], "covariance_matrix": [[0.04]], "confidence": 1,
+            }),
+            ("risk/var/incremental", {
+                "portfolio_returns": [-0.01, 0.02], "new_position_returns": [-0.02, 0.01],
+                "position_weight": 0.1, "confidence": 0.5,
+            }),
+            ("risk/backtest", {
+                "actual_returns": [-0.01, 0.02], "var_estimates": [0.01, 0.01],
+                "confidence": 1.1,
+            }),
+            ("risk/tail-risk/comprehensive", {
+                "returns": [-0.01, 0.02, -0.02], "confidence": float("nan"),
+            }),
+        )
+        for route, body in cases:
+            with self.subTest(route=route):
+                answer = mod.execute(route, body)
+                self.assertIn("confidence must be between 0.5 and 1", answer.get("error", ""))
+                self.assertEqual(answer["meta"]["fincept_credits"], 0)
+
     def test_evt_and_copula_routes_are_local_and_deterministic(self):
         mod = load_module()
         losses = [0.0131, 0.0052, 0.0142, 0.0125, 0.013, 0.0138, 0.0173, 0.0112,

@@ -2418,13 +2418,20 @@ def _risk_parity(body: Mapping[str, Any]) -> Dict[str, Any]:
     return result
 
 
+def _confidence_level(body: Mapping[str, Any], default: float = 0.95) -> float:
+    confidence = float(body.get("confidence", default))
+    if not math.isfinite(confidence) or not 0.5 < confidence < 1:
+        raise ValueError("confidence must be between 0.5 and 1")
+    return confidence
+
+
 def _portfolio_var(body: Mapping[str, Any]) -> Dict[str, float]:
     covariance = _matrix(body, "covariance_matrix")
     weights = _vector(body, "weights")
     if len(weights) != len(covariance):
         raise ValueError("weights must match covariance_matrix")
     volatility = _portfolio_summary(weights, covariance)["volatility"]
-    confidence = float(body.get("confidence", 0.95))
+    confidence = _confidence_level(body)
     z_score = NORMAL.inv_cdf(confidence)
     return {"var": z_score * volatility, "volatility": volatility,
             "cvar": NORMAL.pdf(z_score) / (1 - confidence) * volatility}
@@ -6247,10 +6254,10 @@ def _portfolio_comprehensive(body: Mapping[str, Any]) -> Dict[str, Any]:
 def _parametric_var(body: Mapping[str, Any]) -> Dict[str, float]:
     value = _positive(body, "portfolio_value")
     volatility = _positive(body, "volatility")
-    confidence = float(body.get("confidence", 0.95))
+    confidence = _confidence_level(body)
     horizon = float(body.get("horizon", 1.0))
-    if not 0.5 < confidence < 1 or horizon <= 0:
-        raise ValueError("confidence must be in (0.5,1) and horizon positive")
+    if not math.isfinite(horizon) or horizon <= 0:
+        raise ValueError("horizon must be positive and finite")
     z_score = NORMAL.inv_cdf(confidence)
     var = value * z_score * volatility * math.sqrt(horizon)
     expected_shortfall = value * NORMAL.pdf(z_score) / (1 - confidence) * volatility * math.sqrt(horizon)
@@ -6273,6 +6280,8 @@ def _factor_component_var(body: Mapping[str, Any]) -> Dict[str, Any]:
 
 
 def _loss_var(returns: Sequence[float], confidence: float = 0.95) -> tuple[float, float]:
+    if not math.isfinite(confidence) or not 0.5 < confidence < 1:
+        raise ValueError("confidence must be between 0.5 and 1")
     losses = sorted(-value for value in returns)
     position = confidence * (len(losses) - 1)
     lower, upper = math.floor(position), math.ceil(position)
@@ -6287,7 +6296,7 @@ def _incremental_historical_var(body: Mapping[str, Any], *, marginal: bool = Fal
     if len(portfolio) != len(position):
         raise ValueError("portfolio_returns and new_position_returns must match")
     weight = _number(body, "position_weight")
-    confidence = float(body.get("confidence", 0.95))
+    confidence = _confidence_level(body)
     base, _ = _loss_var(portfolio, confidence)
     if marginal:
         bump = 1e-4
@@ -6306,7 +6315,7 @@ def _expected_shortfall_optimization(body: Mapping[str, Any]) -> Dict[str, Any]:
     asset_count = len(observations[0])
     if any(len(row) != asset_count for row in observations):
         raise ValueError("return observations must have equal width")
-    confidence = float(body.get("confidence", 0.95))
+    confidence = _confidence_level(body)
     candidates = [[1 / asset_count] * asset_count]
     rng = random.Random(271828)
     for _ in range(3000):
@@ -6327,7 +6336,7 @@ def _var_backtest(body: Mapping[str, Any]) -> Dict[str, Any]:
     estimates = _vector(body, "var_estimates")
     if len(actual) != len(estimates):
         raise ValueError("actual_returns and var_estimates must match")
-    confidence = float(body.get("confidence", 0.95))
+    confidence = _confidence_level(body)
     exceptions = [index for index, (value, estimate) in enumerate(zip(actual, estimates)) if value < -abs(estimate)]
     rate = len(exceptions) / len(actual)
     expected = 1 - confidence
@@ -6360,7 +6369,7 @@ def _correlation_stress(body: Mapping[str, Any]) -> Dict[str, Any]:
 
 def _tail_risk_comprehensive(body: Mapping[str, Any]) -> Dict[str, float]:
     returns = _vector(body, "returns")
-    confidence = float(body.get("confidence", 0.975))
+    confidence = _confidence_level(body, 0.975)
     portfolio_value = float(body.get("portfolio_value", 1.0))
     var, es = _loss_var(returns, confidence)
     mean = statistics.mean(returns)
@@ -6449,7 +6458,7 @@ def _exposure_profile(body: Mapping[str, Any]) -> Dict[str, Any]:
     paths = [[float(value) for value in row] for row in body.get("paths", [])]
     if not paths or any(len(row) != len(paths[0]) for row in paths):
         raise ValueError("paths must be a non-empty rectangular matrix")
-    confidence = float(body.get("confidence", 0.95))
+    confidence = _confidence_level(body)
     columns = list(zip(*paths))
     expected = [statistics.mean(max(value, 0.0) for value in column) for column in columns]
     negative = [statistics.mean(max(-value, 0.0) for value in column) for column in columns]
