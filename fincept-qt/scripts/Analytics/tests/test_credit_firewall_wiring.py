@@ -538,6 +538,20 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertIn("*error = QString::fromStdString(rows.error())", error_guard)
         self.assertIn("return {}", error_guard)
 
+    def test_clearing_model_choice_surfaces_assignment_delete_failures(self):
+        header = (ROOT / "src/services/llm/ModelRouter.h").read_text(encoding="utf-8")
+        source = (ROOT / "src/services/llm/ModelRouter_Live.cpp").read_text(encoding="utf-8")
+        badge = (ROOT / "src/ui/widgets/ModelBadge.cpp").read_text(encoding="utf-8")
+        self.assertIn("bool clear_choice(", header)
+        body = source[source.index("bool ModelRouter::clear_choice"):source.index("QString ModelRouter::choice_profile_id")]
+        self.assertIn("const auto removed =", body)
+        self.assertIn("if (removed.is_err())", body)
+        self.assertIn("*error = QString::fromStdString(removed.error())", body)
+        self.assertIn("return false", body)
+        self.assertIn("return true", body)
+        self.assertIn("if (!mb_ai::ModelRouter::instance().clear_choice", badge)
+        self.assertIn("Could not reset the model", badge)
+
     def test_deleting_active_provider_selects_deterministic_byo_fallback(self):
         source = (ROOT / "src/screens/settings/LlmConfigSection_Providers.cpp").read_text(encoding="utf-8")
         body = source[source.index("void LlmConfigSection::on_delete_provider()"):

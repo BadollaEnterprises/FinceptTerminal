@@ -219,9 +219,10 @@ class ModelRouter : public QObject {
 
     /// The user's explicit choice for a feature (the model picker). A harness /
     /// Fincept choice is stored as a profile (created or reused); "Auto" =
-    /// clear_choice(). Returns false (with `error`) when it cannot be stored.
+    /// clear_choice(). Both operations return false (with `error`) when the
+    /// assignment change cannot be stored.
     bool set_choice(const QString& feature, const QString& context_id, const ModelChoice& choice, QString* error = nullptr);
-    void clear_choice(const QString& feature, const QString& context_id = {});
+    bool clear_choice(const QString& feature, const QString& context_id = {}, QString* error = nullptr);
     /// The explicit choice's profile id ("" = Auto).
     QString choice_profile_id(const QString& feature, const QString& context_id = {}) const;
 

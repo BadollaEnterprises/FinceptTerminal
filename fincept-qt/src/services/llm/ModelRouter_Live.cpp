@@ -412,10 +412,16 @@ bool ModelRouter::set_choice(const QString& feature, const QString& context_id, 
     return true;
 }
 
-void ModelRouter::clear_choice(const QString& feature, const QString& context_id) {
-    LlmProfileRepository::instance().remove_assignment(feature, context_id);
+bool ModelRouter::clear_choice(const QString& feature, const QString& context_id, QString* error) {
+    const auto removed = LlmProfileRepository::instance().remove_assignment(feature, context_id);
+    if (removed.is_err()) {
+        if (error)
+            *error = QString::fromStdString(removed.error());
+        return false;
+    }
     LOG_INFO(kMrlTag, QStringLiteral("Model for %1: Auto").arg(feature));
     refresh();
+    return true;
 }
 
 QString ModelRouter::choice_profile_id(const QString& feature, const QString& context_id) const {

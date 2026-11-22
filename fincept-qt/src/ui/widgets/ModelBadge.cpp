@@ -6,6 +6,7 @@
 #include "core/events/EventBus.h"
 #include "core/logging/Logger.h"
 #include "core/policy/CommunityPolicy.h"
+#include "core/privacy/LogRedact.h"
 #include "services/harness/HarnessEligibility.h"
 #include "services/harness/HarnessRegistry.h"
 #include "services/harness/IHarnessAdapter.h"
@@ -295,7 +296,14 @@ void ModelBadge::open_picker() {
     auto_action->setToolTip(tr("The terminal's rule: your choice → your connected harness → "
                                "your configured API provider. No paid Fincept fallback is used."));
     connect(auto_action, &QAction::triggered, this, [self, feature, context]() {
-        mb_ai::ModelRouter::instance().clear_choice(feature, context);
+        QString error;
+        if (!mb_ai::ModelRouter::instance().clear_choice(feature, context, &error)) {
+            LOG_WARN("ModelBadge",
+                     QStringLiteral("Model choice could not be reset: %1").arg(privacy::redact_text(error)));
+            if (self)
+                QMessageBox::warning(self, tr("Model"), tr("Could not reset the model: %1").arg(error));
+            return;
+        }
         if (self)
             emit self->choice_changed();
     });
