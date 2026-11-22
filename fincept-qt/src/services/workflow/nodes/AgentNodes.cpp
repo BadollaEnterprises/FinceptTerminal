@@ -255,8 +255,9 @@ void register_agent_nodes(NodeRegistry& registry) {
 
                     // Single non-streaming call; the model is ModelRouter's choice for
                     // the tool-picker feature (explicit pick → harness → API → Fincept).
+                    // It selects only; the downstream MCP node performs the call once.
                     auto resp = LlmService::instance().chat(
-                        query, {ConversationMessage{"system", system_prompt}}, true,
+                        query, {ConversationMessage{"system", system_prompt}}, tool_picker_request_uses_tools(),
                         fincept::ai_chat::ChatRoute{QString::fromLatin1(fincept::ai_chat::kFeatureToolPicker),
                                                     QString(), QString()});
 

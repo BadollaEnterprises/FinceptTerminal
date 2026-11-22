@@ -8,6 +8,7 @@
 
 #include "services/harness/HarnessEligibility.h"
 #include "services/llm/ModelRouter.h"
+#include "services/workflow/nodes/AgentNodes.h"
 
 #include <QDateTime>
 #include <QtTest>
@@ -164,6 +165,7 @@ class TestModelRouter : public QObject {
     void not_enabled_harness_is_explicit_only();
     void default_harness_preferred_over_registration_order();
     void key_less_profile_is_skipped();
+    void tool_picker_selects_without_executing();
 
     // ── Fallback (owner decision 3) ──
     void fallback_before_output_falls_back_once();
@@ -483,6 +485,10 @@ void TestModelRouter::explicit_choice_wins_and_rest_is_fallback() {
     const RouteResult node = ModelRouter::resolve_with(st, QString::fromLatin1(kFeatureToolPicker), QStringLiteral("node7"));
     QVERIFY(std::none_of(node.chain.cbegin(), node.chain.cend(), [](const auto& choice) { return choice.is_fincept(); }));
     QVERIFY(mr_is_byo_fallback(node.chain.constLast()));
+}
+
+void TestModelRouter::tool_picker_selects_without_executing() {
+    QVERIFY(!fincept::workflow::tool_picker_request_uses_tools());
 }
 
 void TestModelRouter::explicit_harness_profile() {
