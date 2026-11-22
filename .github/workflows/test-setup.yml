@@ -43,10 +43,10 @@ jobs:
         run: |
           QT_ROOT="$HOME/Qt/${{ env.QT_VERSION }}/macos"
           echo "Qt root: $QT_ROOT"
-          ls "$QT_ROOT/bin/" | grep qmake
+          [ -x "$QT_ROOT/bin/qmake" ] || { echo "ERROR: qmake not found"; exit 1; }
           "$QT_ROOT/bin/qmake" --version
           echo "Qt6::GuiPrivate check:"
-          ls "$QT_ROOT/include/QtGui/private/" | head -5
+          find "$QT_ROOT/include/QtGui/private" -mindepth 1 -maxdepth 1 -print | sed -n '1,5p'
 
       # Step 3 — configure CMake (mirrors configure_script in .cirrus.yml)
       - name: Configure CMake
@@ -68,7 +68,7 @@ jobs:
         run: |
           cmake --build fincept-qt/build \
             --config Release \
-            --parallel $(sysctl -n hw.logicalcpu)
+            --parallel "$(sysctl -n hw.logicalcpu)"
 
       - name: Verify binary
         run: |

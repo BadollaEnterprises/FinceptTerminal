@@ -280,21 +280,19 @@ jobs:
         shell: bash
         working-directory: fincept-qt
         run: |
-          OPENSSL_ARG=""
+          CMAKE_PLATFORM_ARGS=()
           if [ -n "${OPENSSL_ROOT_DIR:-}" ]; then
-            OPENSSL_ARG="-DOPENSSL_ROOT_DIR=${OPENSSL_ROOT_DIR}"
+            CMAKE_PLATFORM_ARGS+=("-DOPENSSL_ROOT_DIR=${OPENSSL_ROOT_DIR}")
           fi
           # ZLIB_ROOT is set only on Windows (static zlib via vcpkg); on macOS it
           # is empty so find_package(ZLIB) uses the system zlib as before.
-          ZLIB_ARG=""
           if [ -n "${ZLIB_ROOT:-}" ]; then
-            ZLIB_ARG="-DZLIB_ROOT=${ZLIB_ROOT} -DZLIB_USE_STATIC_LIBS=ON"
+            CMAKE_PLATFORM_ARGS+=("-DZLIB_ROOT=${ZLIB_ROOT}" "-DZLIB_USE_STATIC_LIBS=ON")
           fi
           cmake -B build \
             -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
             -DCMAKE_PREFIX_PATH="${QT_ROOT_DIR}" \
-            ${OPENSSL_ARG} \
-            ${ZLIB_ARG} \
+            "${CMAKE_PLATFORM_ARGS[@]}" \
             -DFINCEPT_REQUIRE_BUNDLED_YTDLP=ON \
             ${{ runner.os == 'macOS' && '-DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache' || '' }} \
             ${{ matrix.cmake_extra }}
@@ -305,21 +303,19 @@ jobs:
         working-directory: fincept-qt
         run: |
           HOST_QT="${QT_HOST_ROOT}"
-          OPENSSL_ARG=""
+          CMAKE_PLATFORM_ARGS=()
           if [ -n "${OPENSSL_ROOT_DIR:-}" ]; then
-            OPENSSL_ARG="-DOPENSSL_ROOT_DIR=${OPENSSL_ROOT_DIR}"
+            CMAKE_PLATFORM_ARGS+=("-DOPENSSL_ROOT_DIR=${OPENSSL_ROOT_DIR}")
           fi
-          ZLIB_ARG=""
           if [ -n "${ZLIB_ROOT:-}" ]; then
-            ZLIB_ARG="-DZLIB_ROOT=${ZLIB_ROOT} -DZLIB_USE_STATIC_LIBS=ON"
+            CMAKE_PLATFORM_ARGS+=("-DZLIB_ROOT=${ZLIB_ROOT}" "-DZLIB_USE_STATIC_LIBS=ON")
           fi
           cmake -B build \
             -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
             -DCMAKE_PREFIX_PATH="${QT_ROOT_DIR}" \
             -DQT_HOST_PATH="${HOST_QT}" \
             -T ClangCL \
-            ${OPENSSL_ARG} \
-            ${ZLIB_ARG} \
+            "${CMAKE_PLATFORM_ARGS[@]}" \
             -DFINCEPT_REQUIRE_BUNDLED_YTDLP=ON \
             ${{ matrix.cmake_extra }}
 
@@ -327,7 +323,7 @@ jobs:
       - name: Build
         shell: bash
         working-directory: fincept-qt
-        run: cmake --build build --config ${{ env.BUILD_TYPE }} --parallel $(nproc 2>/dev/null || sysctl -n hw.logicalcpu 2>/dev/null || echo 3)
+        run: cmake --build build --config ${{ env.BUILD_TYPE }} --parallel "$(nproc 2>/dev/null || sysctl -n hw.logicalcpu 2>/dev/null || echo 3)"
 
       # ---- Verify binary ----
       - name: Verify build output

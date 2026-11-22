@@ -593,7 +593,7 @@ jobs:
           export PATH="${QT_IFW_DIR}/bin:${PATH}"
           command -v binarycreator || { echo "::error::binarycreator not found"; exit 1; }
           cpack -G IFW -C ${{ env.BUILD_TYPE }} --verbose
-          ls -lh ${{ env.APP_NAME }}-*-setup* 2>/dev/null || ls -lh *.exe 2>/dev/null || true
+          ls -lh ./${{ env.APP_NAME }}-*-setup* 2>/dev/null || ls -lh ./*.exe 2>/dev/null || true
 
       # ── Authenticode sign the installer + verify the signature ────────────
       # The installer is the file users actually download, so it needs its own
@@ -884,7 +884,7 @@ jobs:
 
       - name: Build
         working-directory: fincept-qt
-        run: cmake --build build --config ${{ env.BUILD_TYPE }} --parallel $(nproc) -- -k 0
+        run: cmake --build build --config ${{ env.BUILD_TYPE }} --parallel "$(nproc)" -- -k 0
 
       - name: Verify binary
         working-directory: fincept-qt
@@ -1716,7 +1716,7 @@ jobs:
 
       - name: Build
         working-directory: fincept-qt
-        run: cmake --build build --config ${{ env.BUILD_TYPE }} -j $(sysctl -n hw.logicalcpu) -- -k 0
+        run: cmake --build build --config ${{ env.BUILD_TYPE }} -j "$(sysctl -n hw.logicalcpu)" -- -k 0
 
       # ── Verify ───────────────────────────────────────────────────────────
       - name: Verify binary
@@ -2015,7 +2015,7 @@ jobs:
           echo "Bundle staged at: ${APP_BUNDLE}"
           echo "Pre-sign size: $(du -sh "${APP_BUNDLE}" | cut -f1)"
           echo "=== Contents/MacOS/ top level (should be Mach-Os only) ==="
-          ls -la "${APP_BUNDLE}/Contents/MacOS/" | head -10
+          find "${APP_BUNDLE}/Contents/MacOS" -mindepth 1 -maxdepth 1 -print | sed -n '1,10p'
           echo "=== Scripts count under Contents/Resources/scripts ==="
           find "${APP_BUNDLE}/Contents/Resources/scripts" -type f 2>/dev/null | wc -l || true
 
@@ -2092,7 +2092,7 @@ jobs:
           fi
 
           echo "=== Bundle Frameworks/ contents ==="
-          ls -la "${FRAMEWORKS}" | head -50
+          find "${FRAMEWORKS}" -mindepth 1 -maxdepth 1 -print | sed -n '1,50p'
 
           # ── Thin universal Mach-Os to arm64 ─────────────────────────────────
           # jurplel/install-qt-action@v4 / aqtinstall ships Qt 6.x macOS as a
@@ -2152,7 +2152,15 @@ jobs:
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
           security unlock-keychain -p "$P12_PASSWORD" "$KEYCHAIN_PATH"
           security import "$P12_PATH" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
-          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | sed 's/"//g')
+          KEYCHAINS=("$KEYCHAIN_PATH")
+          while IFS= read -r keychain; do
+            keychain="${keychain#"${keychain%%[![:space:]]*}"}"
+            keychain="${keychain%"${keychain##*[![:space:]]}"}"
+            keychain="${keychain#\"}"
+            keychain="${keychain%\"}"
+            [ -n "$keychain" ] && KEYCHAINS+=("$keychain")
+          done < <(security list-keychains -d user)
+          security list-keychains -d user -s "${KEYCHAINS[@]}"
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$P12_PASSWORD" "$KEYCHAIN_PATH" >/dev/null
           rm -f "$P12_PATH"
 
@@ -2613,7 +2621,8 @@ jobs:
           # this path is not yet validated for the .dmg output — skip gracefully
           # rather than fail the release. (See the step's NOTE above.)
           if [ ! -d "${WIZ_APP}" ]; then
-            echo "::warning::macOS IFW wizard .app not produced (cpack emitted: $(ls build/${BASENAME}.* 2>/dev/null | xargs -n1 basename 2>/dev/null | tr '\n' ' ')). Skipping optional wizard installer; signed -setup.dmg is unaffected."
+            EMITTED=$(find build -maxdepth 1 -type f -name "${BASENAME}.*" -exec basename {} \; 2>/dev/null | tr '\n' ' ')
+            echo "::warning::macOS IFW wizard .app not produced (cpack emitted: ${EMITTED}). Skipping optional wizard installer; signed -setup.dmg is unaffected."
             exit 0
           fi
 
@@ -2702,7 +2711,13 @@ jobs:
           NOTARY_PASSWORD: ${{ secrets.MACOS_NOTARY_PASSWORD }}
         run: |
           set -euo pipefail
-          DMG=$(ls build/FinceptTerminal-*-macos-arm64-setup.dmg | head -1)
+          shopt -s nullglob
+          DMG_CANDIDATES=(build/FinceptTerminal-*-macos-arm64-setup.dmg)
+          if [ "${#DMG_CANDIDATES[@]}" -ne 1 ]; then
+            echo "::error::Expected exactly one macOS setup DMG, found ${#DMG_CANDIDATES[@]}"
+            exit 1
+          fi
+          DMG="${DMG_CANDIDATES[0]}"
           echo "Signing DMG: ${DMG}"
           source "$GITHUB_WORKSPACE/.github/scripts/macos_codesign.sh"
           codesign_retry --force --sign "$SIGNING_IDENTITY" --timestamp "$DMG"
@@ -3509,12 +3524,14 @@ jobs:
           DEB_URL="${DEB_URL:-${RELEASE_URL}}"
           FLATPAK_URL="${FLATPAK_URL:-${RELEASE_URL}}"
 
-          echo "WIN_URL=${WIN_URL}" >> "$GITHUB_ENV"
-          echo "MAC_URL=${MAC_URL}" >> "$GITHUB_ENV"
-          echo "DEB_URL=${DEB_URL}" >> "$GITHUB_ENV"
-          echo "FLATPAK_URL=${FLATPAK_URL}" >> "$GITHUB_ENV"
-          echo "RELEASE_URL=${RELEASE_URL}" >> "$GITHUB_ENV"
-          echo "TAG=${TAG}" >> "$GITHUB_ENV"
+          {
+            echo "WIN_URL=${WIN_URL}"
+            echo "MAC_URL=${MAC_URL}"
+            echo "DEB_URL=${DEB_URL}"
+            echo "FLATPAK_URL=${FLATPAK_URL}"
+            echo "RELEASE_URL=${RELEASE_URL}"
+            echo "TAG=${TAG}"
+          } >> "$GITHUB_ENV"
 
           echo "Windows  : ${WIN_URL}"
           echo "macOS    : ${MAC_URL}"
