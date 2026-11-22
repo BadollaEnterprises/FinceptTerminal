@@ -485,3 +485,5 @@ jobs:
         run: |
           python3 .github/scripts/check_packaging_contracts.py .
           python3 .github/scripts/test_check_windows_pe_arch.py
+          python3 .github/scripts/test_check_windows_dependency_closure.py
+          python3 .github/scripts/test_copy_windows_release_plugins.py

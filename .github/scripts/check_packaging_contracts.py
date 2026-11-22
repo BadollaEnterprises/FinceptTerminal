@@ -33,6 +33,12 @@ def main() -> int:
         root / ".github" / "scripts" / "embed_macos_python_framework.sh"
     )
     pe_arch_script = root / ".github" / "scripts" / "check_windows_pe_arch.py"
+    dependency_closure_script = (
+        root / ".github" / "scripts" / "check_windows_dependency_closure.py"
+    )
+    release_plugin_copy_script = (
+        root / ".github" / "scripts" / "copy_windows_release_plugins.py"
+    )
     failures: list[str] = []
 
     require(
@@ -103,6 +109,30 @@ def main() -> int:
     )
     if not pe_arch_script.is_file():
         failures.append("Windows PE architecture checker must exist")
+    if not dependency_closure_script.is_file():
+        failures.append("Windows dependency closure checker must exist")
+    if not release_plugin_copy_script.is_file():
+        failures.append("Windows release-plugin selector must exist")
+    require(
+        text,
+        "check_windows_dependency_closure.py dist",
+        "Windows artifacts must pass dependency-closure verification",
+        failures,
+    )
+    require(
+        text,
+        "copy_windows_release_plugins.py",
+        "Windows matrix packaging must exclude paired Qt debug plugins",
+        failures,
+    )
+    require(
+        release_text,
+        "copy_windows_release_plugins.py",
+        "Windows release packaging must exclude paired Qt debug plugins",
+        failures,
+    )
+    if "qwindowsd.dll" in text:
+        failures.append("Windows matrix packaging must not explicitly stage qwindowsd.dll")
     require(
         cmake_text,
         "libcrypto-3-arm64.dll",
@@ -149,6 +179,24 @@ def main() -> int:
         lint_text,
         "python3 .github/scripts/check_packaging_contracts.py .",
         "packaging-metadata job must execute the packaging contract check",
+        failures,
+    )
+    require(
+        lint_text,
+        "python3 .github/scripts/test_check_windows_dependency_closure.py",
+        "packaging-metadata job must test the Windows dependency closure checker",
+        failures,
+    )
+    require(
+        lint_text,
+        "python3 .github/scripts/test_copy_windows_release_plugins.py",
+        "packaging-metadata job must test Qt release-plugin selection",
+        failures,
+    )
+    require(
+        release_text,
+        "'^(vcruntime|msvcp|concrt|vccorlib).*\\.dll$'",
+        "Windows release closure must require MSVC runtimes inside the artifact",
         failures,
     )
     require(

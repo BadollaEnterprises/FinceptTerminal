@@ -568,7 +568,7 @@ jobs:
           # Qt Platform Plugin — mandatory, app won't start without it
           # ----------------------------------------------------------------
           mkdir -p dist/platforms
-          for plat_dll in qwindows.dll qwindowsd.dll; do
+          for plat_dll in qwindows.dll; do
             if [ -f "${QT_PLUGINS}/platforms/${plat_dll}" ] && [ ! -f "dist/platforms/${plat_dll}" ]; then
               cp "${QT_PLUGINS}/platforms/${plat_dll}" dist/platforms/
               echo "Copied platforms/${plat_dll}"
@@ -662,47 +662,13 @@ jobs:
             cp "${QT_BIN}/Qt6TextToSpeech.dll" dist/
             echo "Copied Qt6TextToSpeech.dll"
           fi
-          if [ -d "${QT_PLUGINS}/texttospeech" ]; then
-            mkdir -p dist/texttospeech
-            cp -n "${QT_PLUGINS}/texttospeech/"*.dll dist/texttospeech/ 2>/dev/null || true
-            echo "Copied texttospeech plugins"
-          fi
 
-          # ----------------------------------------------------------------
-          # Qt Network Information plugins (Qt 6.2+ — used by QNetworkInformation)
-          # ----------------------------------------------------------------
-          if [ -d "${QT_PLUGINS}/networkinformation" ]; then
-            mkdir -p dist/networkinformation
-            cp -n "${QT_PLUGINS}/networkinformation/"*.dll dist/networkinformation/ 2>/dev/null || true
-            echo "Copied networkinformation plugins"
-          fi
-
-          # ----------------------------------------------------------------
-          # Qt Platform Input Contexts — IME support (CJK, on-screen keyboard)
-          # ----------------------------------------------------------------
-          if [ -d "${QT_PLUGINS}/platforminputcontexts" ]; then
-            mkdir -p dist/platforminputcontexts
-            cp -n "${QT_PLUGINS}/platforminputcontexts/"*.dll dist/platforminputcontexts/ 2>/dev/null || true
-            echo "Copied platforminputcontexts plugins"
-          fi
-
-          # ----------------------------------------------------------------
-          # Qt Print Support Plugin — required by Qt6::PrintSupport
-          # (the DLL is in the core list; this is the Windows printer backend plugin)
-          # ----------------------------------------------------------------
-          if [ -d "${QT_PLUGINS}/printsupport" ]; then
-            mkdir -p dist/printsupport
-            cp -n "${QT_PLUGINS}/printsupport/"*.dll dist/printsupport/ 2>/dev/null || true
-            echo "Copied printsupport plugins"
-          fi
-
-          # ----------------------------------------------------------------
-          # Qt Generic Plugins (touch/tablet input)
-          # ----------------------------------------------------------------
-          if [ -d "${QT_PLUGINS}/generic" ]; then
-            mkdir -p dist/generic
-            cp -n "${QT_PLUGINS}/generic/"*.dll dist/generic/ 2>/dev/null || true
-          fi
+          # Qt plugin kits contain release/debug sibling pairs. Copy only the
+          # release variants and remove any debug siblings windeployqt may have
+          # staged; debug plugins depend on non-redistributable *140d.dll CRTs.
+          python3 ../.github/scripts/copy_windows_release_plugins.py \
+            "${QT_PLUGINS}" dist \
+            texttospeech networkinformation platforminputcontexts printsupport generic
 
           # ----------------------------------------------------------------
           # Direct3D compiler + OpenGL SW fallback
@@ -758,6 +724,25 @@ jobs:
           echo ""
           echo "=== dist/ contents ($(find dist -type f | wc -l) files) ==="
           find dist -type f | sort
+
+      # Architecture purity alone is not enough: an ARM64 bundle can contain
+      # only ARM64 binaries yet still fail at launch if one of them imports a
+      # VC runtime helper that the artifact did not stage. Inspect every PE,
+      # and require all MSVC runtime imports to live inside the bundle rather
+      # than accepting the x64 build host's installed redistributable.
+      - name: Verify Windows dependency closure
+        if: runner.os == 'Windows'
+        shell: pwsh
+        working-directory: fincept-qt
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vsroot = & $vswhere -latest -prerelease -property installationPath | Select-Object -First 1
+          $dumpbin = Get-ChildItem "$vsroot\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $dumpbin) { Write-Host "::error::dumpbin.exe not found under $vsroot"; exit 1 }
+          python ..\.github\scripts\check_windows_dependency_closure.py dist `
+            --dumpbin $dumpbin.FullName `
+            --system32 "$env:WINDIR\System32"
 
       # ---- Package: macOS ----
       # Order is critical (see issue #139): Python.framework + resources must

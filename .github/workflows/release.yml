@@ -264,14 +264,13 @@ jobs:
               cp "$SYS32" "${BUILD_DIR}/" || true
           done
 
-          # Qt plugin directories — whole-dir copy so we pick up every provided
-          # plugin without maintaining a per-file allowlist.
-          for plugin_dir in platforms sqldrivers imageformats iconengines styles tls \
-            multimedia texttospeech networkinformation platforminputcontexts printsupport generic; do
-            [ -d "${QT_PLUGINS}/${plugin_dir}" ] && \
-              { mkdir -p "${BUILD_DIR}/${plugin_dir}"; \
-                cp -n "${QT_PLUGINS}/${plugin_dir}/"*.dll "${BUILD_DIR}/${plugin_dir}/" 2>/dev/null || true; }
-          done
+          # Qt plugin directories contain release/debug sibling pairs. Select
+          # only release DLLs; the debug variants require non-redistributable
+          # *140d.dll runtimes and must never enter the release payload.
+          python3 ../.github/scripts/copy_windows_release_plugins.py \
+            "${QT_PLUGINS}" "${BUILD_DIR}" \
+            platforms sqldrivers imageformats iconengines styles tls \
+            multimedia texttospeech networkinformation platforminputcontexts printsupport generic
 
           # Direct3D compiler + OpenGL SW fallback — needed on VMs / headless
           # machines without a proper GPU driver. dxcompiler/dxil: Qt 6.6+ D3D12
@@ -427,6 +426,12 @@ jobs:
               if ($low -like 'api-ms-*' -or $low -like 'ext-ms-*') { continue }   # virtual API set
               if ($staged.ContainsKey($low)) {
                 $queue.Enqueue((Join-Path $buildDir $dep)); continue              # bundled -> recurse into it
+              }
+              # VC runtimes are application redistributables, not Windows OS
+              # components. Require them in the payload even when the CI host
+              # happens to have an x64 copy installed in System32.
+              if ($low -match '^(vcruntime|msvcp|concrt|vccorlib).*\.dll$') {
+                $missing.Add($dep); continue
               }
               if (Test-Path (Join-Path $system32 $dep)) { continue }              # Windows-provided
               $missing.Add($dep)
