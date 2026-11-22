@@ -267,6 +267,17 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertNotIn('.arg(context, result.error)', source)
         self.assertNotIn('.arg(id).arg(result.error)', source)
 
+    def test_public_market_diagnostics_redact_external_errors(self):
+        data = (ROOT / "src/services/markets/MarketDataService.cpp").read_text(encoding="utf-8")
+        search = (ROOT / "src/services/markets/MarketSearchService.cpp").read_text(encoding="utf-8")
+        for source in (data, search):
+            self.assertIn('#include "core/privacy/LogRedact.h"', source)
+        self.assertGreaterEqual(data.count("privacy::redact_text"), 3)
+        self.assertIn("privacy::redact_text(result.error)", search)
+        self.assertNotIn('"Batch fetch failed: " + result.error', data)
+        self.assertNotIn('"quote_names failed: " + result.error', data)
+        self.assertNotIn('"public/local search failed: " + result.error', search)
+
     def test_macro_and_geopolitics_services_check_firewall(self):
         geopolitics = (ROOT / "src/services/geopolitics/GeopoliticsService.cpp").read_text(encoding="utf-8")
         macro = (ROOT / "src/services/economics/FinceptMacroService.cpp").read_text(encoding="utf-8")

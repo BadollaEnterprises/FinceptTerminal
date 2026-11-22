@@ -1,6 +1,7 @@
 #include "services/markets/MarketSearchService.h"
 
 #include "core/logging/Logger.h"
+#include "core/privacy/LogRedact.h"
 #include "services/dbnomics/DBnomicsService.h"
 #include "services/instruments/InstrumentResolver.h"
 
@@ -104,7 +105,7 @@ void MarketSearchService::search(const QString& query, const QString& type, int 
             const QList<Item> items = market_items(result.matches);
             if (!items.isEmpty() || result.final) {
                 if (result.final && items.isEmpty() && !result.error.isEmpty()) {
-                    LOG_WARN("MarketSearch", "public/local search failed: " + result.error);
+                    LOG_WARN("MarketSearch", "public/local search failed: " + privacy::redact_text(result.error));
                     emit self->search_failed(request_id, query, result.error);
                 } else {
                     emit self->results_ready(request_id, query, items);

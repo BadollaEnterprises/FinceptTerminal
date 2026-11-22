@@ -2,6 +2,7 @@
 
 #include "core/logging/Logger.h"
 #include "core/market/MarketSessions.h"
+#include "core/privacy/LogRedact.h"
 #include "datahub/DataHub.h"
 #include "datahub/DataHubMetaTypes.h"
 #include "datahub/TopicPolicy.h"
@@ -1224,7 +1225,7 @@ void MarketDataService::flush_batch() {
                     mds_classify(QString(), result.error, QString(), QStringLiteral("Quote fetch failed"));
                 batch_failure = f.message;
                 saw_rate_limit = f.rate_limited;
-                LOG_WARN("MarketData", "Batch fetch failed: " + result.error.left(300));
+                LOG_WARN("MarketData", "Batch fetch failed: " + privacy::redact_text(result.error).left(300));
             }
             if (saw_rate_limit)
                 ++traffic_.rate_limited;
@@ -1509,7 +1510,8 @@ void MarketDataService::load_name_cache() {
         if (res.is_err()) {
             LOG_ERROR("MarketData", QString("settings read failed for '%1' — name cache stays unloaded and will not "
                                             "be persisted: %2")
-                                        .arg(QString::fromLatin1(key), QString::fromStdString(res.error())));
+                                        .arg(QString::fromLatin1(key),
+                                             privacy::redact_text(QString::fromStdString(res.error()))));
             read_failed = true;
             return;
         }
@@ -1662,7 +1664,7 @@ void MarketDataService::flush_name_requests() {
                     self->persist_name_cache();
             }
         } else if (!result.success) {
-            LOG_WARN("MarketData", "quote_names failed: " + result.error.left(200));
+            LOG_WARN("MarketData", "quote_names failed: " + privacy::redact_text(result.error).left(200));
             // A failed call (network down, rate limit) is not "unresolvable":
             // allow these symbols to be asked again on a later refresh.
             for (const auto& s : batch)
