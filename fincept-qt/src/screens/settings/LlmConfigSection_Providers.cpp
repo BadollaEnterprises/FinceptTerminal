@@ -10,6 +10,7 @@
 #include "core/config/AppConfig.h"
 #include "core/logging/Logger.h"
 #include "core/policy/CommunityPolicy.h"
+#include "core/privacy/LogRedact.h"
 #include "screens/settings/LlmConfigSection.h"
 #include "services/llm/LlmBudgetSettings.h"
 #include "services/llm/LlmService.h"
@@ -792,6 +793,10 @@ void LlmConfigSection::on_save_provider() {
         show_status(tr("No provider selected"), true);
         return;
     }
+    if (!policy::is_ai_backend_selectable(provider)) {
+        show_status(tr("This AI backend is no longer available. Choose DeepSeek or another BYO provider."), true);
+        return;
+    }
 
     bool is_fincept = (provider == "fincept");
 
@@ -834,13 +839,17 @@ void LlmConfigSection::on_save_provider() {
     auto r2 = LlmConfigRepository::instance().save_provider(cfg);
     if (r2.is_err()) {
         show_status(tr("Failed to save: ") + QString::fromStdString(r2.error()), true);
-        LOG_ERROR(TAG_PROVIDERS, "save_provider failed for " + provider + ": " + QString::fromStdString(r2.error()));
+        LOG_ERROR(TAG_PROVIDERS,
+                  "save_provider failed for " + provider + ": " +
+                      privacy::redact_text(QString::fromStdString(r2.error())));
         return;
     }
     auto r3 = LlmConfigRepository::instance().set_active(provider);
     if (r3.is_err()) {
         show_status(tr("Failed to activate: ") + QString::fromStdString(r3.error()), true);
-        LOG_ERROR(TAG_PROVIDERS, "set_active failed for " + provider + ": " + QString::fromStdString(r3.error()));
+        LOG_ERROR(TAG_PROVIDERS,
+                  "set_active failed for " + provider + ": " +
+                      privacy::redact_text(QString::fromStdString(r3.error())));
         return;
     }
 
@@ -853,7 +862,7 @@ void LlmConfigSection::on_save_provider() {
         QString detail = verify.is_ok() ? tr("active is '%1' not '%2'").arg(verify.value().provider, provider)
                                         : QString::fromStdString(verify.error());
         show_status(tr("Save verification failed: ") + detail, true);
-        LOG_ERROR(TAG_PROVIDERS, "Save verification failed — " + detail);
+        LOG_ERROR(TAG_PROVIDERS, "Save verification failed — " + privacy::redact_text(detail));
         return;
     }
 
@@ -920,6 +929,10 @@ void LlmConfigSection::on_test_connection() {
         show_status(tr("Select a provider first"), true);
         return;
     }
+    if (!policy::is_ai_backend_selectable(provider)) {
+        show_status(tr("This AI backend is no longer available. Choose DeepSeek or another BYO provider."), true);
+        return;
+    }
 
     if (provider == "fincept") {
         // Fincept is a managed service — verify API key exists (session → SecureStorage)
@@ -965,6 +978,10 @@ void LlmConfigSection::on_fetch_models() {
     QString provider = provider_edit_->text().trimmed().toLower();
     if (provider.isEmpty()) {
         show_status(tr("Select a provider first"), true);
+        return;
+    }
+    if (!policy::is_ai_backend_selectable(provider)) {
+        show_status(tr("This AI backend is no longer available. Choose DeepSeek or another BYO provider."), true);
         return;
     }
 

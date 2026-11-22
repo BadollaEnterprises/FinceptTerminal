@@ -225,6 +225,18 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertIn('#include "core/privacy/LogRedact.h"', quant_lab)
         self.assertGreaterEqual(quant_lab.count("privacy::redact_text"), 4)
 
+    def test_llm_settings_diagnostics_scrub_storage_errors_and_profile_identity(self):
+        providers = (ROOT / "src/screens/settings/LlmConfigSection_Providers.cpp").read_text(encoding="utf-8")
+        profiles = (ROOT / "src/screens/settings/LlmConfigSection_Profiles.cpp").read_text(encoding="utf-8")
+        router = (ROOT / "src/services/llm/ModelRouter_Live.cpp").read_text(encoding="utf-8")
+        self.assertIn('#include "core/privacy/LogRedact.h"', providers)
+        self.assertGreaterEqual(providers.count("privacy::redact_text"), 3)
+        self.assertIn("privacy::redact_text(QString::fromStdString(r.error()))", router)
+        self.assertGreaterEqual(profiles.count("log_mask(editing_profile_id_)"), 2)
+        self.assertIn("log_mask(profile.id)", profiles)
+        self.assertNotIn("LLM profile saved: %1", profiles)
+        self.assertNotIn('"LLM profile deleted: " + editing_profile_id_', profiles)
+
     def test_broker_auth_diagnostics_redact_provider_errors(self):
         for relative, minimum in (
             ("src/trading/brokers/angelone/AngelOneBroker.cpp", 2),

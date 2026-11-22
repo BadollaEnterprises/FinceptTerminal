@@ -180,6 +180,20 @@ class ZeroCreditDashboardWiringTest(unittest.TestCase):
         self.assertIn("s.provider = choice.provider", snapshot)
         self.assertIn("list_providers", snapshot)
 
+    def test_provider_settings_actions_reject_retired_backends_before_io(self):
+        source = (ROOT / "src/screens/settings/LlmConfigSection_Providers.cpp").read_text(encoding="utf-8")
+        save = source[source.index("void LlmConfigSection::on_save_provider()"):
+                      source.index("void LlmConfigSection::on_delete_provider()")]
+        test = source[source.index("void LlmConfigSection::on_test_connection()"):
+                      source.index("void LlmConfigSection::on_fetch_models()")]
+        fetch = source[source.index("void LlmConfigSection::on_fetch_models()"):
+                       source.index("void LlmConfigSection::on_models_fetched")]
+        for action in (save, test, fetch):
+            self.assertIn("is_ai_backend_selectable(provider)", action)
+        self.assertLess(save.index("is_ai_backend_selectable(provider)"), save.index("save_provider(cfg)"))
+        self.assertLess(test.index("is_ai_backend_selectable(provider)"), test.index("fetch_models(provider"))
+        self.assertLess(fetch.index("is_ai_backend_selectable(provider)"), fetch.index("fetch_models(provider"))
+
     def test_retired_ai_backends_are_blocked_at_network_boundaries(self):
         catalog = (ROOT / "src/services/llm/ProviderCatalog.cpp").read_text(encoding="utf-8")
         endpoint = catalog[catalog.index("QString ProviderCatalog::chat_endpoint"):]

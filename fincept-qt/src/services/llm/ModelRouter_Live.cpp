@@ -6,6 +6,7 @@
 #include "core/config/AppConfig.h"
 #include "core/logging/Logger.h"
 #include "core/policy/CommunityPolicy.h"
+#include "core/privacy/LogRedact.h"
 #include "services/harness/HarnessEligibility.h"
 #include "services/harness/HarnessRegistry.h"
 #include "services/harness/IHarnessAdapter.h"
@@ -71,7 +72,8 @@ void mrl_gather_db(RouterState& s) {
             s.profiles.insert(p.id, rp);
         }
     } else {
-        LOG_WARN(kMrlTag, QStringLiteral("Profiles could not be read: %1").arg(QString::fromStdString(r.error())));
+        LOG_WARN(kMrlTag, QStringLiteral("Profiles could not be read: %1")
+                              .arg(privacy::redact_text(QString::fromStdString(r.error()))));
     }
     if (auto r = LlmProfileRepository::instance().list_assignments(); r.is_ok()) {
         for (const LlmProfileAssignment& a : r.value())
@@ -202,7 +204,9 @@ QString mrl_profile_for(const ModelChoice& choice, QString* error) {
             *error = QString::fromStdString(saved.error());
         return {};
     }
-    LOG_INFO(kMrlTag, QStringLiteral("Created profile “%1” for a model choice").arg(p.name));
+    LOG_INFO(kMrlTag, logf("Created profile for a model choice", {{"profile", log_mask(p.id)},
+                                                                   {"provider", p.provider},
+                                                                   {"model", p.model_id}}));
     return p.id;
 }
 

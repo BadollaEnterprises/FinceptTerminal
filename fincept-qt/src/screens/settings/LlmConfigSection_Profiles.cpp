@@ -712,7 +712,9 @@ void LlmConfigSection::on_save_profile() {
     show_profile_status(tr("Profile saved"), false);
     load_profiles();
     emit config_changed();
-    LOG_INFO(TAG_PROFILES, QString("LLM profile saved: %1 (%2 / %3)").arg(name, provider, model));
+    LOG_INFO(TAG_PROFILES, logf("LLM profile saved", {{"profile", log_mask(profile.id)},
+                                                       {"provider", provider},
+                                                       {"model", model}}));
 }
 
 void LlmConfigSection::on_delete_profile() {
@@ -738,7 +740,7 @@ void LlmConfigSection::on_delete_profile() {
         clear_profile_form();
         load_profiles();
         emit config_changed();
-        LOG_INFO(TAG_PROFILES, "LLM profile deleted: " + editing_profile_id_);
+        LOG_INFO(TAG_PROFILES, "LLM profile deleted: " + log_mask(editing_profile_id_));
     } else {
         show_profile_status(tr("Delete failed: ") + QString::fromStdString(r.error()), true);
     }
@@ -752,7 +754,7 @@ void LlmConfigSection::on_set_default_profile() {
         profile_default_btn_->setEnabled(false);
         load_profiles();
         emit config_changed();
-        LOG_INFO(TAG_PROFILES, "LLM default profile set: " + editing_profile_id_);
+        LOG_INFO(TAG_PROFILES, "LLM default profile set: " + log_mask(editing_profile_id_));
     } else {
         show_profile_status(tr("Failed: ") + QString::fromStdString(r.error()), true);
     }
