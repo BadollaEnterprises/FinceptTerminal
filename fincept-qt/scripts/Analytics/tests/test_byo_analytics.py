@@ -72,6 +72,14 @@ class ByoAnalyticsTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "cannot be below -100%"):
             mod.portfolio_risk({"returns": {"ALPHA": [0.02, -1.2, 0.01]}})
 
+    def test_portfolio_risk_requires_positive_annualization_periods(self):
+        mod = load_module()
+        with self.assertRaisesRegex(ValueError, "periods_per_year must be positive"):
+            mod.portfolio_risk({
+                "returns": {"ALPHA": [0.01, -0.02, 0.03]},
+                "periods_per_year": 0,
+            })
+
     def test_technical_rating_detects_a_persistent_uptrend(self):
         mod = load_module()
         closes = [100 + i * 0.4 + (i % 5) * 0.03 for i in range(240)]

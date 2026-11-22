@@ -89,6 +89,8 @@ def portfolio_risk(payload: Mapping[str, Any]) -> Dict[str, Any]:
     returns = [sum(weights[name] * series[name][i] for name in names) for i in range(count)]
     daily_vol = statistics.stdev(returns)
     periods_per_year = _finite(payload.get("periods_per_year", 252), "periods_per_year")
+    if periods_per_year <= 0:
+        raise ValueError("periods_per_year must be positive")
     annualized_vol = daily_vol * math.sqrt(periods_per_year)
 
     confidence = _finite(payload.get("confidence", 0.95), "confidence")
