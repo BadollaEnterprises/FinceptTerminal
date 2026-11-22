@@ -686,7 +686,11 @@ void TeamsViewPanel::save_team() {
     row.description = QStringLiteral("%1 team, %2 member(s)").arg(mode_combo_->currentText()).arg(team_members_.size());
     row.category = QStringLiteral("team");
     row.config_json = QString::fromUtf8(QJsonDocument(cfg).toJson(QJsonDocument::Compact));
-    services::AgentService::instance().save_config(row);
+    const auto saved = services::AgentService::instance().save_config(row);
+    if (saved.is_err()) {
+        log_display_->append(tr("[!] Could not save team: %1").arg(QString::fromStdString(saved.error())));
+        return;
+    }
     saved_team_id_ = id;
     saved_team_name_ = name;
     log_display_->append(QString("[SAVE] Team \"%1\" (%2 members)").arg(name).arg(team_members_.size()));

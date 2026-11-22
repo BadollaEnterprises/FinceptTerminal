@@ -1559,21 +1559,19 @@ void AgentsViewPanel::save_current_config() {
         return;
     const auto& agent = filtered_agents_[selected_agent_idx_];
 
-    // Persist profile assignment for this agent
     const QString profile_id = llm_profile_combo_->currentData().toString();
-    auto& repo = LlmProfileRepository::instance();
-    if (profile_id.isEmpty())
-        repo.remove_assignment("agent", agent.id); // revert to global default
-    else
-        repo.assign_profile("agent", agent.id, profile_id); // pin to chosen profile
-
     AgentConfig db;
     db.id = agent.id;
     db.name = agent.name;
     db.description = agent.description;
     db.category = agent.category;
     db.config_json = QString::fromUtf8(QJsonDocument(build_config_from_editor()).toJson(QJsonDocument::Compact));
-    services::AgentService::instance().save_config(db);
+    const auto saved = services::AgentService::instance().save_config(db, profile_id);
+    if (saved.is_err()) {
+        set_status(result_status_, tr("Save failed: %1").arg(QString::fromStdString(saved.error())),
+                   ui::colors::DANGER());
+        return;
+    }
     set_status(result_status_, tr("Config saved"), ui::colors::SUCCESS());
 }
 

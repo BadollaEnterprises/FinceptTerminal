@@ -13,6 +13,7 @@
 #include <QSet>
 
 #include <memory>
+#include <optional>
 
 class QTimer;
 
@@ -148,7 +149,10 @@ class AgentService : public QObject, public fincept::datahub::Producer {
     QString execute_plan(const QJsonObject& plan, const QJsonObject& config = {});
 
     // ── Config CRUD (delegates to AgentConfigRepository) ─────────────────────
-    void save_config(const AgentConfig& config);
+    /// Save the config and, when `profile_id` is supplied, its per-agent LLM
+    /// assignment in one SQLite transaction. An engaged empty profile id clears
+    /// the assignment; std::nullopt leaves assignments untouched (teams, etc.).
+    Result<void> save_config(const AgentConfig& config, std::optional<QString> profile_id = std::nullopt);
     void delete_config(const QString& id);
 
     // ── Cache management ─────────────────────────────────────────────────────

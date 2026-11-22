@@ -385,15 +385,13 @@ void CreateAgentPanel::save_agent() {
     db.description = desc_edit_->toPlainText().trimmed();
     db.category = category_combo_->currentText();
     db.config_json = QString::fromUtf8(QJsonDocument(build_config_json()).toJson(QJsonDocument::Compact));
-    services::AgentService::instance().save_config(db);
-    editing_id_ = db.id;
-
     const QString profile_id = llm_profile_combo_->currentData().toString();
-    auto& repo = LlmProfileRepository::instance();
-    if (profile_id.isEmpty())
-        repo.remove_assignment("agent", editing_id_);
-    else
-        repo.assign_profile("agent", editing_id_, profile_id);
+    const auto saved = services::AgentService::instance().save_config(db, profile_id);
+    if (saved.is_err()) {
+        set_form_status(status_lbl_, tr("Failed: %1").arg(QString::fromStdString(saved.error())), ui::colors::DANGER());
+        return;
+    }
+    editing_id_ = db.id;
 }
 
 void CreateAgentPanel::delete_agent() {

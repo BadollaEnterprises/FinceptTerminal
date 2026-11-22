@@ -19,6 +19,8 @@
 #include "services/llm/LlmService.h"
 #include "storage/cache/CacheManager.h"
 #include "storage/repositories/LlmConfigRepository.h"
+#include "storage/repositories/LlmProfileRepository.h"
+#include "storage/sqlite/Database.h"
 
 #include <QCoreApplication>
 #include <QElapsedTimer>
@@ -325,7 +327,7 @@ void AgentService::list_models() {
 
 // ── Config CRUD ──────────────────────────────────────────────────────────────
 
-void AgentService::save_config(const AgentConfig& config_in) {
+Result<void> AgentService::save_config(const AgentConfig& config_in, std::optional<QString> profile_id) {
     // The editors snapshot the resolved LLM profile into `model` — including its
     // API key, which LlmProfileRepository keeps encrypted in SecureStorage. The
     // agent_configs table is plain SQLite and is pushed to the cloud by the
@@ -340,13 +342,42 @@ void AgentService::save_config(const AgentConfig& config_in) {
         cfg_obj["model"] = model;
         config.config_json = QString::fromUtf8(QJsonDocument(cfg_obj).toJson(QJsonDocument::Compact));
     }
-    auto result = AgentConfigRepository::instance().save(config);
-    if (result.is_ok()) {
-        LOG_INFO("AgentService", QString("Saved agent config: %1").arg(config.name));
-        emit config_saved();
-    } else {
+    auto fail = [this](const Result<void>& result) {
         emit error_occurred("save_config", QString::fromStdString(result.error()));
+        return result;
+    };
+
+    auto& database = Database::instance();
+    if (profile_id.has_value()) {
+        const auto started = database.begin_transaction();
+        if (started.is_err())
+            return fail(started);
     }
+
+    auto result = AgentConfigRepository::instance().save(config);
+    if (result.is_ok() && profile_id.has_value()) {
+        auto& profiles = LlmProfileRepository::instance();
+        result = profile_id->isEmpty() ? profiles.remove_assignment(QStringLiteral("agent"), config.id)
+                                       : profiles.assign_profile(QStringLiteral("agent"), config.id, *profile_id);
+    }
+
+    if (result.is_err()) {
+        if (profile_id.has_value())
+            database.rollback();
+        return fail(result);
+    }
+
+    if (profile_id.has_value()) {
+        const auto committed = database.commit();
+        if (committed.is_err()) {
+            database.rollback();
+            return fail(committed);
+        }
+    }
+
+    LOG_INFO("AgentService", QString("Saved agent config: %1").arg(config.name));
+    emit config_saved();
+    return Result<void>::ok();
 }
 
 void AgentService::delete_config(const QString& id) {

@@ -18,6 +18,8 @@ FINCEPT_MODEL = MODULE.parent / "registries" / "fincept_model.py"
 SUPER_AGENT = MODULE.parent / "super_agent.py"
 CORE_AGENT = MODULE.parent / "core_agent.py"
 AGENT_SERVICE = MODULE.parents[3] / "src" / "services" / "agents" / "AgentService.cpp"
+AGENT_SERVICE_HEADER = AGENT_SERVICE.with_suffix(".h")
+AGENT_SERVICE_DISCOVERY = AGENT_SERVICE.with_name("AgentService_Discovery.cpp")
 LLM_SERVICE_HEADER = MODULE.parents[3] / "src" / "services" / "llm" / "LlmService.h"
 LLM_SERVICE_SOURCE = LLM_SERVICE_HEADER.with_suffix(".cpp")
 AGENT_MAIN = MODULE.with_name("main.py")
@@ -168,6 +170,38 @@ class AgentProviderPolicyTest(unittest.TestCase):
 
         data = CREATE_AGENT_DATA.read_text(encoding="utf-8")
         self.assertIn("resolved.provider.isEmpty() && resolved.config_error.isEmpty()", data)
+
+    def test_agent_config_and_profile_assignment_are_saved_atomically(self):
+        header = AGENT_SERVICE_HEADER.read_text(encoding="utf-8")
+        self.assertIn("Result<void> save_config(", header)
+        self.assertIn("std::optional<QString> profile_id", header)
+
+        service = AGENT_SERVICE_DISCOVERY.read_text(encoding="utf-8")
+        save = service[service.index("Result<void> AgentService::save_config"):
+                       service.index("void AgentService::delete_config")]
+        self.assertIn("begin_transaction()", save)
+        self.assertIn("rollback()", save)
+        self.assertIn("commit()", save)
+        self.assertIn("assign_profile", save)
+        self.assertIn("remove_assignment", save)
+        self.assertLess(save.index("begin_transaction()"), save.index("AgentConfigRepository::instance().save"))
+        self.assertLess(save.index("AgentConfigRepository::instance().save"), save.index("commit()"))
+
+        create = CREATE_AGENT_DATA.read_text(encoding="utf-8")
+        create_save = create[create.index("void CreateAgentPanel::save_agent"):
+                             create.index("void CreateAgentPanel::delete_agent")]
+        self.assertIn("save_config(db, profile_id)", create_save)
+        self.assertIn("if (saved.is_err())", create_save)
+        self.assertLess(create_save.index("if (saved.is_err())"), create_save.index("editing_id_ = db.id"))
+        self.assertNotIn("repo.assign_profile", create_save)
+
+        agents = AGENTS_PANEL.read_text(encoding="utf-8")
+        panel_save = agents[agents.index("void AgentsViewPanel::save_current_config"):
+                            agents.index("void AgentsViewPanel::delete_current_config")]
+        self.assertIn("save_config(db, profile_id)", panel_save)
+        self.assertIn("if (saved.is_err())", panel_save)
+        self.assertNotIn("repo.assign_profile", panel_save)
+        self.assertNotIn("repo.remove_assignment", panel_save)
 
     def test_super_agent_normalizes_saved_legacy_model_before_llm_routing(self):
         source = SUPER_AGENT.read_text(encoding="utf-8")
