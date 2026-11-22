@@ -11,6 +11,13 @@ namespace fincept::ai_chat {
 
 inline constexpr qsizetype default_history_request_budget_chars() { return kDefaultLlmHistoryChars; }
 
+/// The new message cannot be trimmed without changing the user's request. If
+/// it alone exceeds the shared request ceiling, reject it before any provider
+/// call instead of silently bypassing the BYO cost guardrail. Zero disables.
+inline bool current_message_fits_request_budget(qsizetype current_message_chars, qsizetype request_budget_chars) {
+    return request_budget_chars <= 0 || std::max<qsizetype>(0, current_message_chars) <= request_budget_chars;
+}
+
 struct HistoryTrimResult {
     std::vector<ConversationMessage> messages;
     qsizetype original_chars = 0;

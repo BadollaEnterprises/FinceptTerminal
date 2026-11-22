@@ -90,13 +90,28 @@ static void llm_svc_log_request_finished(const LlmResponse& resp, const QString&
 // request-side conversation, including the new user message, so an attachment
 // cannot combine with old history and unexpectedly multiply BYO input spend.
 // `llm/history_max_chars` overrides the cost-conscious default; 0 disables.
-static std::vector<ConversationMessage> llm_svc_trim_history(const std::vector<ConversationMessage>& history,
-                                                             qsizetype current_message_chars) {
+static qsizetype llm_svc_history_budget_chars() {
     LlmBudgetSettings budget_settings;
     budget_settings.history_chars = AppConfig::instance()
                                         .get(kLlmHistoryCharsKey, QVariant(kDefaultLlmHistoryChars))
                                         .toInt();
-    const qsizetype budget = validate_llm_budget_settings(budget_settings).history_chars;
+    return validate_llm_budget_settings(budget_settings).history_chars;
+}
+
+static QString llm_svc_input_budget_error(qsizetype current_message_chars) {
+    const qsizetype budget = llm_svc_history_budget_chars();
+    if (current_message_fits_request_budget(current_message_chars, budget))
+        return {};
+    return QStringLiteral("This message is %1 characters, above the configured %2-character BYO AI request "
+                          "guardrail. No provider request was sent. Shorten the message or raise History Chars in "
+                          "Settings → LLM Configuration.")
+        .arg(current_message_chars)
+        .arg(budget);
+}
+
+static std::vector<ConversationMessage> llm_svc_trim_history(const std::vector<ConversationMessage>& history,
+                                                             qsizetype current_message_chars) {
+    const qsizetype budget = llm_svc_history_budget_chars();
     HistoryTrimResult result = trim_history_for_request(history, current_message_chars, budget);
     if (result.dropped_messages > 0) {
         LOG_INFO(kLlmSvcTag,
@@ -1900,6 +1915,10 @@ LlmResponse LlmService::chat(const QString& user_message, const std::vector<Conv
     const QVector<ModelChoice> chain = route_chain(route);
     QElapsedTimer request_clock;
     request_clock.start();
+    if (const QString error = llm_svc_input_budget_error(user_message.size()); !error.isEmpty()) {
+        LOG_WARN(kLlmSvcTag, error);
+        return LlmResponse{.content = {}, .error = error};
+    }
 
     // No session id → not cancellable via cancel_active_request(), so no
     // CancelScope is armed here (arming one would let an AI Chat Stop abort this
@@ -2086,6 +2105,12 @@ void LlmService::chat_streaming(const QString& user_message, const std::vector<C
                     },
                     Qt::QueuedConnection);
             };
+            if (const QString error = llm_svc_input_budget_error(user_message.size()); !error.isEmpty()) {
+                LOG_WARN(kLlmSvcTag, error);
+                guarded_chunk(QString(), true);
+                finish(LlmResponse{.content = {}, .error = error});
+                return;
+            }
 
             // Session lane — only requests carrying a chat_session_id (the AI Chat
             // tab) are cancellable, and they run one at a time so the process-wide

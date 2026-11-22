@@ -9,6 +9,7 @@ class TestLlmHistoryPolicy : public QObject {
   private slots:
     void cost_control_default_is_bounded();
     void current_message_reserves_request_budget();
+    void oversized_current_message_is_rejected();
 };
 
 void TestLlmHistoryPolicy::cost_control_default_is_bounded() {
@@ -31,6 +32,12 @@ void TestLlmHistoryPolicy::current_message_reserves_request_budget() {
     QCOMPARE(result.messages[1].content, QString(30, QLatin1Char('d')));
     QCOMPARE(result.dropped_messages, 2);
     QVERIFY(result.kept_chars + 50 <= 120);
+}
+
+void TestLlmHistoryPolicy::oversized_current_message_is_rejected() {
+    QVERIFY(current_message_fits_request_budget(/*current_message_chars=*/120, /*request_budget_chars=*/120));
+    QVERIFY(!current_message_fits_request_budget(/*current_message_chars=*/121, /*request_budget_chars=*/120));
+    QVERIFY(current_message_fits_request_budget(/*current_message_chars=*/1000000, /*request_budget_chars=*/0));
 }
 
 QTEST_GUILESS_MAIN(TestLlmHistoryPolicy)

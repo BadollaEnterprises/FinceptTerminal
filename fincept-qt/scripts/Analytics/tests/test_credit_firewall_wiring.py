@@ -432,6 +432,16 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertIn("privacy::redact_text", migration)
         self.assertLess(migration.index("if (marked.is_err())"), migration.index("Legacy credential migration complete"))
 
+    def test_oversized_new_llm_message_is_rejected_before_provider_calls(self):
+        source = (ROOT / "src/services/llm/LlmService.cpp").read_text(encoding="utf-8")
+        sync = source[source.index("LlmResponse LlmService::chat("):source.index("void detail::notify_ui_operating")]
+        streaming = source[source.index("void LlmService::chat_streaming("):]
+        self.assertIn("llm_svc_input_budget_error", sync)
+        self.assertLess(sync.index("llm_svc_input_budget_error"), sync.index("request.do_request"))
+        self.assertIn("llm_svc_input_budget_error", streaming)
+        self.assertLess(streaming.index("llm_svc_input_budget_error"), streaming.index("request.do_streaming_request"))
+        self.assertIn("No provider request was sent", source)
+
     def test_llm_settings_diagnostics_scrub_storage_errors_and_profile_identity(self):
         providers = (ROOT / "src/screens/settings/LlmConfigSection_Providers.cpp").read_text(encoding="utf-8")
         profiles = (ROOT / "src/screens/settings/LlmConfigSection_Profiles.cpp").read_text(encoding="utf-8")
