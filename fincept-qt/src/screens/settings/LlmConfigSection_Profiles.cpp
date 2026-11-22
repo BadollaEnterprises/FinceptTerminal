@@ -743,14 +743,17 @@ void LlmConfigSection::on_delete_profile() {
     if (reply != QMessageBox::Yes)
         return;
 
-    auto r = LlmProfileRepository::instance().delete_profile(editing_profile_id_);
+    const QString profile_id = editing_profile_id_;
+    auto r = LlmProfileRepository::instance().delete_profile(profile_id);
     if (r.is_ok()) {
         clear_profile_form();
         load_profiles();
         emit config_changed();
-        LOG_INFO(TAG_PROFILES, "LLM profile deleted: " + log_mask(editing_profile_id_));
+        LOG_INFO(TAG_PROFILES, "LLM profile deleted: " + log_mask(profile_id));
     } else {
-        show_profile_status(tr("Delete failed: ") + QString::fromStdString(r.error()), true);
+        const QString error = QString::fromStdString(r.error());
+        show_profile_status(tr("Delete failed: ") + error, true);
+        LOG_ERROR(TAG_PROFILES, "delete_profile failed: " + privacy::redact_text(error));
     }
 }
 
@@ -764,7 +767,9 @@ void LlmConfigSection::on_set_default_profile() {
         emit config_changed();
         LOG_INFO(TAG_PROFILES, "LLM default profile set: " + log_mask(editing_profile_id_));
     } else {
-        show_profile_status(tr("Failed: ") + QString::fromStdString(r.error()), true);
+        const QString error = QString::fromStdString(r.error());
+        show_profile_status(tr("Failed: ") + error, true);
+        LOG_ERROR(TAG_PROFILES, "set_default profile failed: " + privacy::redact_text(error));
     }
 }
 

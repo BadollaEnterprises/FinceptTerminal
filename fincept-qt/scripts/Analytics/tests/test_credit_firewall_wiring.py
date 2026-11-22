@@ -232,7 +232,8 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertIn('#include "core/privacy/LogRedact.h"', providers)
         self.assertGreaterEqual(providers.count("privacy::redact_text"), 3)
         self.assertIn("privacy::redact_text(QString::fromStdString(r.error()))", router)
-        self.assertGreaterEqual(profiles.count("log_mask(editing_profile_id_)"), 2)
+        self.assertGreaterEqual(profiles.count("log_mask(editing_profile_id_)"), 1)
+        self.assertIn("log_mask(profile_id)", profiles)
         self.assertIn("log_mask(profile.id)", profiles)
         self.assertNotIn("LLM profile saved: %1", profiles)
         self.assertNotIn('"LLM profile deleted: " + editing_profile_id_', profiles)
@@ -481,6 +482,20 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertIn("populate_profile_form(persisted.value())", failed)
         self.assertIn("emit config_changed()", failed)
         self.assertIn("privacy::redact_text(error)", failed)
+
+    def test_profile_delete_and_default_diagnostics_keep_identity_and_scrub_errors(self):
+        source = (ROOT / "src/screens/settings/LlmConfigSection_Profiles.cpp").read_text(encoding="utf-8")
+        delete = source[source.index("void LlmConfigSection::on_delete_profile()"):
+                        source.index("void LlmConfigSection::on_set_default_profile()")]
+        self.assertIn("const QString profile_id = editing_profile_id_", delete)
+        self.assertIn("delete_profile(profile_id)", delete)
+        self.assertIn("log_mask(profile_id)", delete)
+        self.assertNotIn("log_mask(editing_profile_id_)", delete)
+        self.assertIn("privacy::redact_text(error)", delete)
+
+        default = source[source.index("void LlmConfigSection::on_set_default_profile()"):
+                         source.index("} // namespace fincept::screens")]
+        self.assertIn("privacy::redact_text(error)", default)
 
     def test_local_chat_mode_diagnostics_scrub_conversation_storage_errors(self):
         source = (ROOT / "src/screens/chat_mode/ChatModeScreen.cpp").read_text(encoding="utf-8")
