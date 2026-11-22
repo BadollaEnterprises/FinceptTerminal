@@ -857,6 +857,15 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertIn("if (profiles.is_err())", config)
         self.assertGreaterEqual(quant.count("aiq_llm_configuration_error(llm)"), 3)
 
+    def test_interactive_chat_auto_output_uses_cost_conscious_default(self):
+        source = (ROOT / "src/services/llm/LlmService.cpp").read_text(encoding="utf-8")
+        resolver = source[source.index("int LlmService::resolved_max_tokens"):
+                          source.index("QString LlmService::get_endpoint_url")]
+
+        self.assertIn("resolve_llm_output_tokens(max_tokens_, catalog_cap)", resolver)
+        self.assertNotIn("return catalog_cap", resolver)
+        self.assertNotIn("constexpr int kFallback", resolver)
+
     def test_selected_agent_profiles_share_runtime_provider_policy(self):
         header = (ROOT / "src/storage/repositories/LlmProfileRepository.h").read_text(encoding="utf-8")
         source = (ROOT / "src/storage/repositories/LlmProfileRepository.cpp").read_text(encoding="utf-8")

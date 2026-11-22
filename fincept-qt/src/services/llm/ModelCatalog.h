@@ -15,8 +15,9 @@
 // • Pattern matching is glob-style on the model id (case-insensitive),
 //   first-match wins. Order entries from most-specific to least-specific
 //   inside each provider.
-// • `output_cap()` returns 0 if no entry matched — caller should fall back
-//   to a conservative default (we use 8192 in LlmService::resolved_max_tokens).
+// • `output_cap()` returns 0 if no entry matched. The caller still applies a
+//   conservative automatic reply allowance instead of treating this catalog
+//   ceiling as the default amount to spend.
 //
 // Updating the catalog
 // --------------------

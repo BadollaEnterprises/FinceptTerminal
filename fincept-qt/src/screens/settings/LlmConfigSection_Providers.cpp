@@ -415,7 +415,7 @@ QWidget* LlmConfigSection::build_global_panel() {
     tokens_lbl_ = new QLabel(tr("Max Tokens"));
     tokens_lbl_->setStyleSheet("color:" + QString(ui::colors::TEXT_SECONDARY()) + ";");
     tokens_spin_ = new QSpinBox;
-    // 0 = Auto (the model's own output cap — the stored default since v021).
+    // 0 = Auto (the cost-conscious runtime default, clamped to the model cap).
     // The floor used to be 100, so merely saving this panel turned Auto into a
     // 100-token limit. The ceiling follows the active provider (load_providers).
     tokens_spin_->setRange(0, kLlmProvidersTokensMax);

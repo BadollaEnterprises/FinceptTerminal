@@ -370,7 +370,8 @@ class LlmService : public QObject {
     QString get_endpoint_url() const;
     QMap<QString, QString> get_headers() const;
 
-    /// Resolution order: user max_tokens (clamped to model cap) → model cap → 8192. Called with mutex_ held.
+    /// Resolve the user's allowance, or a cost-conscious 4096-token default,
+    /// then clamp it to the model cap. Called with mutex_ held.
     int resolved_max_tokens() const;
 
     // Sync HTTP helpers (QNAM + QEventLoop) — call from background thread only.

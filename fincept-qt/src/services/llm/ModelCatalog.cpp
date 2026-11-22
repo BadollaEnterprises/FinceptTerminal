@@ -162,7 +162,7 @@ const CatalogEntry kCatalog[] = {
     // Fincept's /research/llm(/async) wraps various upstream models, but the
     // API itself rejects max_tokens > 8192 with a 422 (research.py
     // validate_max_tokens). This cap is what resolved_max_tokens() clamps a
-    // user value to — and the value sent when none is set.
+    // user value to; Auto remains the lower cost-conscious reply allowance.
     {"fincept", "*", ModelCatalog::kFinceptMaxOutputTokens},
 };
 

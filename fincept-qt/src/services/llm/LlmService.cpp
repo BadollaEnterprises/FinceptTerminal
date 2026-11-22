@@ -743,19 +743,8 @@ QJsonObject LlmService::profile_to_json(const ResolvedLlmProfile& p) {
 
 int LlmService::resolved_max_tokens() const {
     // Called with mutex_ held.
-    constexpr int kFallback = 8192;
     const int catalog_cap = ModelCatalog::output_cap(provider_, model_);
-
-    // <=0 = unset; clamp user values to the model's published cap to avoid a 400.
-    if (max_tokens_ > 0) {
-        if (catalog_cap > 0 && max_tokens_ > catalog_cap)
-            return catalog_cap;
-        return max_tokens_;
-    }
-
-    if (catalog_cap > 0)
-        return catalog_cap;
-    return kFallback;
+    return resolve_llm_output_tokens(max_tokens_, catalog_cap);
 }
 
 QString LlmService::get_endpoint_url() const {
