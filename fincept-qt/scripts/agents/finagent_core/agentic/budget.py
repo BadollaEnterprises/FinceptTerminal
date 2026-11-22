@@ -16,6 +16,7 @@ intentionally conservative — under-bills slightly so we never block at the
 """
 from __future__ import annotations
 
+import math
 import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional, Tuple
@@ -44,6 +45,30 @@ DEFAULT_MAX_TOKENS = 250_000
 DEFAULT_MAX_COST_USD = 1.0
 DEFAULT_MAX_WALL_S = 900
 DEFAULT_MAX_STEPS = 20
+MAX_MAX_TOKENS = 2_000_000
+MAX_MAX_COST_USD = 100.0
+MAX_MAX_WALL_S = 86_400
+MAX_MAX_STEPS = 200
+
+
+def _bounded_positive_int(value: Any, default: int, maximum: int) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError, OverflowError):
+        return default
+    if parsed <= 0:
+        return default
+    return min(parsed, maximum)
+
+
+def _bounded_positive_float(value: Any, default: float, maximum: float) -> float:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return default
+    if not math.isfinite(parsed) or parsed <= 0:
+        return default
+    return min(parsed, maximum)
 
 
 def _price_for(model_id: str) -> Tuple[float, float]:
@@ -78,13 +103,20 @@ class BudgetGuard:
 
     @classmethod
     def from_config(cls, config: Dict[str, Any]) -> "BudgetGuard":
-        b = config.get("budget") or {}
-        model = (config.get("model") or {}).get("model_id", "")
+        b = config.get("budget")
+        if not isinstance(b, dict):
+            b = {}
+        model_config = config.get("model")
+        if not isinstance(model_config, dict):
+            model_config = {}
+        model = model_config.get("model_id", "")
         guard = cls(
-            max_tokens=int(b.get("max_tokens", DEFAULT_MAX_TOKENS)),
-            max_cost_usd=float(b.get("max_cost_usd", DEFAULT_MAX_COST_USD)),
-            max_wall_s=int(b.get("max_wall_s", DEFAULT_MAX_WALL_S)),
-            max_steps=int(b.get("max_steps", DEFAULT_MAX_STEPS)),
+            max_tokens=_bounded_positive_int(b.get("max_tokens"), DEFAULT_MAX_TOKENS, MAX_MAX_TOKENS),
+            max_cost_usd=_bounded_positive_float(
+                b.get("max_cost_usd"), DEFAULT_MAX_COST_USD, MAX_MAX_COST_USD
+            ),
+            max_wall_s=_bounded_positive_int(b.get("max_wall_s"), DEFAULT_MAX_WALL_S, MAX_MAX_WALL_S),
+            max_steps=_bounded_positive_int(b.get("max_steps"), DEFAULT_MAX_STEPS, MAX_MAX_STEPS),
         )
         guard._model_id = model
         return guard

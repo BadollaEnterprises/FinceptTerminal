@@ -74,6 +74,32 @@ class AgentProviderPolicyTest(unittest.TestCase):
         self.assertEqual(guard.max_wall_s, 900)
         self.assertEqual(guard.max_steps, 20)
 
+    def test_agentic_task_budgets_reject_non_finite_and_bound_extremes(self):
+        budget = load_path("finagent_budget_bounds", AGENT_BUDGET)
+        invalid = budget.BudgetGuard.from_config({"budget": {
+            "max_tokens": -1,
+            "max_cost_usd": "nan",
+            "max_wall_s": "invalid",
+            "max_steps": 0,
+        }})
+        self.assertEqual(invalid.max_tokens, budget.DEFAULT_MAX_TOKENS)
+        self.assertEqual(invalid.max_cost_usd, budget.DEFAULT_MAX_COST_USD)
+        self.assertEqual(invalid.max_wall_s, budget.DEFAULT_MAX_WALL_S)
+        self.assertEqual(invalid.max_steps, budget.DEFAULT_MAX_STEPS)
+        malformed = budget.BudgetGuard.from_config({"budget": [], "model": "bad"})
+        self.assertEqual(malformed.max_tokens, budget.DEFAULT_MAX_TOKENS)
+
+        bounded = budget.BudgetGuard.from_config({"budget": {
+            "max_tokens": 10**12,
+            "max_cost_usd": "inf",
+            "max_wall_s": 10**12,
+            "max_steps": 10**12,
+        }})
+        self.assertEqual(bounded.max_tokens, budget.MAX_MAX_TOKENS)
+        self.assertEqual(bounded.max_cost_usd, budget.DEFAULT_MAX_COST_USD)
+        self.assertEqual(bounded.max_wall_s, budget.MAX_MAX_WALL_S)
+        self.assertEqual(bounded.max_steps, budget.MAX_MAX_STEPS)
+
     def test_agentic_usage_metrics_cannot_reduce_spend(self):
         budget = load_path("finagent_budget_normalization", AGENT_BUDGET)
         guard = budget.BudgetGuard.from_config({"model": {"model_id": "deepseek-chat"}})
