@@ -203,6 +203,8 @@ def _rsi(values: Sequence[float], period: int = 14) -> float:
     changes = [values[i] - values[i - 1] for i in range(len(values) - period, len(values))]
     gain = _mean([max(change, 0) for change in changes])
     loss = _mean([max(-change, 0) for change in changes])
+    if gain == 0 and loss == 0:
+        return 50.0
     if loss == 0:
         return 100.0
     return 100 - 100 / (1 + gain / loss)

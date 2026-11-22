@@ -82,6 +82,15 @@ class ByoAnalyticsTest(unittest.TestCase):
         self.assertEqual(len(result["moving_averages"]), 10)
         self.assertEqual(len(result["oscillators"]), 6)
 
+    def test_technical_rating_treats_flat_rsi_as_neutral(self):
+        mod = load_module()
+        result = mod.technical_rating({"closes": [100.0] * 240})
+
+        self.assertEqual(result["indicators"]["rsi14"], 50.0)
+        self.assertEqual(result["rating"], "NEUTRAL")
+        rsi_vote = next(row for row in result["oscillators"] if row["name"] == "RSI 14")
+        self.assertEqual(rsi_vote["signal"], "NEUTRAL")
+
     def test_market_pulse_weights_available_signals_and_reports_coverage(self):
         mod = load_module()
         result = mod.market_pulse(
