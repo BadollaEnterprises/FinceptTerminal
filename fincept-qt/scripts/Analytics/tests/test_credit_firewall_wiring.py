@@ -263,6 +263,30 @@ class CreditFirewallWiringTest(unittest.TestCase):
                 self.assertLess(body.index("if (deleted.is_err())"), body.index("SecureStorage::instance().remove"))
                 self.assertIn("return deleted", body)
 
+    def test_credential_repositories_remove_secrets_only_after_database_success(self):
+        cases = {
+            "src/storage/repositories/LlmProfileRepository.cpp": (
+                "Result<void> LlmProfileRepository::delete_profile", "Result<void> LlmProfileRepository::set_default"),
+            "src/storage/repositories/McpServerRepository.cpp": (
+                "Result<void> McpServerRepository::remove", "Result<void> McpServerRepository::set_status"),
+            "src/storage/repositories/DataSourceRepository.cpp": (
+                "Result<void> DataSourceRepository::remove", "Result<void> DataSourceRepository::update_health"),
+        }
+        for relative, (start, end) in cases.items():
+            with self.subTest(source=relative):
+                source = (ROOT / relative).read_text(encoding="utf-8")
+                body = source[source.index(start):source.index(end)]
+                self.assertIn("auto deleted = exec_write", body)
+                self.assertIn("if (deleted.is_err())", body)
+                self.assertLess(body.index("if (deleted.is_err())"), body.index("SecureStorage::instance().remove"))
+
+        profiles = (ROOT / "src/storage/repositories/LlmProfileRepository.cpp").read_text(encoding="utf-8")
+        save = profiles[profiles.index("Result<void> LlmProfileRepository::save_profile"):
+                        profiles.index("Result<void> LlmProfileRepository::delete_profile")]
+        self.assertIn("auto saved = exec_write", save)
+        self.assertIn("if (saved.is_ok() && harness)", save)
+        self.assertLess(save.index("auto saved = exec_write"), save.index("SecureStorage::instance().remove"))
+
     def test_local_chat_mode_diagnostics_scrub_conversation_storage_errors(self):
         source = (ROOT / "src/screens/chat_mode/ChatModeScreen.cpp").read_text(encoding="utf-8")
         self.assertIn('#include "core/privacy/LogRedact.h"', source)

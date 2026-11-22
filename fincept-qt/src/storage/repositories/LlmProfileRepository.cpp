@@ -127,22 +127,28 @@ Result<void> LlmProfileRepository::save_profile(const LlmProfile& p) {
     QString column_key = api_key;
     if (!api_key.isEmpty() && SecureStorage::instance().store_verified(profile_secret_key(id), api_key).is_ok())
         column_key.clear();
-    if (harness)
-        SecureStorage::instance().remove(profile_secret_key(id)); // a provider switched to a harness drops its key
-
-    return exec_write("INSERT OR REPLACE INTO llm_profiles "
-                      "  (id, name, provider, model_id, api_key, base_url, "
-                      "   temperature, max_tokens, system_prompt, is_default, reasoning_effort, updated_at) "
-                      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))",
-                      {id, p.name, p.provider, p.model_id, column_key, harness ? QString() : p.base_url,
-                       p.temperature, p.max_tokens, p.system_prompt, (p.is_default && !harness) ? 1 : 0,
-                       p.reasoning_effort.trimmed()});
+    auto saved = exec_write("INSERT OR REPLACE INTO llm_profiles "
+                            "  (id, name, provider, model_id, api_key, base_url, "
+                            "   temperature, max_tokens, system_prompt, is_default, reasoning_effort, updated_at) "
+                            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))",
+                            {id, p.name, p.provider, p.model_id, column_key, harness ? QString() : p.base_url,
+                             p.temperature, p.max_tokens, p.system_prompt, (p.is_default && !harness) ? 1 : 0,
+                             p.reasoning_effort.trimmed()});
+    // Switching an existing provider profile to a harness drops its key only
+    // after the row is safely updated. A failed save must preserve the usable
+    // credential for the unchanged provider profile.
+    if (saved.is_ok() && harness)
+        (void)SecureStorage::instance().remove(profile_secret_key(id));
+    return saved;
 }
 
 Result<void> LlmProfileRepository::delete_profile(const QString& id) {
-    SecureStorage::instance().remove(profile_secret_key(id)); // drop the encrypted key too
     // Assignments cascade-delete via FK ON DELETE CASCADE
-    return exec_write("DELETE FROM llm_profiles WHERE id = ?", {id});
+    auto deleted = exec_write("DELETE FROM llm_profiles WHERE id = ?", {id});
+    if (deleted.is_err())
+        return deleted;
+    (void)SecureStorage::instance().remove(profile_secret_key(id));
+    return deleted;
 }
 
 Result<void> LlmProfileRepository::set_default(const QString& id) {

@@ -335,8 +335,11 @@ Result<void> DataSourceRepository::save(const DataSource& ds) {
 }
 
 Result<void> DataSourceRepository::remove(const QString& id) {
-    SecureStorage::instance().remove(ds_secret_handle(id)); // drop the encrypted credentials too
-    return exec_write("DELETE FROM data_sources WHERE id = ?", {id});
+    auto deleted = exec_write("DELETE FROM data_sources WHERE id = ?", {id});
+    if (deleted.is_err())
+        return deleted;
+    (void)SecureStorage::instance().remove(ds_secret_handle(id));
+    return deleted;
 }
 
 Result<void> DataSourceRepository::update_health(const QString& id, const QString& status, const QString& code,

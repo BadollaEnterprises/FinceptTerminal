@@ -59,8 +59,11 @@ Result<void> McpServerRepository::save(const McpServer& s) {
 }
 
 Result<void> McpServerRepository::remove(const QString& id) {
-    SecureStorage::instance().remove(mcp_env_secret_key(id)); // drop the encrypted env too
-    return exec_write("DELETE FROM mcp_servers WHERE id = ?", {id});
+    auto deleted = exec_write("DELETE FROM mcp_servers WHERE id = ?", {id});
+    if (deleted.is_err())
+        return deleted;
+    (void)SecureStorage::instance().remove(mcp_env_secret_key(id));
+    return deleted;
 }
 
 Result<void> McpServerRepository::set_status(const QString& id, const QString& status) {
