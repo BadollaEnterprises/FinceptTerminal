@@ -87,6 +87,31 @@ class PublicDataTest(unittest.TestCase):
         self.assertEqual(result["fallback_from"], "GDELT DOC 2.0")
         self.assertEqual(result["rows"][0]["domain"], "example.test")
 
+    def test_public_fetch_rejects_local_files_and_private_networks(self):
+        module = load_module(self)
+
+        def public_dns(*_args, **_kwargs):
+            return [(module.socket.AF_INET, module.socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))]
+
+        def private_dns(*_args, **_kwargs):
+            return [(module.socket.AF_INET, module.socket.SOCK_STREAM, 6, "", ("10.0.0.7", 443))]
+
+        self.assertEqual(
+            module._validate_public_url("https://feeds.example.com/news.xml", resolver=public_dns),
+            "https://feeds.example.com/news.xml",
+        )
+        for url in (
+            "file:///etc/passwd",
+            "http://localhost/feed",
+            "http://127.0.0.1/feed",
+            "http://[::1]/feed",
+            "http://169.254.169.254/latest/meta-data/",
+        ):
+            with self.subTest(url=url), self.assertRaisesRegex(ValueError, "public HTTP"):
+                module._validate_public_url(url, resolver=public_dns)
+        with self.assertRaisesRegex(ValueError, "public HTTP"):
+            module._validate_public_url("https://feeds.example.com/news.xml", resolver=private_dns)
+
 
 if __name__ == "__main__":
     unittest.main()

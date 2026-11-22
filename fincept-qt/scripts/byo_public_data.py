@@ -8,8 +8,10 @@ Fincept endpoint, credential access, paid fallback, or model dependency.
 from __future__ import annotations
 
 import csv
+import ipaddress
 import io
 import json
+import socket
 import sys
 import urllib.parse
 import urllib.request
@@ -19,6 +21,50 @@ from typing import Any, Dict, Mapping
 
 USER_AGENT = "FinceptTerminalCommunity/4.5 public-data-adapter"
 GEOPOLITICS_RSS_FALLBACK = "https://feeds.bbci.co.uk/news/world/rss.xml"
+
+
+def _validate_public_url(url: str, *, resolver=socket.getaddrinfo) -> str:
+    """Allow only web URLs whose current DNS answers are globally routable.
+
+    RSS URLs can be supplied by an LLM tool call, so treating them as arbitrary
+    urllib targets would also allow ``file://`` reads and requests to loopback,
+    LAN, link-local, or cloud-metadata services.
+    """
+    text = str(url or "").strip()
+    parsed = urllib.parse.urlsplit(text)
+    if parsed.scheme.lower() not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password:
+        raise ValueError("public HTTP URL must use http(s), include a host, and contain no credentials")
+    host = parsed.hostname.rstrip(".").lower()
+    if host == "localhost" or host.endswith((".localhost", ".local")):
+        raise ValueError("public HTTP URL cannot target a local or private address")
+    try:
+        port = parsed.port or (443 if parsed.scheme.lower() == "https" else 80)
+    except ValueError as exc:
+        raise ValueError("public HTTP URL has an invalid port") from exc
+
+    try:
+        literal = ipaddress.ip_address(host)
+        addresses = [literal]
+    except ValueError:
+        try:
+            answers = resolver(host, port, type=socket.SOCK_STREAM)
+        except OSError as exc:
+            raise ValueError(f"public HTTP host could not be resolved: {host}") from exc
+        addresses = []
+        for answer in answers:
+            try:
+                addresses.append(ipaddress.ip_address(answer[4][0]))
+            except (IndexError, ValueError):
+                continue
+    if not addresses or any(not address.is_global for address in addresses):
+        raise ValueError("public HTTP URL cannot target a local or private address")
+    return text
+
+
+class _PublicRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        _validate_public_url(newurl)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
 def _sources():
@@ -145,8 +191,10 @@ def parse_feed(text: str) -> Dict[str, Any]:
 
 
 def _get(url: str, *, json_response: bool = False):
-    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": "application/json,text/csv,*/*"})
-    with urllib.request.urlopen(request, timeout=30) as response:
+    safe_url = _validate_public_url(url)
+    request = urllib.request.Request(safe_url, headers={"User-Agent": USER_AGENT, "Accept": "application/json,text/csv,*/*"})
+    opener = urllib.request.build_opener(_PublicRedirectHandler())
+    with opener.open(request, timeout=30) as response:
         raw = response.read().decode("utf-8", errors="replace")
     return json.loads(raw) if json_response else raw
 
