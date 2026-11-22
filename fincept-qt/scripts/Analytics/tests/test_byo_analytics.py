@@ -173,6 +173,28 @@ class ByoAnalyticsTest(unittest.TestCase):
         self.assertEqual(result["unusual_activity"][0]["strike"], 90.0)
         self.assertEqual(result["unusual_activity"][0]["side"], "PUT")
 
+    def test_options_positioning_accepts_zero_bid_with_positive_ask(self):
+        mod = load_module()
+        result = mod.options_positioning({
+            "spot": 100,
+            "time_to_expiry": 30 / 365,
+            "chain": [{
+                "strike": 100,
+                "call_bid": 0.0,
+                "call_ask": 2.0,
+                "put_bid": 0.0,
+                "put_ask": 2.0,
+            }],
+        })
+        self.assertEqual(result["expected_move"], 2.0)
+        self.assertEqual(result["expected_move_pct"], 0.02)
+
+        incomplete = mod.options_positioning({
+            "spot": 100,
+            "chain": [{"strike": 100, "call_ask": 2.0, "put_bid": 0.0, "put_ask": 2.0}],
+        })
+        self.assertIsNone(incomplete["expected_move"])
+
     def test_put_implied_volatility_accepts_valid_price_above_spot(self):
         mod = load_module()
         spot, strike, years, rate, volatility = 50.0, 120.0, 1.0, 0.04, 0.30

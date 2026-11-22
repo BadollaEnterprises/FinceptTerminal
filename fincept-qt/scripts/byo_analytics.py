@@ -377,6 +377,10 @@ def _row_value(row: Mapping[str, Any], *names: str) -> float:
     return 0.0
 
 
+def _row_has_value(row: Mapping[str, Any], *names: str) -> bool:
+    return any(name in row and row[name] is not None for name in names)
+
+
 def _normal_cdf(value: float) -> float:
     return 0.5 * (1.0 + math.erf(value / math.sqrt(2.0)))
 
@@ -457,6 +461,12 @@ def options_positioning(payload: Mapping[str, Any]) -> Dict[str, Any]:
         for field, value in row.items():
             if field != "strike" and value < 0:
                 raise ValueError(f"{field} must be non-negative")
+        row["call_quote_complete"] = (
+            _row_has_value(raw, "call_bid", "ce_bid") and _row_has_value(raw, "call_ask", "ce_ask")
+        )
+        row["put_quote_complete"] = (
+            _row_has_value(raw, "put_bid", "pe_bid") and _row_has_value(raw, "put_ask", "pe_ask")
+        )
         chain.append(row)
     call_oi = sum(row["call_oi"] for row in chain)
     put_oi = sum(row["put_oi"] for row in chain)
@@ -474,8 +484,10 @@ def options_positioning(payload: Mapping[str, Any]) -> Dict[str, Any]:
         )
     max_pain = min(pain_by_strike, key=lambda strike: (pain_by_strike[strike], abs(strike - spot)))
     for row in chain:
-        call_mid = (row["call_bid"] + row["call_ask"]) / 2.0 if row["call_bid"] and row["call_ask"] else 0.0
-        put_mid = (row["put_bid"] + row["put_ask"]) / 2.0 if row["put_bid"] and row["put_ask"] else 0.0
+        call_mid = ((row["call_bid"] + row["call_ask"]) / 2.0
+                    if row["call_quote_complete"] else 0.0)
+        put_mid = ((row["put_bid"] + row["put_ask"]) / 2.0
+                   if row["put_quote_complete"] else 0.0)
         row["call_mid"] = call_mid
         row["put_mid"] = put_mid
         row["call_iv"] = _implied_volatility(call_mid, spot, row["strike"], years, rate, True) if call_mid else None
