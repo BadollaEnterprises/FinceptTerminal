@@ -415,6 +415,14 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertIn("Could not reset keybindings", section)
         self.assertIn("privacy::redact_text", section)
 
+    def test_input_memory_preserves_live_state_when_clear_fails(self):
+        source = (ROOT / "src/ui/widgets/InputMemory.cpp").read_text(encoding="utf-8")
+        clear = source[source.index("void InputMemory::clear()"):]
+        self.assertLess(clear.index("if (r.is_err())"), clear.index("forget_values()"))
+        failure = clear[clear.index("if (r.is_err())"):clear.index("forget_values()")]
+        self.assertIn("return;", failure)
+        self.assertIn("privacy::redact_text", source)
+
     def test_llm_settings_diagnostics_scrub_storage_errors_and_profile_identity(self):
         providers = (ROOT / "src/screens/settings/LlmConfigSection_Providers.cpp").read_text(encoding="utf-8")
         profiles = (ROOT / "src/screens/settings/LlmConfigSection_Profiles.cpp").read_text(encoding="utf-8")

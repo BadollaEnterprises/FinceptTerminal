@@ -7,6 +7,7 @@
 #include "ui/widgets/InputMemory.h"
 
 #include "core/logging/Logger.h"
+#include "core/privacy/LogRedact.h"
 #include "storage/repositories/SettingsRepository.h"
 #include "ui/widgets/symbol/SymbolSearchBox.h"
 
@@ -555,8 +556,9 @@ bool InputMemory::ensure_loaded() {
     if (r.is_err()) {
         // The stored value is unknown, not absent: never write over it from this state.
         load_failed_ = true;
-        LOG_WARN("InputMemory", QStringLiteral("%1: stored inputs could not be read: %2")
-                                    .arg(storage_key(), QString::fromStdString(r.error())));
+        const QString detail = privacy::redact_text(QString::fromStdString(r.error()));
+        LOG_WARN("InputMemory",
+                 QStringLiteral("%1: stored inputs could not be read: %2").arg(storage_key(), detail));
         return false;
     }
     load_failed_ = false;
@@ -744,7 +746,8 @@ void InputMemory::save_now() {
     const Result<void> r =
         SettingsRepository::instance().set(storage_key(), imd::encode(merged, sig), imd::settings_category());
     if (r.is_err()) {
-        LOG_WARN("InputMemory", QStringLiteral("%1: inputs not saved: %2").arg(storage_key(), QString::fromStdString(r.error())));
+        const QString detail = privacy::redact_text(QString::fromStdString(r.error()));
+        LOG_WARN("InputMemory", QStringLiteral("%1: inputs not saved: %2").arg(storage_key(), detail));
         return;
     }
     stored_ = merged;
@@ -779,8 +782,11 @@ void InputMemory::set_view(const QString& view_id) {
 void InputMemory::clear() {
     save_timer_->stop();
     const Result<void> r = SettingsRepository::instance().remove(storage_key());
-    if (r.is_err())
-        LOG_WARN("InputMemory", QStringLiteral("%1: not cleared: %2").arg(storage_key(), QString::fromStdString(r.error())));
+    if (r.is_err()) {
+        const QString detail = privacy::redact_text(QString::fromStdString(r.error()));
+        LOG_WARN("InputMemory", QStringLiteral("%1: not cleared: %2").arg(storage_key(), detail));
+        return;
+    }
     forget_values();
     stored_.clear();
     stored_sig_.clear();
