@@ -859,9 +859,15 @@ class CreditFirewallWiringTest(unittest.TestCase):
 
     def test_interactive_chat_auto_output_uses_cost_conscious_default(self):
         source = (ROOT / "src/services/llm/LlmService.cpp").read_text(encoding="utf-8")
+        routed = source[source.index("QJsonObject LlmService::resolved_config_json"):
+                        source.index("int LlmService::active_max_tool_rounds")]
+        profile = source[source.index("QJsonObject LlmService::profile_to_json"):
+                         source.index("int LlmService::resolved_max_tokens")]
         resolver = source[source.index("int LlmService::resolved_max_tokens"):
                           source.index("QString LlmService::get_endpoint_url")]
 
+        self.assertIn("resolve_llm_output_tokens(cfg.max_tokens, catalog_cap)", routed)
+        self.assertIn("resolve_llm_output_tokens(p.max_tokens, catalog_cap)", profile)
         self.assertIn("resolve_llm_output_tokens(max_tokens_, catalog_cap)", resolver)
         self.assertNotIn("return catalog_cap", resolver)
         self.assertNotIn("constexpr int kFallback", resolver)

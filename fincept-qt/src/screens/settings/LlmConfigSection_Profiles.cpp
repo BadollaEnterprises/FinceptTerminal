@@ -43,10 +43,9 @@ constexpr int kLlmProfilesTokensMax = 128000;
 namespace fincept::screens {
 
 namespace {
-// The Fincept API rejects max_tokens above ModelCatalog::kFinceptMaxOutputTokens
-// and profile_to_json() caps a Fincept profile there, so its field must not
-// offer more — the same ceiling the main LLM settings section applies. Setting
-// the maximum also brings a stored larger value down to what is really sent.
+// The Fincept API rejects max_tokens above ModelCatalog::kFinceptMaxOutputTokens,
+// so its field must not offer more. Other profiles retain the editor's broad
+// range; profile_to_json() applies their selected model's exact runtime cap.
 void llm_profiles_apply_tokens_cap(QSpinBox* spin, const QString& provider) {
     if (!spin)
         return;

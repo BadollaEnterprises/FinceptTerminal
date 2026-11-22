@@ -668,8 +668,8 @@ QJsonObject LlmService::resolved_config_json(const ChatRoute& route) const {
     out[QStringLiteral("api_key")] = cfg.api_key;
     out[QStringLiteral("base_url")] = cfg.base_url;
     out[QStringLiteral("temperature")] = cfg.temperature;
-    if (cfg.max_tokens > 0)
-        out[QStringLiteral("max_tokens")] = cfg.max_tokens;
+    const int catalog_cap = ModelCatalog::output_cap(cfg.provider, cfg.model);
+    out[QStringLiteral("max_tokens")] = resolve_llm_output_tokens(cfg.max_tokens, catalog_cap);
     return out;
 }
 
@@ -726,16 +726,11 @@ QJsonObject LlmService::profile_to_json(const ResolvedLlmProfile& p) {
     obj["api_key"] = p.api_key;
     obj["base_url"] = p.base_url;
     obj["temperature"] = p.temperature;
-    // A profile may hold up to 128000; the Fincept API 422s anything above its
-    // ceiling, so a Fincept-backed agent gets the clamped value. Other
-    // providers keep the profile's own number.
-    // A profile with max_tokens <= 0 has no limit set: omit the key (sending 0
-    // made the provider reject or truncate the request) and let the agent side
-    // apply its default.
-    if (p.max_tokens > 0)
-        obj["max_tokens"] = p.provider.compare(QLatin1String("fincept"), Qt::CaseInsensitive) == 0
-                                ? std::min(p.max_tokens, ModelCatalog::kFinceptMaxOutputTokens)
-                                : p.max_tokens;
+    // Apply the same automatic allowance and per-model hard ceiling used by
+    // interactive chat. Python agents must not bypass the cost and validity
+    // guardrails merely because their configuration crosses a JSON boundary.
+    const int catalog_cap = ModelCatalog::output_cap(p.provider, p.model_id);
+    obj["max_tokens"] = resolve_llm_output_tokens(p.max_tokens, catalog_cap);
     if (!p.system_prompt.isEmpty())
         obj["system_prompt"] = p.system_prompt;
     return obj;
