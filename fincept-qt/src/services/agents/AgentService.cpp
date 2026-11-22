@@ -11,6 +11,7 @@
 #include "services/agents/AgentService.h"
 
 #include "auth/AuthManager.h"
+#include "core/config/AppConfig.h"
 #include "core/config/AppPaths.h"
 #include "core/process/ProcessTree.h"
 #include "core/events/EventBus.h"
@@ -25,6 +26,7 @@
 #include "python/PythonRunner.h"
 #include "python/PythonSetupManager.h"
 #include "services/llm/LlmService.h"
+#include "services/llm/LlmBudgetSettings.h"
 #include "services/llm/ModelRouter.h"
 #include "storage/cache/CacheManager.h"
 #include "storage/repositories/AgentConfigRepository.h"
@@ -574,6 +576,12 @@ QJsonObject AgentService::build_payload(const QString& action, const QJsonObject
     QJsonObject payload;
     payload["action"] = action;
     payload["api_keys"] = build_api_keys();
+    ai_chat::LlmBudgetSettings input_budget;
+    input_budget.history_chars =
+        AppConfig::instance()
+            .get(ai_chat::kLlmHistoryCharsKey, QVariant(ai_chat::kDefaultLlmHistoryChars))
+            .toInt();
+    payload["input_max_chars"] = ai_chat::validate_llm_budget_settings(input_budget).history_chars;
 
     // Inject the resolved LLM config as active_llm so Python can build the exact
     // model instance without re-resolving credentials.

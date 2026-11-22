@@ -67,7 +67,31 @@ def load_path(name, path):
     return module
 
 
+def load_agent_main():
+    return load_path("finagent_main_budget_test", AGENT_MAIN)
+
+
 class AgentProviderPolicyTest(unittest.TestCase):
+    def test_agent_requests_share_the_terminal_input_budget(self):
+        main = load_agent_main()
+        self.assertIsNone(main._input_budget_error({"query": "short"}, {}, 48_000))
+        self.assertIsNone(main._input_budget_error({"query": "x" * 50_000}, {}, 0))
+        self.assertIn(
+            "No provider request was sent",
+            main._input_budget_error({"query": "x" * 48_001}, {}, 48_000),
+        )
+        self.assertIn(
+            "No provider request was sent",
+            main._input_budget_error(
+                {"query": "x" * 30_000}, {"instructions": ["y" * 20_000]}, 48_000
+            ),
+        )
+
+        service = AGENT_SERVICE.read_text(encoding="utf-8")
+        payload = service[service.index("QJsonObject AgentService::build_payload"):]
+        self.assertIn('payload["input_max_chars"]', payload)
+        self.assertIn("kLlmHistoryCharsKey", payload)
+
     def test_agentic_tasks_have_cost_conscious_implicit_budgets(self):
         budget = load_path("finagent_budget_defaults", AGENT_BUDGET)
         guard = budget.BudgetGuard.from_config({"model": {"model_id": "deepseek-chat"}})
