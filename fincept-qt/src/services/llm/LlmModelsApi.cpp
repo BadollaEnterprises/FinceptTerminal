@@ -194,8 +194,12 @@ void LlmService::fetch_models(const QString& provider, const QString& api_key, c
         models_nam_ = new QNetworkAccessManager(this);
 
     QNetworkRequest req{QUrl(url)};
-    // Never forward an API-key header to another origin through a redirect.
+    // Model discovery carries the same user-owned key as chat. Never forward
+    // it cross-origin, and do not mix API authentication with cookies a prior
+    // response may have placed in this long-lived QNAM's jar.
     req.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::SameOriginRedirectPolicy);
+    req.setAttribute(QNetworkRequest::CookieLoadControlAttribute, QNetworkRequest::Manual);
+    req.setAttribute(QNetworkRequest::CookieSaveControlAttribute, QNetworkRequest::Manual);
     auto headers = get_models_headers(provider, api_key);
     for (auto it = headers.constBegin(); it != headers.constEnd(); ++it)
         req.setRawHeader(it.key().toUtf8(), it.value().toUtf8());

@@ -24,6 +24,7 @@ AGENT_SERVICE_HEADER = AGENT_SERVICE.with_suffix(".h")
 AGENT_SERVICE_DISCOVERY = AGENT_SERVICE.with_name("AgentService_Discovery.cpp")
 LLM_SERVICE_HEADER = MODULE.parents[3] / "src" / "services" / "llm" / "LlmService.h"
 LLM_SERVICE_SOURCE = LLM_SERVICE_HEADER.with_suffix(".cpp")
+LLM_MODELS_API = LLM_SERVICE_HEADER.with_name("LlmModelsApi.cpp")
 AGENT_MAIN = MODULE.with_name("main.py")
 AGENT_BUDGET = MODULE.parent / "agentic" / "budget.py"
 INPUT_BUDGET = MODULE.parent / "input_budget.py"
@@ -77,6 +78,13 @@ def load_agent_main():
 
 
 class AgentProviderPolicyTest(unittest.TestCase):
+    def test_model_discovery_does_not_share_cookies_with_keyed_requests(self):
+        source = LLM_MODELS_API.read_text(encoding="utf-8")
+        fetch = source[source.index("void LlmService::fetch_models") :]
+        self.assertIn("QNetworkRequest::SameOriginRedirectPolicy", fetch)
+        self.assertIn("QNetworkRequest::CookieLoadControlAttribute", fetch)
+        self.assertIn("QNetworkRequest::CookieSaveControlAttribute", fetch)
+
     def test_finagent_step_limits_bound_imported_agent_configs(self):
         limits = load_path("finagent_runtime_limits", FINAGENT_RUNTIME_LIMITS)
 
