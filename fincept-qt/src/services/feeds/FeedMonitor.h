@@ -30,7 +30,7 @@ class FeedMonitor : public QObject {
 
     // CRUD — persist + re-arm timers + emit subscriptions_changed().
     Result<void> add_or_update(const FeedSubscription& sub);
-    void remove(const QString& feed_id);
+    Result<void> remove(const QString& feed_id);
     void set_enabled(const QString& feed_id, bool enabled);
 
     void refresh_now(const QString& feed_id);

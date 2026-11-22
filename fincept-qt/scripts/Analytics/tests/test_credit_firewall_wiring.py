@@ -274,7 +274,7 @@ class CreditFirewallWiringTest(unittest.TestCase):
         service = (ROOT / "src/services/feeds/FeedMonitor.cpp").read_text(encoding="utf-8")
         panel = (ROOT / "src/screens/common/feeds/FeedPanel.cpp").read_text(encoding="utf-8")
         save_start = service.index("FeedMonitor::add_or_update") - 20
-        save_path = service[save_start:service.index("void FeedMonitor::remove")]
+        save_path = service[save_start:service.index("FeedMonitor::remove") - 20]
         self.assertIn("Result<void> add_or_update", header)
         self.assertIn("const auto saved = FeedSubscriptionRepository::instance().upsert(sub);", save_path)
         self.assertIn("if (saved.is_err())", save_path)
@@ -283,6 +283,22 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertIn("const auto saved = FeedMonitor::instance().add_or_update(s);", panel)
         self.assertIn("Could not save the feed", panel)
         self.assertIn("privacy::redact_text", panel)
+
+    def test_feed_delete_keeps_runtime_state_when_subscription_delete_fails(self):
+        header = (ROOT / "src/services/feeds/FeedMonitor.h").read_text(encoding="utf-8")
+        service = (ROOT / "src/services/feeds/FeedMonitor.cpp").read_text(encoding="utf-8")
+        panel = (ROOT / "src/screens/common/feeds/FeedPanel.cpp").read_text(encoding="utf-8")
+        remove_start = service.index("FeedMonitor::remove") - 20
+        remove_path = service[remove_start:service.index("void FeedMonitor::set_enabled")]
+        panel_delete = panel[panel.index("if (dlg.delete_requested())"):panel.index("const FeedSubscription s")]
+        self.assertIn("Result<void> remove", header)
+        self.assertIn("const auto removed = FeedSubscriptionRepository::instance().remove(id);", remove_path)
+        self.assertIn("if (removed.is_err())", remove_path)
+        self.assertLess(remove_path.index("if (removed.is_err())"), remove_path.index("disarm_timer(id)"))
+        self.assertIn("return removed;", remove_path)
+        self.assertIn("const auto removed = FeedMonitor::instance().remove(feed_id);", panel_delete)
+        self.assertLess(panel_delete.index("if (removed.is_err())"), panel_delete.index("floating_[feed_id]->close()"))
+        self.assertIn("Could not delete the feed", panel_delete)
 
     def test_llm_settings_diagnostics_scrub_storage_errors_and_profile_identity(self):
         providers = (ROOT / "src/screens/settings/LlmConfigSection_Providers.cpp").read_text(encoding="utf-8")

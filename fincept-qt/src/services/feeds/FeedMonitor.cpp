@@ -1,5 +1,7 @@
 #include "services/feeds/FeedMonitor.h"
 
+#include "core/logging/Logger.h"
+#include "core/privacy/LogRedact.h"
 #include "services/feeds/FeedParseUtil.h"
 #include "services/feeds/FeedScraper.h"
 #include "storage/repositories/FeedItemRepository.h"
@@ -18,6 +20,7 @@ namespace fincept::feeds {
 
 namespace {
 
+constexpr const char* kFeedMonitorTag = "FeedMonitor";
 const char* kBrowserUA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                          "(KHTML, like Gecko) Chrome/120.0 Safari/537.36";
 constexpr int kTransferTimeoutMs = 15000;
@@ -180,17 +183,24 @@ Result<void> FeedMonitor::add_or_update(const FeedSubscription& sub) {
     return saved;
 }
 
-void FeedMonitor::remove(const QString& id) {
-    FeedSubscriptionRepository::instance().remove(id);
-    FeedItemRepository::instance().clear(id); // drop stored history too
+Result<void> FeedMonitor::remove(const QString& id) {
+    const auto removed = FeedSubscriptionRepository::instance().remove(id);
+    if (removed.is_err())
+        return removed;
+    const auto cleared = FeedItemRepository::instance().clear(id); // drop stored history too
+    if (cleared.is_err())
+        LOG_WARN(kFeedMonitorTag,
+                 QStringLiteral("Feed history cleanup failed: %1")
+                     .arg(privacy::redact_text(QString::fromStdString(cleared.error()))));
     disarm_timer(id);
     // The per-feed QTimer is parented to this singleton, so dropping the map
     // entry alone leaked one timer per removed feed.
-    const auto removed = feeds_.find(id);
-    if (removed != feeds_.end() && removed->timer)
-        removed->timer->deleteLater();
+    const auto entry = feeds_.find(id);
+    if (entry != feeds_.end() && entry->timer)
+        entry->timer->deleteLater();
     feeds_.remove(id);
     emit subscriptions_changed();
+    return removed;
 }
 
 void FeedMonitor::set_enabled(const QString& id, bool enabled) {

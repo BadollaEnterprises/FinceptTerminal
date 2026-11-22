@@ -125,9 +125,16 @@ void FeedPanel::open_config(const QString& feed_id) {
     if (dlg.exec() == QDialog::Accepted) {
         if (dlg.delete_requested()) {
             if (!feed_id.isEmpty()) {
+                const auto removed = FeedMonitor::instance().remove(feed_id);
+                if (removed.is_err()) {
+                    QMessageBox::warning(
+                        this, tr("Delete feed"),
+                        tr("Could not delete the feed: %1")
+                            .arg(privacy::redact_text(QString::fromStdString(removed.error()))));
+                    return;
+                }
                 if (floating_.contains(feed_id))
                     floating_[feed_id]->close(); // closeEvent -> closed -> remove from floating_
-                FeedMonitor::instance().remove(feed_id);
             }
             return;
         }
