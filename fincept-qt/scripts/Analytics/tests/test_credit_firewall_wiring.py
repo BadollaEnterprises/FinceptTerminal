@@ -300,6 +300,19 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertLess(panel_delete.index("if (removed.is_err())"), panel_delete.index("floating_[feed_id]->close()"))
         self.assertIn("Could not delete the feed", panel_delete)
 
+    def test_feed_refresh_reports_offline_cache_write_failures(self):
+        service = (ROOT / "src/services/feeds/FeedMonitor.cpp").read_text(encoding="utf-8")
+        fetch_path = service[
+            service.index("void FeedMonitor::fetch"):
+            service.index("FeedMonitor::add_or_update") - 20
+        ]
+        self.assertIn("const auto stored = FeedItemRepository::instance().upsert", fetch_path)
+        self.assertIn("if (stored.is_err())", fetch_path)
+        self.assertIn("const auto pruned = FeedItemRepository::instance().prune", fetch_path)
+        self.assertIn("if (pruned.is_err())", fetch_path)
+        self.assertIn("offline cache unavailable", fetch_path)
+        self.assertIn("privacy::redact_text", fetch_path)
+
     def test_llm_settings_diagnostics_scrub_storage_errors_and_profile_identity(self):
         providers = (ROOT / "src/screens/settings/LlmConfigSection_Providers.cpp").read_text(encoding="utf-8")
         profiles = (ROOT / "src/screens/settings/LlmConfigSection_Profiles.cpp").read_text(encoding="utf-8")

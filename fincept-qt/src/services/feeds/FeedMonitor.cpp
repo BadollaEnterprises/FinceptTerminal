@@ -159,13 +159,24 @@ void FeedMonitor::fetch(const FeedSubscription& sub) {
         it->items = merged;
         it->status = FeedStatus::Ok;
         // Persist newly-seen items for offline cache + history (capped per feed).
+        QString cache_error;
         if (fsub.persist) {
             const qint64 now_ts = QDateTime::currentSecsSinceEpoch();
-            FeedItemRepository::instance().upsert(id, parsed, now_ts);
-            FeedItemRepository::instance().prune(id, kMaxHistory);
+            const auto stored = FeedItemRepository::instance().upsert(id, parsed, now_ts);
+            if (stored.is_err()) {
+                cache_error = privacy::redact_text(QString::fromStdString(stored.error()));
+            } else {
+                const auto pruned = FeedItemRepository::instance().prune(id, kMaxHistory);
+                if (pruned.is_err())
+                    cache_error = privacy::redact_text(QString::fromStdString(pruned.error()));
+            }
         }
+        if (!cache_error.isEmpty())
+            LOG_WARN(kFeedMonitorTag, QStringLiteral("Feed offline cache write failed: %1").arg(cache_error));
         emit feed_updated(id, merged);
-        emit feed_status(id, FeedStatus::Ok, QStringLiteral("Updated"));
+        emit feed_status(id, FeedStatus::Ok,
+                         cache_error.isEmpty() ? QStringLiteral("Updated")
+                                               : QStringLiteral("Updated — offline cache unavailable"));
     });
 }
 
