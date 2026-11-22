@@ -83,31 +83,43 @@ run_with_timeout() {
     wait "$pid"
 }
 
-# Echo the discovered self-test flags, one per line. Falls back silently.
+# Echo the discovered self-test flags, one per line. A binary that advertises
+# --selftest-list but cannot produce a clean list fails closed: silently using
+# the fallback there can skip a newly added suite while reporting success.
 discover_selftests() {
     local bin="$1" profile="$2" listing rc=1
     if grep -aq -- '--selftest-list' "$bin" 2>/dev/null; then
         listing="$(mktemp)"
         if run_with_timeout 60 "$bin" --profile "$profile" --selftest-list >"$listing" 2>/dev/null; then
             rc=0
+        else
+            rc=$?
         fi
-        if [ "$rc" -eq 0 ] && [ -s "$listing" ]; then
-            # Accept only if EVERY non-empty line is a --selftest-* flag; any
-            # other output means we caught log noise, not a flag listing.
-            local cleaned
-            cleaned="$(tr -d '\r' <"$listing" | sed '/^[[:space:]]*$/d')"
-            if [ -n "$cleaned" ] && ! printf '%s\n' "$cleaned" | grep -qvE '^--selftest-[a-z0-9-]+$'; then
-                local count
-                count="$(printf '%s\n' "$cleaned" | wc -l | tr -d '[:space:]')"
-                echo "discovered ${count} self-test(s) via --selftest-list" >&2
-                printf '%s\n' "$cleaned"
-                rm -f "$listing"
-                return 0
-            fi
+        if [ "$rc" -ne 0 ]; then
+            echo "::error::${bin##*/} --selftest-list failed (exit ${rc})" >&2
+            rm -f "$listing"
+            return "$rc"
         fi
+        # Accept only if EVERY non-empty line is a --selftest-* flag; any
+        # other output means we caught log noise, not a flag listing.
+        local cleaned
+        cleaned="$(tr -d '\r' <"$listing" | sed '/^[[:space:]]*$/d')"
         rm -f "$listing"
+        if [ -z "$cleaned" ]; then
+            echo "::error::${bin##*/} advertises --selftest-list but returned no suites" >&2
+            return 1
+        fi
+        if printf '%s\n' "$cleaned" | grep -qvE '^--selftest-[a-z0-9-]+$'; then
+            echo "::error::${bin##*/} returned malformed --selftest-list output" >&2
+            return 1
+        fi
+        local count
+        count="$(printf '%s\n' "$cleaned" | wc -l | tr -d '[:space:]')"
+        echo "discovered ${count} self-test(s) via --selftest-list" >&2
+        printf '%s\n' "$cleaned"
+        return 0
     fi
-    echo "::warning::${bin##*/} has no usable --selftest-list — using this script's fallback list (it can drift from main.cpp; see CROSS-FILE note)" >&2
+    echo "::warning::${bin##*/} predates --selftest-list — using this script's fallback list" >&2
     printf '%s\n' "$FALLBACK_SELFTESTS" | sed '/^[[:space:]]*$/d'
 }
 
@@ -138,6 +150,10 @@ case "$MODE" in
         echo "Self-tests: binary=$BINARY profile=$PROFILE platform=${QT_QPA_PLATFORM:-<native>}"
         FAILED=""
         PASSED=0
+        if ! SELFTESTS="$(discover_selftests "$BINARY" "$PROFILE")"; then
+            echo "::error::could not discover the packaged self-test suite"
+            exit 1
+        fi
         while IFS= read -r flag; do
             [ -n "$flag" ] || continue
             echo "::group::self-test $flag"
@@ -152,7 +168,7 @@ case "$MODE" in
             fi
             echo "::endgroup::"
         done <<EOF
-$(discover_selftests "$BINARY" "$PROFILE")
+$SELFTESTS
 EOF
         if [ -n "$FAILED" ]; then
             echo "::error::self-tests failed:${FAILED}"
