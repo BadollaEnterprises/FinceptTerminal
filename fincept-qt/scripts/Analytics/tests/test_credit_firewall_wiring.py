@@ -828,6 +828,20 @@ class CreditFirewallWiringTest(unittest.TestCase):
                 self.assertIn("db().rollback()", commit)
                 self.assertLess(commit.index("db().rollback()"), commit.index("return"))
 
+        coding = (ROOT / "src/services/coding_agents/CodingAgentRepository.cpp").read_text(encoding="utf-8")
+        for start, end in (
+            ("Result<void> CodingAgentRepository::delete_runs", "Result<int> CodingAgentRepository::prune_runs"),
+            ("Result<int> CodingAgentRepository::prune_runs",
+             "Result<int> CodingAgentRepository::mark_unfinished_interrupted"),
+        ):
+            with self.subTest(method=start):
+                body = coding[coding.index(start):coding.index(end)]
+                self.assertNotIn("return db().commit()", body)
+                commit = body[body.rindex("db().commit()") :]
+                self.assertIn("if (committed.is_err())", commit)
+                self.assertIn("db().rollback()", commit)
+                self.assertLess(commit.index("db().rollback()"), commit.index("return"))
+
     def test_broker_auth_diagnostics_redact_provider_errors(self):
         for relative, minimum in (
             ("src/trading/brokers/angelone/AngelOneBroker.cpp", 2),

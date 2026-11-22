@@ -225,7 +225,12 @@ Result<void> CodingAgentRepository::delete_runs(const QStringList& ids) const {
             return Result<void>::err(r1.is_err() ? r1.error() : r2.error());
         }
     }
-    return db().commit();
+    const auto committed = db().commit();
+    if (committed.is_err()) {
+        db().rollback();
+        return committed;
+    }
+    return Result<void>::ok();
 }
 
 Result<int> CodingAgentRepository::prune_runs(int keep_newest) const {
@@ -248,9 +253,11 @@ Result<int> CodingAgentRepository::prune_runs(int keep_newest) const {
         return Result<int>::err(r2.error());
     }
     const int deleted = r2.value().numRowsAffected();
-    auto c = db().commit();
-    if (c.is_err())
-        return Result<int>::err(c.error());
+    const auto committed = db().commit();
+    if (committed.is_err()) {
+        db().rollback();
+        return Result<int>::err(committed.error());
+    }
     return Result<int>::ok(qMax(0, deleted));
 }
 
