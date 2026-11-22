@@ -114,4 +114,20 @@ inline ProviderUsage parse_provider_usage(const QJsonObject& response, const QSt
     return normalize_provider_usage(out);
 }
 
+/// Parse the usage object observed while consuming an SSE response. Anthropic
+/// splits input tokens into message_start and output/cache tokens into later
+/// events, while OpenAI-compatible providers send the complete object at the
+/// tail. Keeping this provider-neutral lets callers account for an observed
+/// usage event even when the stream is subsequently cancelled or fails.
+inline ProviderUsage parse_stream_provider_usage(QJsonObject tail_usage, const QString& provider,
+                                                 int anthropic_input_tokens) {
+    if (provider == QLatin1String("anthropic") && anthropic_input_tokens > 0 &&
+        !tail_usage.contains(QStringLiteral("input_tokens"))) {
+        tail_usage.insert(QStringLiteral("input_tokens"), anthropic_input_tokens);
+    }
+    if (tail_usage.isEmpty())
+        return {};
+    return parse_provider_usage(QJsonObject{{QStringLiteral("usage"), tail_usage}}, provider);
+}
+
 } // namespace fincept::ai_chat

@@ -14,6 +14,7 @@ class TestLlmUsage : public QObject {
     void scoped_usage_survives_early_return();
     void malformed_usage_cannot_reduce_accounting();
     void cache_hit_percent_is_safe_for_display();
+    void streamed_usage_survives_cancel_or_late_failure();
 };
 
 void TestLlmUsage::deepseek_cache_hits_are_preserved() {
@@ -107,6 +108,25 @@ void TestLlmUsage::cache_hit_percent_is_safe_for_display() {
     QCOMPARE(prompt_cache_hit_percent(100, 120), 100);
     QCOMPARE(prompt_cache_hit_percent(qint64(3'000'000'000), qint64(1'500'000'000)), 50);
     QCOMPARE(prompt_cache_hit_percent(0, 0), -1);
+}
+
+void TestLlmUsage::streamed_usage_survives_cancel_or_late_failure() {
+    const QJsonObject anthropic_tail{{QStringLiteral("output_tokens"), 12},
+                                     {QStringLiteral("cache_read_input_tokens"), 50}};
+    const auto anthropic =
+        parse_stream_provider_usage(anthropic_tail, QStringLiteral("anthropic"), 100);
+    QCOMPARE(anthropic.prompt_tokens, 100);
+    QCOMPARE(anthropic.completion_tokens, 12);
+    QCOMPARE(anthropic.total_tokens, 112);
+    QCOMPARE(anthropic.cached_prompt_tokens, 50);
+
+    const QJsonObject openai_tail{{QStringLiteral("prompt_tokens"), 40},
+                                  {QStringLiteral("completion_tokens"), 8},
+                                  {QStringLiteral("total_tokens"), 48}};
+    const auto openai = parse_stream_provider_usage(openai_tail, QStringLiteral("deepseek"), 0);
+    QCOMPARE(openai.prompt_tokens, 40);
+    QCOMPARE(openai.completion_tokens, 8);
+    QCOMPARE(openai.total_tokens, 48);
 }
 
 QTEST_GUILESS_MAIN(TestLlmUsage)

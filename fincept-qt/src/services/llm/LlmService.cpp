@@ -1787,6 +1787,15 @@ LlmResponse LlmService::do_streaming_request(const QString& user_message,
     // (A Stop that lands just after the stream finished on its own — terminal marker
     // seen, socket closed — is not a cancellation: the answer is complete.)
     const bool stream_completed = done && saw_finish && !tool_call_detected;
+    // Usage already observed on the wire remains billable even if a later
+    // cancellation, provider error, or stalled connection makes the turn fail.
+    // Anthropic reports input tokens in message_start, before the final event.
+    const ProviderUsage observed_usage =
+        parse_stream_provider_usage(final_usage_obj, provider_, anthropic_input_tokens);
+    resp.prompt_tokens = observed_usage.prompt_tokens;
+    resp.completion_tokens = observed_usage.completion_tokens;
+    resp.total_tokens = observed_usage.total_tokens;
+    resp.cached_prompt_tokens = observed_usage.cached_prompt_tokens;
     if (detail::cancel_requested() && !stream_completed) {
         // DEBUG: the request's outcome line (LLM request finished result=cancelled) follows.
         LOG_DEBUG(kLlmSvcTag, QString("Stream cancelled by user after %1 chars").arg(accumulated.size()));
@@ -1865,14 +1874,6 @@ LlmResponse LlmService::do_streaming_request(const QString& user_message,
             // </think> blocks so the persisted/replayed content is the answer alone.
             resp.content = strip_think_blocks(accumulated);
             resp.success = true;
-            // The closing Anthropic usage event carries output_tokens only; the prompt side
-            // arrived in message_start. Without it the token counter showed output alone.
-            if (provider_ == "anthropic" && anthropic_input_tokens > 0 && !final_usage_obj.contains("input_tokens"))
-                final_usage_obj["input_tokens"] = anthropic_input_tokens;
-            if (!final_usage_obj.isEmpty()) {
-                QJsonObject wrap{{"usage", final_usage_obj}};
-                parse_usage(resp, wrap, provider_);
-            }
         }
     } else {
         const QString server_msg = parse_server_error_message(non_sse_body + partial_line + reply->readAll());
