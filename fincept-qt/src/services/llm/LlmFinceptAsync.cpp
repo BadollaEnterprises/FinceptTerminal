@@ -47,6 +47,7 @@
 #include "core/config/AppConfig.h"
 #include "core/logging/Logger.h"
 #include "core/policy/CommunityPolicy.h"
+#include "core/privacy/LogRedact.h"
 #include "mcp/McpProvider.h"
 #include "mcp/McpService.h"
 #include "mcp/ResultStore.h"
@@ -447,13 +448,15 @@ LlmResponse LlmService::fincept_submit_poll(const QString& prompt, QJsonArray* o
             LOG_INFO(kLlmFinceptTag, logf("LLM submit refused", {{"provider", "fincept"},
                                                                  {"status", submit.status},
                                                                  {"body_bytes", submit.body.size()},
-                                                                 {"error", submit.error}}));
+                                                                 {"error", privacy::redact_text(submit.error)}}));
         else
             LOG_ERROR(kLlmFinceptTag, logf("LLM submit failed", {{"provider", "fincept"},
                                                                  {"status", submit.status},
                                                                  {"body_bytes", submit.body.size()},
-                                                                 {"error", submit.error}}));
-        LOG_DEBUG(kLlmFinceptTag, logf("LLM submit failure body", {{"body", QString::fromUtf8(submit.body.left(200))}}));
+                                                                 {"error", privacy::redact_text(submit.error)}}));
+        LOG_DEBUG(kLlmFinceptTag,
+                  logf("LLM submit failure body",
+                       {{"body", privacy::redact_text(QString::fromUtf8(submit.body.left(200)))}}));
         if (submit.status == 401 || submit.status == 403) {
             // This client's QNAM bypasses HttpClient: report the refusal so a
             // stale session recovers (or an IP block pauses polling), and show
@@ -480,7 +483,9 @@ LlmResponse LlmService::fincept_submit_poll(const QString& prompt, QJsonArray* o
         LOG_ERROR(kLlmFinceptTag, logf("LLM submit answer is not valid JSON", {{"provider", "fincept"},
                                                                                 {"status", submit.status},
                                                                                 {"body_bytes", submit.body.size()}}));
-        LOG_DEBUG(kLlmFinceptTag, logf("LLM submit answer body", {{"body", QString::fromUtf8(submit.body.left(200))}}));
+        LOG_DEBUG(kLlmFinceptTag,
+                  logf("LLM submit answer body",
+                       {{"body", privacy::redact_text(QString::fromUtf8(submit.body.left(200)))}}));
         return resp;
     }
 
@@ -494,7 +499,9 @@ LlmResponse LlmService::fincept_submit_poll(const QString& prompt, QJsonArray* o
         LOG_ERROR(kLlmFinceptTag, logf("LLM submit answer has no task id", {{"provider", "fincept"},
                                                                              {"status", submit.status},
                                                                              {"body_bytes", submit.body.size()}}));
-        LOG_DEBUG(kLlmFinceptTag, logf("LLM submit answer body", {{"body", QString::fromUtf8(submit.body.left(200))}}));
+        LOG_DEBUG(kLlmFinceptTag,
+                  logf("LLM submit answer body",
+                       {{"body", privacy::redact_text(QString::fromUtf8(submit.body.left(200)))}}));
         return resp;
     }
     LOG_DEBUG(kLlmFinceptTag, logf("Fincept async task submitted", {{"run", task_id}}));
@@ -518,7 +525,9 @@ LlmResponse LlmService::fincept_submit_poll(const QString& prompt, QJsonArray* o
                 resp.error = "Request cancelled";
                 return resp;
             }
-            LOG_WARN(kLlmFinceptTag, QString("Fincept async poll failed (HTTP %1): %2").arg(poll.status).arg(poll.error));
+            LOG_WARN(kLlmFinceptTag, QString("Fincept async poll failed (HTTP %1): %2")
+                                         .arg(poll.status)
+                                         .arg(privacy::redact_text(poll.error)));
             // A rejected key/session cannot recover by polling again (the old loop
             // kept polling for the full two minutes and then reported a timeout).
             if (poll.status == 401 || poll.status == 403) {
@@ -577,16 +586,18 @@ LlmResponse LlmService::fincept_submit_poll(const QString& prompt, QJsonArray* o
                                                                    {"run", task_id},
                                                                    {"reason", "no_reason_field"},
                                                                    {"body_bytes", poll.body.size()}}));
-                LOG_DEBUG(kLlmFinceptTag, logf("LLM task failure body", {{"body", QString::fromUtf8(poll.body.left(200))}}));
+                LOG_DEBUG(kLlmFinceptTag,
+                          logf("LLM task failure body",
+                               {{"body", privacy::redact_text(QString::fromUtf8(poll.body.left(200)))}}));
             } else if (classify_fincept_failure(0, err) != LlmErrorKind::Other) {
                 // Out of credits / key refused: an expected answer, not a fault (policy B.1).
                 LOG_INFO(kLlmFinceptTag, logf("LLM task refused", {{"provider", "fincept"},
                                                                    {"run", task_id},
-                                                                   {"error", err.left(200)}}));
+                                                                   {"error", privacy::redact_text(err).left(200)}}));
             } else {
                 LOG_ERROR(kLlmFinceptTag, logf("LLM task failed", {{"provider", "fincept"},
                                                                    {"run", task_id},
-                                                                   {"error", err.left(200)}}));
+                                                                   {"error", privacy::redact_text(err).left(200)}}));
             }
             // The worker reports a failed credit check as text ("402: {...}").
             // Classify it before anything else: it is final, and resubmitting
@@ -865,8 +876,11 @@ LlmResponse LlmService::fincept_async_request(const QString& user_message,
         // about the request to fix, so resubmitting is the only useful response.
         // The endpoint documents that failed tasks are not charged.
         if (!resp.success && resp.retryable) {
-            LOG_WARN(kLlmFinceptTag, logf("LLM task failed upstream, resubmitting once",
-                                          {{"provider", "fincept"}, {"round", round}, {"error", resp.error}}));
+            LOG_WARN(kLlmFinceptTag,
+                     logf("LLM task failed upstream, resubmitting once",
+                          {{"provider", "fincept"},
+                           {"round", round},
+                           {"error", privacy::redact_text(resp.error)}}));
             resp = fincept_submit_poll(prompt, &structured_calls);
         }
         if (!resp.success)
@@ -1073,8 +1087,9 @@ LlmResponse LlmService::fincept_async_request(const QString& user_message,
         "and anything still incomplete.\n\nAssistant:"));
     LlmResponse final_turn = fincept_submit_poll(final_prompt, nullptr);
     if (!final_turn.success && final_turn.retryable) {
-        LOG_WARN(kLlmFinceptTag, logf("LLM close-out turn failed upstream, resubmitting once",
-                                      {{"provider", "fincept"}, {"error", final_turn.error}}));
+        LOG_WARN(kLlmFinceptTag,
+                 logf("LLM close-out turn failed upstream, resubmitting once",
+                      {{"provider", "fincept"}, {"error", privacy::redact_text(final_turn.error)}}));
         final_turn = fincept_submit_poll(final_prompt, nullptr);
     }
     if (final_turn.success && !final_turn.content.isEmpty()) {
