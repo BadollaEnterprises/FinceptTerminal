@@ -334,8 +334,13 @@ void PolymarketAdapter::run_py(const QString& command, const QJsonObject& payloa
     }
 
     QPointer<PolymarketAdapter> self = this;
-    fincept::python::PythonRunner::instance().run(
+    fincept::python::PythonRunner::RunOptions opts;
+    opts.stdin_data = payload_bytes;
+    // Wallet and API credentials are already carried in the private stdin payload.
+    opts.credential_allowlist = QStringList{};
+    fincept::python::PythonRunner::instance().run_with_options(
         QStringLiteral("prediction_polymarket.py"), {command, QStringLiteral("--stdin")},
+        opts,
         [self, on_ok, ctx, audit](fincept::python::PythonResult r) {
             if (!self)
                 return;
@@ -372,8 +377,7 @@ void PolymarketAdapter::run_py(const QString& command, const QJsonObject& payloa
                              audit.cancel ? audit.order_id : obj.value(QStringLiteral("order_id")).toString(),
                              obj.value(QStringLiteral("status")).toString(), QString());
             on_ok(obj);
-        },
-        {}, payload_bytes);
+        });
 }
 
 void PolymarketAdapter::ensure_api_creds(std::function<void(const pr::PolymarketCredentials&)> then,

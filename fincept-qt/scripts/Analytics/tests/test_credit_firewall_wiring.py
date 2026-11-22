@@ -84,6 +84,17 @@ class CreditFirewallWiringTest(unittest.TestCase):
         source = (ROOT / "src/services/ma_analytics/MAAnalyticsService.cpp").read_text(encoding="utf-8")
         self.assertGreaterEqual(source.count("credential_allowlist = QStringList{}"), 3)
 
+    def test_prediction_bridges_receive_credentials_only_via_stdin(self):
+        for relative in (
+            "src/services/prediction/kalshi/KalshiAdapter.cpp",
+            "src/services/prediction/polymarket/PolymarketAdapter.cpp",
+        ):
+            with self.subTest(service=relative):
+                source = (ROOT / relative).read_text(encoding="utf-8")
+                self.assertIn("opts.stdin_data = payload_bytes", source)
+                self.assertIn("opts.credential_allowlist = QStringList{}", source)
+                self.assertNotIn("PythonRunner::instance().run(\n", source)
+
     def test_macro_and_geopolitics_services_check_firewall(self):
         geopolitics = (ROOT / "src/services/geopolitics/GeopoliticsService.cpp").read_text(encoding="utf-8")
         macro = (ROOT / "src/services/economics/FinceptMacroService.cpp").read_text(encoding="utf-8")

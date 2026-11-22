@@ -642,8 +642,13 @@ void KalshiAdapter::run_py(const QString& command, const QJsonObject& extra,
     }
 
     QPointer<KalshiAdapter> self = this;
-    fincept::python::PythonRunner::instance().run(
+    fincept::python::PythonRunner::RunOptions opts;
+    opts.stdin_data = payload_bytes;
+    // Venue credentials are already carried in the private stdin payload.
+    opts.credential_allowlist = QStringList{};
+    fincept::python::PythonRunner::instance().run_with_options(
         QStringLiteral("prediction_kalshi.py"), {command, QStringLiteral("--stdin")},
+        opts,
         [self, on_ok, ctx, audit](fincept::python::PythonResult r) {
             if (!self)
                 return;
@@ -681,8 +686,7 @@ void KalshiAdapter::run_py(const QString& command, const QJsonObject& extra,
                                                       : audit.order_id,
                              obj.value(QStringLiteral("status")).toString(), QString());
             on_ok(obj);
-        },
-        {}, payload_bytes);
+        });
 }
 
 void KalshiAdapter::fetch_balance() {
