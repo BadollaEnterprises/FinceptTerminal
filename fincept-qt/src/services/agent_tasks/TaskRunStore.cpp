@@ -335,7 +335,12 @@ Result<void> TaskRunStore::delete_runs(const QStringList& ids) const {
             }
         }
     }
-    return db().commit();
+    const auto committed = db().commit();
+    if (committed.is_err()) {
+        db().rollback();
+        return committed;
+    }
+    return Result<void>::ok();
 }
 
 Result<int> TaskRunStore::prune_runs(int keep_newest) const {
@@ -359,9 +364,11 @@ Result<int> TaskRunStore::prune_runs(int keep_newest) const {
         return Result<int>::err(r2.error());
     }
     const int deleted = r2.value().numRowsAffected();
-    auto c = db().commit();
-    if (c.is_err())
-        return Result<int>::err(c.error());
+    const auto committed = db().commit();
+    if (committed.is_err()) {
+        db().rollback();
+        return Result<int>::err(committed.error());
+    }
     return Result<int>::ok(qMax(0, deleted));
 }
 
@@ -426,7 +433,12 @@ Result<void> TaskRunStore::replace_steps(const QString& run_id, const QVector<Ru
             return Result<void>::err(err);
         }
     }
-    return db().commit();
+    const auto committed = db().commit();
+    if (committed.is_err()) {
+        db().rollback();
+        return committed;
+    }
+    return Result<void>::ok();
 }
 
 Result<void> TaskRunStore::upsert_step(const RunStep& s) const {
@@ -566,7 +578,12 @@ Result<void> TaskRunStore::delete_artefacts(const QStringList& ids) const {
             return Result<void>::err(r.error());
         }
     }
-    return db().commit();
+    const auto committed = db().commit();
+    if (committed.is_err()) {
+        db().rollback();
+        return committed;
+    }
+    return Result<void>::ok();
 }
 
 // ── Templates ────────────────────────────────────────────────────────────────

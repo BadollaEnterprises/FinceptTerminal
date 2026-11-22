@@ -811,6 +811,23 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertNotIn(".arg(copy.id.left(8), QString::fromStdString(r.error()))", scheduler)
         self.assertNotIn(".arg(id.left(8), QString::fromStdString(r.error()))", scheduler)
 
+    def test_agent_task_transactions_release_failed_commits(self):
+        source = (ROOT / "src/services/agent_tasks/TaskRunStore.cpp").read_text(encoding="utf-8")
+        spans = (
+            ("Result<void> TaskRunStore::delete_runs", "Result<int> TaskRunStore::prune_runs"),
+            ("Result<int> TaskRunStore::prune_runs", "Result<int> TaskRunStore::mark_unfinished_interrupted"),
+            ("Result<void> TaskRunStore::replace_steps", "Result<void> TaskRunStore::upsert_step"),
+            ("Result<void> TaskRunStore::delete_artefacts", "// ── Templates"),
+        )
+        for start, end in spans:
+            with self.subTest(method=start):
+                body = source[source.index(start):source.index(end)]
+                self.assertNotIn("return db().commit()", body)
+                commit = body[body.rindex("db().commit()") :]
+                self.assertIn("if (committed.is_err())", commit)
+                self.assertIn("db().rollback()", commit)
+                self.assertLess(commit.index("db().rollback()"), commit.index("return"))
+
     def test_broker_auth_diagnostics_redact_provider_errors(self):
         for relative, minimum in (
             ("src/trading/brokers/angelone/AngelOneBroker.cpp", 2),
