@@ -112,6 +112,7 @@ fincept_add_test(tst_community_policy
     tst_community_policy.cpp
     "${PROJECT_SOURCE_DIR}/src/services/llm/ModelRouter.cpp"
     "${PROJECT_SOURCE_DIR}/src/services/harness/HarnessEligibility.cpp")
+target_compile_definitions(tst_community_policy PRIVATE FINCEPT_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
 
 # AI Chat effort labels must distinguish Fincept credit billing from additional
 # usage on a user-owned API provider. Header-only, Qt Core only.

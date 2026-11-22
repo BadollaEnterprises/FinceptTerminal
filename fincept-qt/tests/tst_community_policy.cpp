@@ -2,8 +2,13 @@
 #include "core/metrics/LocalUsageMetrics.h"
 #include "services/llm/ModelRouter.h"
 
+#include <QFile>
 #include <QtTest>
 #include <QTemporaryDir>
+
+#ifndef FINCEPT_SOURCE_DIR
+#    error "FINCEPT_SOURCE_DIR (fincept-qt/) must be defined by tests/CMakeLists.txt"
+#endif
 
 class CommunityPolicyTest : public QObject {
     Q_OBJECT
@@ -31,6 +36,14 @@ class CommunityPolicyTest : public QObject {
         QVERIFY(!fincept::policy::is_ai_backend_selectable(QStringLiteral(" FINCEPT ")));
         QVERIFY(fincept::policy::is_ai_backend_selectable(QStringLiteral("deepseek")));
         QVERIFY(fincept::policy::is_ai_backend_selectable(QStringLiteral("harness:claude")));
+    }
+
+    void shipped_component_catalog_uses_provider_neutral_copy() {
+        QFile catalog(QStringLiteral(FINCEPT_SOURCE_DIR "/resources/component_catalog.json"));
+        QVERIFY2(catalog.open(QIODevice::ReadOnly), qPrintable(catalog.errorString()));
+        const QByteArray copy = catalog.readAll().toLower();
+        QVERIFY(!copy.contains("ollama"));
+        QVERIFY(!copy.contains("codex"));
     }
 
     void fincept_cloud_sync_is_disabled() {

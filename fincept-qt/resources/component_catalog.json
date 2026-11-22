@@ -27,7 +27,7 @@
     { "id": "ai_quant_lab",      "title": "AI Quant Lab",       "category": "AI",          "description": "ML factor discovery, HFT, RL trading, vision quant",       "tags": ["ai","quant","ml"] },
     { "id": "alpha_arena",       "title": "Alpha Arena",        "category": "AI",          "description": "Competitive strategy arena with leaderboards",             "tags": ["alpha","arena","contest"] },
     { "id": "agent_config",      "title": "Agent Config",       "category": "AI",          "description": "LLM agent framework configuration (hedge fund, macro)",    "tags": ["agents","llm","config"] },
-    { "id": "agent_workbench",   "title": "Agent Workbench",    "category": "AI",          "description": "Claude Code / Codex agents on live terminal data, schedules", "tags": ["agents","claude","codex","mcp"] },
+    { "id": "agent_workbench",   "title": "Agent Workbench",    "category": "AI",          "description": "User-owned coding agents on live terminal data and schedules", "tags": ["agents","automation","mcp"] },
     { "id": "mcp_servers",       "title": "MCP Servers",        "category": "AI",          "description": "Model Context Protocol server management",                 "tags": ["mcp","tools","servers"] },
     { "id": "ai_chat",           "title": "AI Chat",            "category": "AI",          "description": "In-terminal chat with market-aware tool-use",              "tags": ["chat","llm","assistant"] },
 
