@@ -7,6 +7,8 @@
 #include "core/policy/CommunityPolicy.h"
 #include "core/process/ProcessTree.h"
 #include "python/PythonRunner.h"
+#include "services/llm/LlmBudgetSettings.h"
+#include "services/llm/ModelCatalog.h"
 #include "storage/cache/CacheManager.h"
 #include "storage/repositories/LlmProfileRepository.h"
 
@@ -210,6 +212,19 @@ void AIQuantLabService::run_module(const QString& module_id, const QString& comm
 }
 
 QJsonObject AIQuantLabService::agent_llm_config(const QJsonObject& params) const {
+    auto finalize = [](QJsonObject config) {
+        const QString provider = config.value(QStringLiteral("llm_provider")).toString().trimmed();
+        const QString model = policy::normalize_llm_model(
+            provider, config.value(QStringLiteral("llm_model")).toString());
+        config[QStringLiteral("llm_model")] = model;
+
+        const int model_cap = ai_chat::ModelCatalog::output_cap(provider, model);
+        const int max_tokens = ai_chat::resolve_llm_output_tokens(
+            config.value(QStringLiteral("llm_max_tokens")).toInt(), model_cap);
+        config[QStringLiteral("llm_max_tokens")] = max_tokens;
+        return config;
+    };
+
     QJsonObject chosen = params.value(QStringLiteral("config")).toObject();
     if (chosen.value(QStringLiteral("llm_provider")).toString().isEmpty()) {
         // No provider in the caller's block: use the profile assigned to AI Quant
@@ -220,7 +235,8 @@ QJsonObject AIQuantLabService::agent_llm_config(const QJsonObject& params) const
             chosen = QJsonObject{{QStringLiteral("llm_provider"), p.provider},
                                  {QStringLiteral("llm_api_key"), p.api_key},
                                  {QStringLiteral("llm_model"), p.model_id},
-                                 {QStringLiteral("llm_base_url"), p.base_url}};
+                                 {QStringLiteral("llm_base_url"), p.base_url},
+                                 {QStringLiteral("llm_max_tokens"), p.max_tokens}};
     }
 
     const QString provider = chosen.value(QStringLiteral("llm_provider")).toString().trimmed();
@@ -230,7 +246,7 @@ QJsonObject AIQuantLabService::agent_llm_config(const QJsonObject& params) const
     const bool requires_byo = provider.isEmpty() || policy::is_deprecated_llm_provider(provider) ||
                               (hosted_fincept && !policy::fincept_metered_services_enabled());
     if (!requires_byo)
-        return chosen;
+        return finalize(chosen);
 
     // Empty, metered Fincept and saved deprecated profiles must never turn a
     // long multi-agent run into a credit-backed or legacy local request. Prefer
@@ -240,18 +256,19 @@ QJsonObject AIQuantLabService::agent_llm_config(const QJsonObject& params) const
     if (profiles.is_ok()) {
         for (const LlmProfile& p : profiles.value()) {
             if (p.provider.compare(byo_provider, Qt::CaseInsensitive) == 0)
-                return QJsonObject{{QStringLiteral("llm_provider"), p.provider},
-                                   {QStringLiteral("llm_api_key"), p.api_key},
-                                   {QStringLiteral("llm_model"), p.model_id},
-                                   {QStringLiteral("llm_base_url"), p.base_url}};
+                return finalize(QJsonObject{{QStringLiteral("llm_provider"), p.provider},
+                                            {QStringLiteral("llm_api_key"), p.api_key},
+                                            {QStringLiteral("llm_model"), p.model_id},
+                                            {QStringLiteral("llm_base_url"), p.base_url},
+                                            {QStringLiteral("llm_max_tokens"), p.max_tokens}});
         }
     }
     // No BYO profile yet: fail visibly for a missing user key instead of
     // silently falling back to Fincept credits.
-    return QJsonObject{{QStringLiteral("llm_provider"), byo_provider},
-                       {QStringLiteral("llm_api_key"), QString()},
-                       {QStringLiteral("llm_model"), policy::default_llm_model()},
-                       {QStringLiteral("llm_base_url"), policy::default_llm_base_url()}};
+    return finalize(QJsonObject{{QStringLiteral("llm_provider"), byo_provider},
+                                {QStringLiteral("llm_api_key"), QString()},
+                                {QStringLiteral("llm_model"), policy::default_llm_model()},
+                                {QStringLiteral("llm_base_url"), policy::default_llm_base_url()}});
 }
 
 // ── Qlib core ────────────────────────────────────────────────────────────────

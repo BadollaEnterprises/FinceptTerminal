@@ -50,6 +50,18 @@ inline LlmBudgetSettings validate_llm_budget_settings(LlmBudgetSettings settings
     return settings;
 }
 
+/// Resolve a per-call output allowance: a non-positive profile value uses the
+/// cost-conscious default, then both the absolute runtime ceiling and the
+/// provider/model ceiling are applied.
+inline int resolve_llm_output_tokens(int requested, int provider_cap, int fallback = 4096) {
+    const int safe_fallback = std::clamp(fallback, 1, kMaxLlmTurnTokens);
+    int resolved = requested > 0 ? requested : safe_fallback;
+    resolved = std::clamp(resolved, 1, kMaxLlmTurnTokens);
+    if (provider_cap > 0)
+        resolved = std::min(resolved, provider_cap);
+    return resolved;
+}
+
 inline QVariantMap llm_budget_settings_to_config_map(LlmBudgetSettings settings) {
     settings = validate_llm_budget_settings(settings);
     return {{QString::fromLatin1(kLlmHistoryCharsKey), settings.history_chars},

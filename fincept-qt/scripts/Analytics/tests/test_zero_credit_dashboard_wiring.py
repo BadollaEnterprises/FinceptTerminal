@@ -805,7 +805,7 @@ class ZeroCreditDashboardWiringTest(unittest.TestCase):
         panel = (ROOT / "src/screens/ai_quant_lab/QuantModulePanel.cpp").read_text(encoding="utf-8")
         self.assertIn('core/policy/CommunityPolicy.h', service)
         resolver = service[service.index("QJsonObject AIQuantLabService::agent_llm_config"):]
-        self.assertLess(resolver.index("fincept_metered_services_enabled"), resolver.index("return chosen"))
+        self.assertLess(resolver.index("fincept_metered_services_enabled"), resolver.index("return finalize(chosen)"))
         picker = panel[panel.index("QWidget* QuantModulePanel::build_llm_picker"):]
         self.assertLess(picker.index("fincept_metered_services_enabled"), picker.index("combo->addItem"))
         self.assertIn("default_llm_provider", resolver[:4000])
@@ -813,7 +813,7 @@ class ZeroCreditDashboardWiringTest(unittest.TestCase):
     def test_ai_quant_agents_migrate_all_deprecated_ai_profiles(self):
         service = (ROOT / "src/services/ai_quant_lab/AIQuantLabService.cpp").read_text(encoding="utf-8")
         resolver = service[service.index("QJsonObject AIQuantLabService::agent_llm_config"):]
-        before_return = resolver[:resolver.index("return chosen")]
+        before_return = resolver[:resolver.index("return finalize(chosen)")]
         self.assertIn("is_deprecated_llm_provider(provider)", before_return)
         self.assertIn("default_llm_provider", resolver[:4000])
 

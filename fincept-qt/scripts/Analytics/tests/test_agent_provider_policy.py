@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import importlib.util
+import sys
+import types
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 MODULE = Path(__file__).resolve().parents[2] / "agents" / "finagent_core" / "provider_policy.py"
@@ -123,6 +126,66 @@ class AgentProviderPolicyTest(unittest.TestCase):
         execute = cli[cli.index("def cmd_execute_task"):cli.index("def _execute_with_deepagents")]
         self.assertIn("provider_policy_error", execute)
         self.assertNotIn("_execute_with_orchestrator", execute)
+
+    def test_deep_agents_apply_bounded_output_tokens_to_every_adapter(self):
+        models = load_deepagent_models()
+
+        class FakeModel:
+            def __init__(self, **kwargs):
+                self.kwargs = kwargs
+
+        cases = [
+            ("deepseek", "langchain_openai", "ChatOpenAI", "max_tokens"),
+            ("openai", "langchain_openai", "ChatOpenAI", "max_tokens"),
+            ("anthropic", "langchain_anthropic", "ChatAnthropic", "max_tokens"),
+            ("google", "langchain_google_genai", "ChatGoogleGenerativeAI", "max_output_tokens"),
+            ("groq", "langchain_groq", "ChatGroq", "max_tokens"),
+        ]
+        for provider, module_name, class_name, limit_key in cases:
+            fake_module = types.ModuleType(module_name)
+            setattr(fake_module, class_name, FakeModel)
+            config = {
+                "llm_provider": provider,
+                "llm_api_key": "owned",
+                "llm_model": "model",
+                "llm_max_tokens": 777,
+            }
+            with self.subTest(provider=provider), mock.patch.dict(sys.modules, {module_name: fake_module}):
+                model = models.create_model(config)
+                self.assertEqual(model.kwargs[limit_key], 777)
+
+    def test_deep_agents_reject_adapters_without_an_enforceable_output_ceiling(self):
+        models = load_deepagent_models()
+        self.assertFalse(models.supports_tool_calling({"llm_provider": "cohere"}))
+        with self.assertRaisesRegex(ValueError, "Unknown llm_provider 'cohere'"):
+            models.create_model({
+                "llm_provider": "cohere",
+                "llm_api_key": "owned",
+                "llm_model": "command-r-plus",
+                "llm_max_tokens": 777,
+            })
+
+    def test_deep_agent_cost_limits_have_safe_defaults_and_bounds(self):
+        models = load_deepagent_models()
+        self.assertEqual(models.output_token_limit({}), 4096)
+        self.assertEqual(models.output_token_limit({"llm_max_tokens": 0}), 4096)
+        self.assertEqual(models.output_token_limit({"llm_max_tokens": 3000000}), 2000000)
+        self.assertEqual(models.recursion_limit({}), 64)
+        self.assertEqual(models.recursion_limit({"recursion_limit": 1}), 8)
+        self.assertEqual(models.recursion_limit({"recursion_limit": 1000}), 200)
+
+        cli = (DEEPAGENT_MODELS.parent / "cli.py").read_text(encoding="utf-8")
+        execute = cli[cli.index("def _execute_with_deepagents") : cli.index("def _format_result")]
+        self.assertIn('"recursion_limit": recursion_limit(config)', execute)
+        self.assertNotIn('"recursion_limit": 1000', execute)
+
+    def test_ai_quant_lab_forwards_profile_output_limit_to_deep_agents(self):
+        service = (MODULE.parents[3] / "src/services/ai_quant_lab/AIQuantLabService.cpp").read_text(encoding="utf-8")
+        panel = (MODULE.parents[3] / "src/screens/ai_quant_lab/QuantModulePanel.cpp").read_text(encoding="utf-8")
+        resolver = service[service.index("QJsonObject AIQuantLabService::agent_llm_config") :]
+        picker = panel[panel.index("QJsonObject QuantModulePanel::llm_config_from_combo") :]
+        self.assertIn('QStringLiteral("llm_max_tokens")', resolver[:7000])
+        self.assertIn('cfg["llm_max_tokens"]', picker[:1800])
 
     def test_agent_registries_cannot_construct_retired_model_or_embedder_backends(self):
         models = load_path("finagent_models_registry", MODEL_REGISTRY).ModelsRegistry

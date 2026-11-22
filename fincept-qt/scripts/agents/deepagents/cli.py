@@ -45,7 +45,7 @@ if str(_HERE) not in sys.path:
 
 logger = logging.getLogger(__name__)
 
-from models import create_model, extract_text, provider_policy_error, supports_tool_calling
+from models import create_model, extract_text, provider_policy_error, recursion_limit, supports_tool_calling
 from subagents import list_agent_types, list_subagent_names, AGENT_SUBAGENTS
 
 # ---------------------------------------------------------------------------
@@ -148,7 +148,7 @@ def _execute_with_deepagents(
         )
         ctx = build_fincept_context({"agent_type": agent_type, "context": context_data})
 
-        run_config = {"recursion_limit": 1000}
+        run_config = {"recursion_limit": recursion_limit(config)}
         if thread_id:
             run_config["configurable"] = {"thread_id": thread_id}
 

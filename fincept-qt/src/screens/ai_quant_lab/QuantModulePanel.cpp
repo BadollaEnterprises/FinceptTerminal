@@ -795,6 +795,7 @@ QJsonObject QuantModulePanel::llm_config_from_combo(QComboBox* combo) const {
     cfg["llm_api_key"] = p.api_key;
     cfg["llm_model"] = p.model_id;
     cfg["llm_base_url"] = p.base_url;
+    cfg["llm_max_tokens"] = p.max_tokens;
     return cfg;
 }
 

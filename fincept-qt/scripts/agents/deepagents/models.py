@@ -25,7 +25,6 @@ TOOL_CALLING_PROVIDERS = {
     "openrouter",
     "azure",
     "mistral",
-    "cohere",
     "fireworks",
     "together",
 }
@@ -41,6 +40,42 @@ _OPENAI_COMPAT = {
 }
 
 _DEPRECATED_PROVIDERS = {"fincept", "ollama", "codex", "harness:codex"}
+
+_DEFAULT_OUTPUT_TOKENS = 4096
+_MAX_OUTPUT_TOKENS = 2_000_000
+_DEFAULT_RECURSION_LIMIT = 64
+_MIN_RECURSION_LIMIT = 8
+_MAX_RECURSION_LIMIT = 200
+
+
+def _bounded_int(value: Any, default: int, minimum: int, maximum: int) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError, OverflowError):
+        parsed = default
+    if parsed <= 0:
+        parsed = default
+    return max(minimum, min(parsed, maximum))
+
+
+def output_token_limit(config: dict[str, Any]) -> int:
+    """Per-call output ceiling supplied by the selected terminal profile."""
+    return _bounded_int(
+        config.get("llm_max_tokens"),
+        _DEFAULT_OUTPUT_TOKENS,
+        1,
+        _MAX_OUTPUT_TOKENS,
+    )
+
+
+def recursion_limit(config: dict[str, Any]) -> int:
+    """Bound LangGraph steps so one research run cannot recurse indefinitely."""
+    return _bounded_int(
+        config.get("recursion_limit"),
+        _DEFAULT_RECURSION_LIMIT,
+        _MIN_RECURSION_LIMIT,
+        _MAX_RECURSION_LIMIT,
+    )
 
 
 def provider_policy_error(config: dict[str, Any]) -> str | None:
@@ -73,6 +108,7 @@ def create_model(config: dict[str, Any]):
     api_key  = config.get("llm_api_key", "")
     model    = config.get("llm_model", "")
     base_url = config.get("llm_base_url") or None
+    max_tokens = output_token_limit(config)
 
     if not provider:
         raise ValueError("llm_provider is required in config")
@@ -82,6 +118,7 @@ def create_model(config: dict[str, Any]):
         kwargs: dict[str, Any] = {
             "api_key":    api_key,
             "model_name": model or "claude-sonnet-4-5-20250514",
+            "max_tokens": max_tokens,
         }
         if base_url:
             kwargs["anthropic_api_url"] = base_url
@@ -89,7 +126,7 @@ def create_model(config: dict[str, Any]):
 
     if provider == "openai":
         from langchain_openai import ChatOpenAI
-        kwargs = {"api_key": api_key, "model": model or "gpt-4o-mini"}
+        kwargs = {"api_key": api_key, "model": model or "gpt-4o-mini", "max_tokens": max_tokens}
         if base_url:
             kwargs["base_url"] = base_url
         return ChatOpenAI(**kwargs)
@@ -99,6 +136,7 @@ def create_model(config: dict[str, Any]):
         return ChatGoogleGenerativeAI(
             google_api_key=api_key,
             model=model or "gemini-2.0-flash",
+            max_output_tokens=max_tokens,
         )
 
     if provider == "groq":
@@ -106,13 +144,7 @@ def create_model(config: dict[str, Any]):
         return ChatGroq(
             api_key=api_key,
             model_name=model or "llama-3.3-70b-versatile",
-        )
-
-    if provider == "cohere":
-        from langchain_cohere import ChatCohere
-        return ChatCohere(
-            cohere_api_key=api_key,
-            model=model or "command-r-plus",
+            max_tokens=max_tokens,
         )
 
     if provider in _OPENAI_COMPAT:
@@ -124,6 +156,7 @@ def create_model(config: dict[str, Any]):
             api_key=api_key,
             model=model or "default",
             base_url=url,
+            max_tokens=max_tokens,
         )
 
     raise ValueError(
