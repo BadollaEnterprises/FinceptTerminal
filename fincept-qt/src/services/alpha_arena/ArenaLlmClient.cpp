@@ -5,6 +5,7 @@
 #include "core/metrics/LocalUsageMetrics.h"
 #include "core/policy/CommunityPolicy.h"
 #include "services/alpha_arena/HarnessArenaClient.h"
+#include "services/llm/LlmBudgetSettings.h"
 #include "services/llm/LlmErrors.h"
 #include "services/llm/ModelCatalog.h"
 #include "services/llm/ProviderCatalog.h"
@@ -20,6 +21,7 @@
 namespace fincept::arena {
 using fincept::ai_chat::ModelCatalog;
 using fincept::ai_chat::ProviderCatalog;
+using fincept::ai_chat::resolve_llm_output_tokens;
 
 ArenaLlmClient::ArenaLlmClient(QObject* parent) : IArenaLlmClient(parent) {
     nam_ = new QNetworkAccessManager(this);
@@ -27,9 +29,8 @@ ArenaLlmClient::ArenaLlmClient(QObject* parent) : IArenaLlmClient(parent) {
 
 QByteArray ArenaLlmClient::build_body(const ArenaLlmRequest& req) {
     const QString p = req.provider.toLower();
-    int max_tokens = req.max_tokens;
-    if (const int cap = ModelCatalog::output_cap(p, req.model_id); cap > 0)
-        max_tokens = qMin(max_tokens, cap);
+    const int catalog_cap = ModelCatalog::output_cap(p, req.model_id);
+    const int max_tokens = resolve_llm_output_tokens(req.max_tokens, catalog_cap, 2048);
 
     QJsonObject body;
     if (p == "anthropic") {

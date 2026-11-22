@@ -479,6 +479,19 @@ int run_arena_selftest() {
         rq.provider = "deepseek";
         check("llm: openai-compat body uses max_tokens",
               QJsonDocument::fromJson(ArenaLlmClient::build_body(rq)).object().contains("max_tokens"));
+        rq.model_id = "deepseek-flash";
+        rq.max_tokens = 0;
+        check("llm: non-positive arena allowance uses the cost-conscious default",
+              QJsonDocument::fromJson(ArenaLlmClient::build_body(rq))
+                      .object()
+                      .value("max_tokens")
+                      .toInt() == 2048);
+        rq.max_tokens = 100000;
+        check("llm: arena allowance respects the model ceiling",
+              QJsonDocument::fromJson(ArenaLlmClient::build_body(rq))
+                      .object()
+                      .value("max_tokens")
+                      .toInt() == 65536);
 
         auto pr1 = ArenaLlmClient::parse_response(
             "openai",

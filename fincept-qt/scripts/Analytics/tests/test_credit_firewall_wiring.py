@@ -916,6 +916,14 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertIn("update_status();", toggled)
         self.assertIn("update_status();", restored)
 
+    def test_alpha_arena_uses_a_valid_bounded_reply_allowance(self):
+        arena = (ROOT / "src/services/alpha_arena/ArenaLlmClient.cpp").read_text(encoding="utf-8")
+        body = arena[arena.index("QByteArray ArenaLlmClient::build_body"):
+                     arena.index("ArenaLlmResult ArenaLlmClient::parse_response")]
+
+        self.assertIn("resolve_llm_output_tokens(req.max_tokens, catalog_cap, 2048)", body)
+        self.assertNotIn("qMin(max_tokens, cap)", body)
+
     def test_selected_agent_profiles_share_runtime_provider_policy(self):
         header = (ROOT / "src/storage/repositories/LlmProfileRepository.h").read_text(encoding="utf-8")
         source = (ROOT / "src/storage/repositories/LlmProfileRepository.cpp").read_text(encoding="utf-8")
