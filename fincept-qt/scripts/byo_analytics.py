@@ -217,6 +217,8 @@ def technical_rating(payload: Mapping[str, Any]) -> Dict[str, Any]:
     closes = _numbers(payload.get("closes", []), "closes")
     if len(closes) < 200:
         raise ValueError("technical_rating requires at least 200 closing prices")
+    if any(value <= 0 for value in closes):
+        raise ValueError("closing prices must be positive")
     last = closes[-1]
 
     moving_averages = []

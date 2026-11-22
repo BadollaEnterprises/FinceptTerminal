@@ -96,6 +96,12 @@ class ByoAnalyticsTest(unittest.TestCase):
         rsi_vote = next(row for row in result["oscillators"] if row["name"] == "RSI 14")
         self.assertEqual(rsi_vote["signal"], "NEUTRAL")
 
+    def test_technical_rating_rejects_nonpositive_prices(self):
+        mod = load_module()
+        closes = [100.0] * 239 + [0.0]
+        with self.assertRaisesRegex(ValueError, "closing prices must be positive"):
+            mod.technical_rating({"closes": closes})
+
     def test_market_pulse_weights_available_signals_and_reports_coverage(self):
         mod = load_module()
         result = mod.market_pulse(
