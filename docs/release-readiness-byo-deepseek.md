@@ -16,8 +16,8 @@ third-party data or platform services can be replaced by an LLM.
 | Cache accounting survives restart | Pass | Provider cache-hit usage is written through local usage metrics and covered by the live smoke diagnostic. |
 | Native regression suite | Pass | 146 of 146 tests passed after the command-catalog regression was added. |
 | Analytics regression suite | Pass | 246 of 246 tests passed. |
-| Packaged application diagnostics | Pass | All 10 packaged CI self-tests passed with the bundled Qt offscreen plugin. |
-| macOS bundle integrity | Pass for local distribution | `codesign --verify --deep --strict` passed after the final release rebuild. The bundle is ad-hoc signed. OpenSSL 3.5.9 is bundle-relative, arm64, and built for macOS 13.0. |
+| Packaged application diagnostics | Pass | All 10 packaged CI self-tests passed with the bundled Qt offscreen plugin on `fd6a663`. The packaged component catalog also passed the retired-provider-name scan. |
+| macOS bundle integrity | Pass for local distribution | `codesign --verify --deep --strict` passed after the clean `fd6a663` release rebuild. The bundle is ad-hoc signed. OpenSSL 3.5.9 is bundle-relative, arm64, and built for macOS 13.0. |
 | Live unlocked UI walkthrough | Pass | The signed release was unlocked locally. AI Chat displayed `DeepSeek / deepseek-flash`, `0 credits`, and billing to the user's DeepSeek key; Settings displayed all five BYO guardrails; `AAPL DES` opened Overview and `MSFT financials` opened Financials. |
 | Cross-platform packaging contracts | Pass locally; hosted rerun blocked | Hosted lint run [44961400096](https://github.com/BadollaEnterprises/FinceptTerminal/actions/runs/44961400096) passed the architecture-specific OpenSSL/zlib, Qt host-tool, PE-filter fixture, and release-workflow contracts on `31721fd`. Through `bbbbd33`, ten local packaging-script tests cover architecture filtering, release-plugin selection, VC dependency closure, and rejection of non-redistributable debug CRT/UCRT files; GitHub paused fork workflows before those revisions could receive a hosted rerun. |
 | Linux package | Pass | Matrix run [44961406531](https://github.com/BadollaEnterprises/FinceptTerminal/actions/runs/44961406531) compiled and ran the Linux x64 self-tests; release run [44953568374](https://github.com/BadollaEnterprises/FinceptTerminal/actions/runs/44953568374) installed, opened, and removed the `.deb` on Ubuntu 22.04/24.04/26.04 and Debian 12/13. |
@@ -104,7 +104,7 @@ python3 ../.github/scripts/test_check_windows_pe_arch.py
 python3 ../.github/scripts/test_check_windows_dependency_closure.py
 python3 ../.github/scripts/test_copy_windows_release_plugins.py
 ../.github/scripts/build_macos_release.sh
-../.github/scripts/ci_app_checks.sh selftests \
+bash ../.github/scripts/ci_app_checks.sh selftests \
   build/macos-release/FinceptTerminal.app/Contents/MacOS/FinceptTerminal ci
 ../.github/scripts/macos_verify_openssl.sh \
   build/macos-release/FinceptTerminal.app/Contents/MacOS/FinceptTerminal 13.0
