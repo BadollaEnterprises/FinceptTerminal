@@ -5259,11 +5259,16 @@ def _financial_ratio(body: Mapping[str, Any], category: str, name: str) -> Dict[
     elif category == "growth":
         retention = float(body.get("retention_ratio", 0.0))
         roa = float(body.get("roa", 0.0))
+        if name == "cagr":
+            current = get("current_value", "ending_value", "final_value")
+            previous = get("previous_value", "beginning_value", "initial_value")
+            years = float(body.get("years", body.get("periods", 1.0)))
+            if (not all(math.isfinite(value) for value in (current, previous, years)) or
+                    current <= 0 or previous <= 0 or years <= 0):
+                raise ValueError("CAGR inputs must be positive and finite")
+            return {"value": (current / previous) ** (1.0 / years) - 1.0}
         formulas = {
             "yoy": lambda: _divide(get("current_value"), get("previous_value"), "previous_value") - 1.0,
-            "cagr": lambda: ((get("current_value", "ending_value", "final_value") /
-                              get("previous_value", "beginning_value", "initial_value")) **
-                              (1.0 / float(body.get("years", body.get("periods", 1.0)))) - 1.0),
             "sustainable-growth": lambda: retention * get("roe"),
             "internal-growth": lambda: _divide(retention * roa, 1.0 - retention * roa, "one minus retained ROA"),
         }

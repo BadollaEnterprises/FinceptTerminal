@@ -1095,6 +1095,19 @@ class ByoQuantLibTest(unittest.TestCase):
         self.assertAlmostEqual(pe["data"]["value"], 16.0)
         self.assertAlmostEqual(cagr["data"]["value"], 0.2)
 
+    def test_cagr_requires_positive_finite_inputs(self):
+        mod = load_module()
+        cases = (
+            {"beginning_value": 100, "ending_value": 144, "years": 0},
+            {"beginning_value": 100, "ending_value": 144, "years": float("nan")},
+            {"beginning_value": -100, "ending_value": 144, "years": 2},
+        )
+        for body in cases:
+            with self.subTest(body=body):
+                answer = mod.execute("analysis/ratios/growth/cagr", body)
+                self.assertIn("CAGR inputs must be positive and finite", answer.get("error", ""))
+                self.assertEqual(answer["meta"]["fincept_credits"], 0)
+
     def test_all_screen_financial_ratio_routes_are_local(self):
         mod = load_module()
         profitability = {
