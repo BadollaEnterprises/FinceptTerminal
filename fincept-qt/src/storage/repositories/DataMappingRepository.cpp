@@ -56,31 +56,6 @@ void dm_log_move(const QString& id, secret_migration::Failure f, const QString& 
                            : logf("Mapping auth value stored in secure storage again", {{"id", id}}));
 }
 
-QString dm_token_for_column(const QString& id, const QString& token) {
-    if (id.isEmpty())
-        return token;
-    if (token.isEmpty()) {
-        // Blank because it could not be read → unknown, not cleared: keep the stored copy.
-        if (dm_is_unreadable(id)) {
-            LOG_WARN("DataMappingRepo", "Stored mapping auth value kept: it could not be read when the mapping was "
-                                        "loaded, so a blank value is not a deletion id=" + id);
-            return QString();
-        }
-        SecureStorage::instance().remove(dm_secret_handle(id));
-        return QString();
-    }
-    // A value typed by the user replaces the stored one (also one that could not be read:
-    // the user saw "could not read" and entered a new value on purpose). The row keeps the
-    // value unless the encrypted copy was written AND read back equal.
-    const auto stored = SecureStorage::instance().store_verified(dm_secret_handle(id), token);
-    dm_log_move(id, stored.is_err() ? secret_migration::Failure::WriteFailed : secret_migration::Failure::None,
-                QString::fromStdString(stored.is_err() ? stored.error() : std::string()));
-    if (stored.is_err())
-        return token;
-    dm_mark_unreadable(id, false);
-    return QString();
-}
-
 void dm_merge_secret(DataMapping& dm) {
     if (!dm.auth_token.isEmpty()) {
         // Plaintext in the row: a legacy row, or a save made while the store failed (then
@@ -179,39 +154,73 @@ Result<DataMapping> DataMappingRepository::get(const QString& id) {
 }
 
 Result<void> DataMappingRepository::save(const DataMapping& dm) {
-    const QString token_column = dm_token_for_column(dm.id, dm.auth_token);
-    return exec_write("INSERT INTO data_mappings "
-                      "(id, name, source_id, schema_name, base_url, endpoint, method, auth_type, auth_token, "
-                      " headers, body, parser, cache_enabled, cache_ttl, field_mappings_json, "
-                      " spec_json, spec_version, revision, created_at, updated_at) "
-                      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
-                      " COALESCE((SELECT created_at FROM data_mappings WHERE id = ?), datetime('now')), "
-                      " datetime('now')) "
-                      "ON CONFLICT(id) DO UPDATE SET "
-                      "  name               = excluded.name, "
-                      "  source_id          = excluded.source_id, "
-                      "  schema_name        = excluded.schema_name, "
-                      "  base_url           = excluded.base_url, "
-                      "  endpoint           = excluded.endpoint, "
-                      "  method             = excluded.method, "
-                      "  auth_type          = excluded.auth_type, "
-                      "  auth_token         = excluded.auth_token, "
-                      "  headers            = excluded.headers, "
-                      "  body               = excluded.body, "
-                      "  parser             = excluded.parser, "
-                      "  cache_enabled      = excluded.cache_enabled, "
-                      "  cache_ttl          = excluded.cache_ttl, "
-                      "  field_mappings_json = excluded.field_mappings_json, "
-                      "  spec_json          = excluded.spec_json, "
-                      "  spec_version       = excluded.spec_version, "
-                      "  revision           = excluded.revision, "
-                      "  updated_at         = datetime('now')",
-                      {dm.id, dm.name, dm.source_id.isEmpty() ? QVariant() : QVariant(dm.source_id), dm.schema_name,
-                       dm.base_url, dm.endpoint, dm.method.isEmpty() ? QStringLiteral("GET") : dm.method,
-                       dm.auth_type.isEmpty() ? QStringLiteral("None") : dm.auth_type, token_column, dm.headers, dm.body,
-                       dm.parser.isEmpty() ? QStringLiteral("JSONPath") : dm.parser, dm.cache_enabled ? 1 : 0, dm.cache_ttl,
-                       dm.field_mappings_json.isEmpty() ? QStringLiteral("[]") : dm.field_mappings_json, dm.spec_json,
-                       dm.spec_version, dm.revision, dm.id});
+    // Commit the requested row first, keeping a new token in the column as the
+    // recoverable copy. Only then mutate SecureStorage. If the SQL write fails,
+    // the existing row and its existing encrypted token remain paired.
+    auto saved = exec_write("INSERT INTO data_mappings "
+                            "(id, name, source_id, schema_name, base_url, endpoint, method, auth_type, auth_token, "
+                            " headers, body, parser, cache_enabled, cache_ttl, field_mappings_json, "
+                            " spec_json, spec_version, revision, created_at, updated_at) "
+                            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
+                            " COALESCE((SELECT created_at FROM data_mappings WHERE id = ?), datetime('now')), "
+                            " datetime('now')) "
+                            "ON CONFLICT(id) DO UPDATE SET "
+                            "  name               = excluded.name, "
+                            "  source_id          = excluded.source_id, "
+                            "  schema_name        = excluded.schema_name, "
+                            "  base_url           = excluded.base_url, "
+                            "  endpoint           = excluded.endpoint, "
+                            "  method             = excluded.method, "
+                            "  auth_type          = excluded.auth_type, "
+                            "  auth_token         = excluded.auth_token, "
+                            "  headers            = excluded.headers, "
+                            "  body               = excluded.body, "
+                            "  parser             = excluded.parser, "
+                            "  cache_enabled      = excluded.cache_enabled, "
+                            "  cache_ttl          = excluded.cache_ttl, "
+                            "  field_mappings_json = excluded.field_mappings_json, "
+                            "  spec_json          = excluded.spec_json, "
+                            "  spec_version       = excluded.spec_version, "
+                            "  revision           = excluded.revision, "
+                            "  updated_at         = datetime('now')",
+                            {dm.id, dm.name, dm.source_id.isEmpty() ? QVariant() : QVariant(dm.source_id),
+                             dm.schema_name, dm.base_url, dm.endpoint,
+                             dm.method.isEmpty() ? QStringLiteral("GET") : dm.method,
+                             dm.auth_type.isEmpty() ? QStringLiteral("None") : dm.auth_type, dm.auth_token, dm.headers,
+                             dm.body, dm.parser.isEmpty() ? QStringLiteral("JSONPath") : dm.parser,
+                             dm.cache_enabled ? 1 : 0, dm.cache_ttl,
+                             dm.field_mappings_json.isEmpty() ? QStringLiteral("[]") : dm.field_mappings_json,
+                             dm.spec_json, dm.spec_version, dm.revision, dm.id});
+    if (saved.is_err())
+        return saved;
+    if (dm.id.isEmpty())
+        return saved;
+
+    if (dm.auth_token.isEmpty()) {
+        // Blank after a failed secure read means unknown, not explicitly
+        // cleared; retain that unreadable encrypted copy.
+        if (dm_is_unreadable(dm.id)) {
+            LOG_WARN("DataMappingRepo", "Stored mapping auth value kept: it could not be read when the mapping was "
+                                        "loaded, so a blank value is not a deletion id=" + dm.id);
+            return saved;
+        }
+        (void)SecureStorage::instance().remove(dm_secret_handle(dm.id));
+        return saved;
+    }
+
+    // A new token is now durable in the row. Move it to the encrypted store and
+    // blank the column only after write + read-back verification succeeds.
+    const auto stored = SecureStorage::instance().store_verified(dm_secret_handle(dm.id), dm.auth_token);
+    if (stored.is_err()) {
+        dm_log_move(dm.id, secret_migration::Failure::WriteFailed, QString::fromStdString(stored.error()));
+        return saved;
+    }
+    dm_mark_unreadable(dm.id, false);
+    auto scrubbed = exec_write("UPDATE data_mappings SET auth_token = '' WHERE id = ?", {dm.id});
+    dm_log_move(dm.id,
+                scrubbed.is_err() ? secret_migration::Failure::DeleteFailed : secret_migration::Failure::None,
+                QString::fromStdString(scrubbed.is_err() ? scrubbed.error() : std::string()));
+    return saved;
 }
 
 Result<int> DataMappingRepository::save_revision(DataMapping dm) {

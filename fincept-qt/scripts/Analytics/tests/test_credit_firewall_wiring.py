@@ -299,6 +299,18 @@ class CreditFirewallWiringTest(unittest.TestCase):
                         body.index("SecureStorage::instance().remove"))
         self.assertIn("dm_mark_unreadable(id, false)", body)
 
+    def test_data_mapping_save_commits_row_before_mutating_secure_token(self):
+        source = (ROOT / "src/storage/repositories/DataMappingRepository.cpp").read_text(encoding="utf-8")
+        body = source[source.index("Result<void> DataMappingRepository::save(const DataMapping& dm)"):
+                      source.index("Result<int> DataMappingRepository::save_revision")]
+        self.assertNotIn("dm_token_for_column", source)
+        self.assertIn("auto saved = exec_write", body)
+        self.assertIn("if (saved.is_err())", body)
+        for mutation in ("SecureStorage::instance().remove", "SecureStorage::instance().store_verified"):
+            self.assertIn(mutation, body)
+            self.assertLess(body.index("if (saved.is_err())"), body.index(mutation))
+        self.assertIn("UPDATE data_mappings SET auth_token = ''", body)
+
     def test_local_chat_mode_diagnostics_scrub_conversation_storage_errors(self):
         source = (ROOT / "src/screens/chat_mode/ChatModeScreen.cpp").read_text(encoding="utf-8")
         self.assertIn('#include "core/privacy/LogRedact.h"', source)
