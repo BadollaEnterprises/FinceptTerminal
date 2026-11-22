@@ -16,7 +16,7 @@ struct ArenaLlmRequest {
 };
 struct ArenaLlmResult {
     QString content, error;
-    int prompt_tokens = 0, completion_tokens = 0;
+    int prompt_tokens = 0, completion_tokens = 0, cached_prompt_tokens = 0;
     qint64 latency_ms = 0;
     bool success = false;
 };

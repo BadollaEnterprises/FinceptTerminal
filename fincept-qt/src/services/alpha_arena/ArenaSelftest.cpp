@@ -482,8 +482,14 @@ int run_arena_selftest() {
 
         auto pr1 = ArenaLlmClient::parse_response(
             "openai",
-            R"({"choices":[{"message":{"content":"hi"}}],"usage":{"prompt_tokens":5,"completion_tokens":2}})");
-        check("llm: openai parse", pr1.success && pr1.content == "hi" && pr1.prompt_tokens == 5);
+            R"({"choices":[{"message":{"content":"hi"}}],"usage":{"prompt_tokens":5,"completion_tokens":2,"prompt_tokens_details":{"cached_tokens":3}}})");
+        check("llm: openai parse", pr1.success && pr1.content == "hi" && pr1.prompt_tokens == 5 &&
+                                           pr1.cached_prompt_tokens == 3);
+        auto pr_cache = ArenaLlmClient::parse_response(
+            "deepseek",
+            R"({"choices":[{"message":{"content":"cached"}}],"usage":{"prompt_tokens":13,"completion_tokens":2,"prompt_cache_hit_tokens":11,"prompt_cache_miss_tokens":2}})");
+        check("llm: deepseek cache usage parse",
+              pr_cache.success && pr_cache.prompt_tokens == 13 && pr_cache.cached_prompt_tokens == 11);
         auto pr2 = ArenaLlmClient::parse_response(
             "anthropic", R"({"content":[{"type":"text","text":"yo"}],"usage":{"input_tokens":7,"output_tokens":3}})");
         check("llm: anthropic parse", pr2.success && pr2.content == "yo" && pr2.completion_tokens == 3);

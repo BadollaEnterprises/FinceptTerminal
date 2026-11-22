@@ -1,9 +1,10 @@
 #include "services/alpha_arena/ArenaLlmClient.h"
 
 #include "auth/AuthManager.h"
-#include "services/alpha_arena/HarnessArenaClient.h"
 #include "core/config/AppConfig.h"
+#include "core/metrics/LocalUsageMetrics.h"
 #include "core/policy/CommunityPolicy.h"
+#include "services/alpha_arena/HarnessArenaClient.h"
 #include "services/llm/LlmErrors.h"
 #include "services/llm/ModelCatalog.h"
 #include "services/llm/ProviderCatalog.h"
@@ -92,6 +93,7 @@ ArenaLlmResult ArenaLlmClient::parse_response(const QString& provider, const QBy
         const auto u = o.value("usage").toObject();
         r.prompt_tokens = u.value("input_tokens").toInt();
         r.completion_tokens = u.value("output_tokens").toInt();
+        r.cached_prompt_tokens = u.value("cache_read_input_tokens").toInt();
     } else if (p == "gemini" || p == "google") {
         const auto cands = o.value("candidates").toArray();
         if (!cands.isEmpty())
@@ -100,6 +102,7 @@ ArenaLlmResult ArenaLlmClient::parse_response(const QString& provider, const QBy
         const auto u = o.value("usageMetadata").toObject();
         r.prompt_tokens = u.value("promptTokenCount").toInt();
         r.completion_tokens = u.value("candidatesTokenCount").toInt();
+        r.cached_prompt_tokens = u.value("cachedContentTokenCount").toInt();
     } else {
         const auto choices = o.value("choices").toArray();
         if (!choices.isEmpty())
@@ -111,7 +114,11 @@ ArenaLlmResult ArenaLlmClient::parse_response(const QString& provider, const QBy
         const auto u = o.value("usage").toObject();
         r.prompt_tokens = u.value("prompt_tokens").toInt();
         r.completion_tokens = u.value("completion_tokens").toInt();
+        r.cached_prompt_tokens = u.value("prompt_cache_hit_tokens").toInt();
+        if (r.cached_prompt_tokens <= 0)
+            r.cached_prompt_tokens = u.value("prompt_tokens_details").toObject().value("cached_tokens").toInt();
     }
+    r.cached_prompt_tokens = qBound(0, r.cached_prompt_tokens, r.prompt_tokens);
     if (r.content.isEmpty()) {
         r.error = "empty completion";
         return r;
@@ -185,6 +192,7 @@ void ArenaLlmClient::complete(const ArenaLlmRequest& req, std::function<void(Are
         const QByteArray body = reply->readAll();
         if (reply->error() == QNetworkReply::OperationCanceledError) {
             r.error = "timeout";
+            fincept::metrics::LocalUsageMetrics::record_llm(provider, 0, 0, false);
             cb(r);
             return;
         }
@@ -199,6 +207,7 @@ void ArenaLlmClient::complete(const ArenaLlmRequest& req, std::function<void(Are
                 r.error = fincept::ai_chat::report_fincept_refusal(
                     status, body, QString::fromUtf8(reply->request().rawHeader("X-Session-Token")),
                     reply->rawHeader("X-Session-Expired").trimmed().compare("true", Qt::CaseInsensitive) == 0);
+                fincept::metrics::LocalUsageMetrics::record_llm(provider, 0, 0, false);
                 cb(r);
                 return;
             }
@@ -207,18 +216,22 @@ void ArenaLlmClient::complete(const ArenaLlmRequest& req, std::function<void(Are
             const auto kind = fincept::ai_chat::classify_fincept_failure(status, QString::fromUtf8(body));
             if (status >= 400 && kind != fincept::ai_chat::LlmErrorKind::Other) {
                 r.error = fincept::ai_chat::make_fincept_error(kind, QString::fromUtf8(body));
+                fincept::metrics::LocalUsageMetrics::record_llm(provider, 0, 0, false);
                 cb(r);
                 return;
             }
         }
         if (reply->error() != QNetworkReply::NoError && body.isEmpty()) {
             r.error = reply->errorString();
+            fincept::metrics::LocalUsageMetrics::record_llm(provider, 0, 0, false);
             cb(r);
             return;
         }
         // Provider errors often arrive as HTTP 4xx with a JSON body — parse it.
         ArenaLlmResult parsed = parse_response(provider, body);
         parsed.latency_ms = r.latency_ms;
+        fincept::metrics::LocalUsageMetrics::record_llm(provider, parsed.prompt_tokens, parsed.completion_tokens,
+                                                        parsed.success, parsed.cached_prompt_tokens);
         cb(parsed);
     });
 }
