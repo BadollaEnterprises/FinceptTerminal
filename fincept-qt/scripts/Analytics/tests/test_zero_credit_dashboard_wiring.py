@@ -984,6 +984,17 @@ class ZeroCreditDashboardWiringTest(unittest.TestCase):
         self.assertLess(credentials.index("fincept_metered_services_enabled"),
                         credentials.index("fincept_api_key"))
 
+    def test_alpha_arena_credential_reads_fail_closed_with_storage_error(self):
+        registry = (ROOT / "src/services/alpha_arena/ArenaModelRegistry.cpp").read_text(encoding="utf-8")
+        credentials = registry[registry.index("Result<ArenaCredentials> ArenaModelRegistry::resolve_credentials") :]
+
+        self.assertGreaterEqual(credentials.count("if (rows.is_err())"), 3)
+        self.assertIn("Could not read LLM profiles", credentials)
+        self.assertIn("Could not read LLM model configurations", credentials)
+        self.assertIn("Could not read LLM providers", credentials)
+        self.assertLess(credentials.index("if (rows.is_err())"),
+                        credentials.index("no API key configured"))
+
     def test_historical_arena_rows_hide_retired_provider_names(self):
         store = (ROOT / "src/services/alpha_arena/ArenaStore.cpp").read_text(encoding="utf-8")
         parser = store[store.index("AgentRow map_agent") :

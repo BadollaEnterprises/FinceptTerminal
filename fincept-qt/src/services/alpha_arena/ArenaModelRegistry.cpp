@@ -242,29 +242,35 @@ Result<ArenaCredentials> ArenaModelRegistry::resolve_credentials(const QString& 
     if (source_kind == QLatin1String("harness") || ProviderCatalog::is_harness(provider))
         return Result<ArenaCredentials>::ok(cred);
     if (source_kind == QLatin1String("profile")) {
-        if (auto r = LlmProfileRepository::instance().list_profiles(); r.is_ok())
-            for (const auto& p : r.value())
-                if (p.id == source_ref) {
-                    cred.api_key = p.api_key;
-                    cred.base_url = p.base_url;
-                    break;
-                }
+        const auto rows = LlmProfileRepository::instance().list_profiles();
+        if (rows.is_err())
+            return Result<ArenaCredentials>::err("Could not read LLM profiles: " + rows.error());
+        for (const auto& p : rows.value())
+            if (p.id == source_ref) {
+                cred.api_key = p.api_key;
+                cred.base_url = p.base_url;
+                break;
+            }
     } else if (source_kind == QLatin1String("model")) {
-        if (auto r = LlmConfigRepository::instance().list_models(); r.is_ok())
-            for (const auto& m : r.value())
-                if (m.id == source_ref) {
-                    cred.api_key = m.api_key;
-                    cred.base_url = m.base_url;
-                    break;
-                }
+        const auto rows = LlmConfigRepository::instance().list_models();
+        if (rows.is_err())
+            return Result<ArenaCredentials>::err("Could not read LLM model configurations: " + rows.error());
+        for (const auto& m : rows.value())
+            if (m.id == source_ref) {
+                cred.api_key = m.api_key;
+                cred.base_url = m.base_url;
+                break;
+            }
     } else { // "provider"
-        if (auto r = LlmConfigRepository::instance().list_providers(); r.is_ok())
-            for (const auto& c : r.value())
-                if (c.provider == provider) {
-                    cred.api_key = c.api_key;
-                    cred.base_url = c.base_url;
-                    break;
-                }
+        const auto rows = LlmConfigRepository::instance().list_providers();
+        if (rows.is_err())
+            return Result<ArenaCredentials>::err("Could not read LLM providers: " + rows.error());
+        for (const auto& c : rows.value())
+            if (c.provider.compare(provider, Qt::CaseInsensitive) == 0) {
+                cred.api_key = c.api_key;
+                cred.base_url = c.base_url;
+                break;
+            }
     }
     // The Fincept key lives in AuthManager (session → SecureStorage), not in the
     // llm_configs row — exactly how LlmService resolves it. Without this, Fincept
