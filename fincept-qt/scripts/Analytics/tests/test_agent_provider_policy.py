@@ -550,6 +550,31 @@ class AgentProviderPolicyTest(unittest.TestCase):
         preflight = loops[loops.index("def preflight") : loops.index("def ", loops.index("def preflight") + 4)]
         self.assertIn("DEPRECATED_PROVIDERS", preflight)
 
+    def test_rd_agent_bounds_iterations_and_protects_key_endpoints(self):
+        cli = load_path("finagent_rdagent_limits", RDAGENT_CLI)
+        self.assertEqual(cli._bounded_iterations(None), 10)
+        self.assertEqual(cli._bounded_iterations("bad"), 10)
+        self.assertEqual(cli._bounded_iterations(0), 1)
+        self.assertEqual(cli._bounded_iterations(17), 17)
+        self.assertEqual(cli._bounded_iterations(10**12), 100)
+        self.assertIsNone(cli._provider_policy_error({
+            "llm_provider": "deepseek", "llm_base_url": "https://proxy.example/v1",
+        }))
+        self.assertIsNone(cli._provider_policy_error({
+            "llm_provider": "deepseek", "llm_base_url": "http://127.0.0.9:8080/v1",
+        }))
+        self.assertIsNotNone(cli._provider_policy_error({
+            "llm_provider": "deepseek", "llm_base_url": "http://proxy.example/v1",
+        }))
+        self.assertIsNotNone(cli._provider_policy_error({
+            "llm_provider": "deepseek", "llm_base_url": "https://atlascloud.ai/v1",
+        }))
+        service = (MODULE.parents[3] / "src/services/ai_quant_lab/AIQuantLabService.cpp").read_text(encoding="utf-8")
+        rd_start = service[service.index("void AIQuantLabService::rd_start") :
+                           service.index("bool AIQuantLabService::rd_spawn")]
+        self.assertIn("std::clamp", rd_start)
+        self.assertIn("kMaxRdIterations", rd_start)
+
     def test_agent_payload_uses_one_resolved_api_config_not_mixed_active_fields(self):
         service = AGENT_SERVICE.read_text(encoding="utf-8")
         payload = service[service.index("QJsonObject AgentService::build_payload") :

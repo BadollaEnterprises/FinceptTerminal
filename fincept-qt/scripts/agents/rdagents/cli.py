@@ -28,6 +28,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 # Ensure this directory is on sys.path for sibling imports
 _HERE = Path(__file__).resolve().parent
@@ -45,6 +46,16 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 _KINDS = ("factor_mining", "model_optimization", "quant_research")
+_DEFAULT_ITERATIONS = 10
+_MAX_ITERATIONS = 100
+
+
+def _bounded_iterations(value: Any) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError, OverflowError):
+        return _DEFAULT_ITERATIONS
+    return max(1, min(parsed, _MAX_ITERATIONS))
 
 
 def _provider_policy_error(config: dict[str, Any]) -> str | None:
@@ -52,6 +63,23 @@ def _provider_policy_error(config: dict[str, Any]) -> str | None:
     if provider in DEPRECATED_PROVIDERS:
         return (f"LLM provider '{provider}' is disabled. Configure your DeepSeek API key and "
                 "select a DeepSeek profile for AI Quant Lab.")
+    base_url = str(config.get("llm_base_url") or "").strip()
+    if provider == "atlascloud" or "atlascloud" in base_url.lower():
+        return "Refusing an insecure or blocked LLM endpoint; select your user-owned DeepSeek profile."
+    if base_url:
+        try:
+            parsed = urlsplit(base_url)
+            host = (parsed.hostname or "").lower()
+            scheme = parsed.scheme.lower()
+        except ValueError:
+            host = ""
+            scheme = ""
+        loopback = host == "localhost" or host.endswith(".localhost") or host == "::1"
+        if not loopback and host.startswith("127."):
+            octets = host.split(".")
+            loopback = len(octets) == 4 and all(part.isdigit() and 0 <= int(part) <= 255 for part in octets)
+        if not host or (scheme != "https" and not (scheme == "http" and loopback)):
+            return "Refusing an insecure or blocked LLM endpoint; remote provider URLs must use HTTPS."
     return None
 
 
@@ -168,7 +196,7 @@ def cmd_run_task(params: dict[str, Any]) -> None:
     if missing:
         fail("RD-Agent cannot run on this machine yet. Missing: " + "; ".join(missing), missing=missing)
 
-    max_iterations = max(1, int(params.get("max_iterations", params.get("iterations", 10))))
+    max_iterations = _bounded_iterations(params.get("max_iterations", params.get("iterations")))
     enable_mcp = bool(params.get("enable_mcp", False))
     mcp_port = int(params.get("mcp_port", 18765))
 

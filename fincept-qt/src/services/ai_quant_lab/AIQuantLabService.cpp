@@ -24,6 +24,7 @@
 #include <QUuid>
 
 #include <algorithm>
+#include <cmath>
 #include <memory>
 #include <utility>
 
@@ -962,8 +963,14 @@ void AIQuantLabService::rd_start(const QString& command, const QString& kind, co
     t.kind = kind;
     t.params = params;
     t.params.remove(QStringLiteral("config")); // never keep credentials
-    t.max_iterations = std::max(
-        1, params.value(QStringLiteral("max_iterations")).toInt(params.value(QStringLiteral("iterations")).toInt(10)));
+    QJsonValue iteration_value = params.value(QStringLiteral("max_iterations"));
+    if (iteration_value.isUndefined())
+        iteration_value = params.value(QStringLiteral("iterations"));
+    const double requested_iterations = iteration_value.toDouble(10.0);
+    t.max_iterations = std::isfinite(requested_iterations)
+                           ? static_cast<int>(std::clamp(requested_iterations, 1.0,
+                                                         static_cast<double>(kMaxRdIterations)))
+                           : 10;
     // Per-profile, writable workspace (the scripts dir is pruned in dev builds
     // and read-only in installs).
     t.workspace = AppPaths::data() + QStringLiteral("/rdagents/workspaces/") + t.id;

@@ -301,6 +301,7 @@ class AIQuantLabService : public QObject {
 
     static constexpr int kListTtlSec = 5 * 60;
     static constexpr int kMaxConcurrentRdTasks = 2;
+    static constexpr int kMaxRdIterations = 100;
 
     // Module ID → script mapping
     QHash<QString, QString> script_map_;
