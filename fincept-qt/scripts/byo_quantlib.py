@@ -4025,6 +4025,8 @@ def _arima_forecast(body: Mapping[str, Any]) -> Dict[str, Any]:
     data = _vector(body, "data")
     differenced = list(fit["differenced_data"])
     steps = int(body.get("steps", body.get("n_forecast", 5)))
+    if not 1 <= steps <= 10000:
+        raise ValueError("forecast steps are outside local limits")
     difference_forecast = []
     for _ in range(steps):
         value = fit["intercept"] + sum(coefficient * differenced[-lag]

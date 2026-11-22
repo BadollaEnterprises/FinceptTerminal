@@ -958,6 +958,15 @@ class ByoQuantLibTest(unittest.TestCase):
                 self.assertIn("iterations are outside local limits", answer.get("error", ""))
                 self.assertEqual(answer["meta"]["fincept_credits"], 0)
 
+    def test_arima_forecast_steps_are_bounded(self):
+        mod = load_module()
+        body = {"data": [0.01, 0.02, 0.015, 0.025, 0.02] * 4, "p": 1, "d": 1, "q": 0}
+        for steps in (0, 10001):
+            with self.subTest(steps=steps):
+                answer = mod.execute("statistics/timeseries/arima/forecast", {**body, "steps": steps})
+                self.assertIn("forecast steps are outside local limits", answer.get("error", ""))
+                self.assertEqual(answer["meta"]["fincept_credits"], 0)
+
     def test_sabr_and_flat_surface_routes_return_volatility(self):
         mod = load_module()
         sabr = mod.execute(
