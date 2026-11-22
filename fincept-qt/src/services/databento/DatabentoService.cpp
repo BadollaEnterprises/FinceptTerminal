@@ -207,8 +207,9 @@ void DatabentoService::clear_api_key() {
 }
 
 // ── Core runner — wraps PythonRunner per P4 ────────────────────────────────
-// Python script expects:  databento_provider.py <command> <json_args>
-// where json_args is a JSON object with api_key and other parameters.
+// Python script expects: databento_provider.py <command> <json_args>.
+// json_args contains request parameters only; the key is injected through the
+// narrowly allow-listed DATABENTO_API_KEY environment variable.
 void DatabentoService::run_script(const QStringList& args, std::function<void(bool, const QJsonObject&)> cb) {
     const auto stored = databento_key_detail::db_read_key(SECURE_KEY);
     if (!stored.error.isEmpty()) {
@@ -258,7 +259,9 @@ void DatabentoService::run_script(const QStringList& args, std::function<void(bo
     QPointer<DatabentoService> self = this;
 
     QString cmd_label = command;
-    PythonRunner::instance().run(SCRIPT, script_args, [self, cb, cmd_label](PythonResult result) {
+    PythonRunner::RunOptions options;
+    options.credential_allowlist = QStringList{QString::fromLatin1(DATABENTO_ENV_KEY)};
+    PythonRunner::instance().run_with_options(SCRIPT, script_args, options, [self, cb, cmd_label](PythonResult result) {
         if (!self)
             return;
         // Surface the full stdout (includes warnings + JSON) so the inspector's
