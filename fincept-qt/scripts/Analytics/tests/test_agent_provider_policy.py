@@ -182,7 +182,7 @@ class AgentProviderPolicyTest(unittest.TestCase):
 
         service = AGENT_SERVICE_DISCOVERY.read_text(encoding="utf-8")
         save = service[service.index("Result<void> AgentService::save_config"):
-                       service.index("void AgentService::delete_config")]
+                       service.index("AgentService::delete_config")]
         self.assertIn("begin_transaction()", save)
         self.assertIn("rollback()", save)
         self.assertIn("commit()", save)
@@ -206,6 +206,30 @@ class AgentProviderPolicyTest(unittest.TestCase):
         self.assertIn("if (saved.is_err())", panel_save)
         self.assertNotIn("repo.assign_profile", panel_save)
         self.assertNotIn("repo.remove_assignment", panel_save)
+
+    def test_agent_delete_removes_profile_assignment_atomically(self):
+        header = AGENT_SERVICE_HEADER.read_text(encoding="utf-8")
+        self.assertIn("Result<void> delete_config(const QString& id)", header)
+
+        service = AGENT_SERVICE_DISCOVERY.read_text(encoding="utf-8")
+        start = service.index("AgentService::delete_config")
+        delete = service[service.rfind("Result<void>", 0, start):service.index("// ── Structured output", start)]
+        self.assertIn("begin_transaction()", delete)
+        self.assertIn("remove_assignment", delete)
+        self.assertIn("AgentConfigRepository::instance().remove", delete)
+        self.assertIn("rollback()", delete)
+        self.assertIn("commit()", delete)
+        self.assertLess(delete.index("remove_assignment"), delete.index("AgentConfigRepository::instance().remove"))
+
+        for path, method, end in (
+            (CREATE_AGENT_DATA, "void CreateAgentPanel::delete_agent", "void CreateAgentPanel::test_agent"),
+            (AGENTS_PANEL, "void AgentsViewPanel::delete_current_config", "void AgentsViewPanel::run_query"),
+        ):
+            with self.subTest(source=path.name):
+                source = path.read_text(encoding="utf-8")
+                body = source[source.index(method):source.index(end)]
+                self.assertIn("const auto deleted = services::AgentService::instance().delete_config", body)
+                self.assertIn("if (deleted.is_err())", body)
 
     def test_agent_assignment_reads_fail_closed_in_editors_and_chat(self):
         header = LLM_PROFILE_HEADER.read_text(encoding="utf-8")

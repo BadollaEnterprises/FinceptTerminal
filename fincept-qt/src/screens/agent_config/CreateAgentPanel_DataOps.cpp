@@ -426,7 +426,11 @@ void CreateAgentPanel::delete_agent() {
             tr("Delete the saved agent \"%1\"?\n\nThis cannot be undone.").arg(saved_agents_[row].name),
             QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes)
         return;
-    services::AgentService::instance().delete_config(saved_agents_[row].id);
+    const auto deleted = services::AgentService::instance().delete_config(saved_agents_[row].id);
+    if (deleted.is_err()) {
+        set_form_status(status_lbl_, tr("Delete failed: %1").arg(QString::fromStdString(deleted.error())),
+                        ui::colors::DANGER());
+    }
 }
 
 void CreateAgentPanel::test_agent() {

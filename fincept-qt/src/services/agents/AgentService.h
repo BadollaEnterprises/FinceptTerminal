@@ -153,7 +153,7 @@ class AgentService : public QObject, public fincept::datahub::Producer {
     /// assignment in one SQLite transaction. An engaged empty profile id clears
     /// the assignment; std::nullopt leaves assignments untouched (teams, etc.).
     Result<void> save_config(const AgentConfig& config, std::optional<QString> profile_id = std::nullopt);
-    void delete_config(const QString& id);
+    Result<void> delete_config(const QString& id);
 
     // ── Cache management ─────────────────────────────────────────────────────
     void clear_cache();

@@ -1607,7 +1607,12 @@ void AgentsViewPanel::delete_current_config() {
                               tr("Delete the agent configuration \"%1\"?\n\nThis cannot be undone.").arg(name),
                               QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes)
         return;
-    services::AgentService::instance().delete_config(filtered_agents_[selected_agent_idx_].id);
+    const auto deleted = services::AgentService::instance().delete_config(filtered_agents_[selected_agent_idx_].id);
+    if (deleted.is_err()) {
+        set_status(result_status_, tr("Delete failed: %1").arg(QString::fromStdString(deleted.error())),
+                   ui::colors::DANGER());
+        return;
+    }
     set_status(result_status_, tr("Config deleted"), ui::colors::WARNING());
 }
 

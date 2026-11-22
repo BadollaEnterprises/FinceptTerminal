@@ -380,14 +380,34 @@ Result<void> AgentService::save_config(const AgentConfig& config_in, std::option
     return Result<void>::ok();
 }
 
-void AgentService::delete_config(const QString& id) {
-    auto result = AgentConfigRepository::instance().remove(id);
-    if (result.is_ok()) {
-        LOG_INFO("AgentService", QString("Deleted agent config: %1").arg(id));
-        emit config_deleted();
-    } else {
+Result<void> AgentService::delete_config(const QString& id) {
+    auto fail = [this](const Result<void>& result) {
         emit error_occurred("delete_config", QString::fromStdString(result.error()));
+        return result;
+    };
+
+    auto& database = Database::instance();
+    const auto started = database.begin_transaction();
+    if (started.is_err())
+        return fail(started);
+
+    auto result = LlmProfileRepository::instance().remove_assignment(QStringLiteral("agent"), id);
+    if (result.is_ok())
+        result = AgentConfigRepository::instance().remove(id);
+    if (result.is_err()) {
+        database.rollback();
+        return fail(result);
     }
+
+    const auto committed = database.commit();
+    if (committed.is_err()) {
+        database.rollback();
+        return fail(committed);
+    }
+
+    LOG_INFO("AgentService", QString("Deleted agent config: %1").arg(id));
+    emit config_deleted();
+    return Result<void>::ok();
 }
 
 // ── Structured output ────────────────────────────────────────────────────────
