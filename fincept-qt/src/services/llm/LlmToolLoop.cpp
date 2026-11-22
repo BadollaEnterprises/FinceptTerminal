@@ -275,26 +275,22 @@ LlmResponse LlmService::do_tool_loop(QJsonArray loop_messages, const QString& ur
     const QString exhaustion = budget.exhaustion_note();
     LOG_WARN(kLlmToolLoopTag, "TOOL LOOP: " + exhaustion + " — forcing summary turn");
     {
-        QString summary_instruction =
+        const QString summary_instruction =
             "You have used your tool budget (" + exhaustion +
-            "). Reply now with a final summary of what you accomplished and what (if anything) is incomplete.";
-        if (budget.allows_summary_tool_calls())
-            summary_instruction +=
-                " If there are critical remaining tool calls, you may make them, but prefer summarising.";
-        else
-            summary_instruction += " Do not call or emit tools; report the result you already have.";
-        if (budget.allows_summary_tool_calls()) {
-            loop_messages.append(QJsonObject{{"role", "system"}, {"content", summary_instruction}});
-        } else {
-            const int before = QJsonDocument(loop_messages).toJson(QJsonDocument::Compact).size();
-            loop_messages = bounded_tool_summary_messages(loop_messages, summary_instruction,
-                                                          detail::tool_loop_summary_context_max_bytes());
-            const int after = QJsonDocument(loop_messages).toJson(QJsonDocument::Compact).size();
-            LOG_INFO(kLlmToolLoopTag,
-                     QString("TOOL LOOP: compacted exhausted-summary context from %1 to %2 bytes")
-                         .arg(before)
-                         .arg(after));
-        }
+            "). Reply now with a final summary of what you accomplished and what (if anything) is incomplete. "
+            "Do not call or emit tools; report the result you already have.";
+        // Every exhaustion reason is final. Re-sending the full transcript and
+        // tool catalogue after a round/time stop can be the most expensive call
+        // of the turn, and a structured tool call here has no following loop to
+        // execute it. Keep the evidence bounded and the request tool-free.
+        const int before = QJsonDocument(loop_messages).toJson(QJsonDocument::Compact).size();
+        loop_messages = bounded_tool_summary_messages(loop_messages, summary_instruction,
+                                                      detail::tool_loop_summary_context_max_bytes());
+        const int after = QJsonDocument(loop_messages).toJson(QJsonDocument::Compact).size();
+        LOG_INFO(kLlmToolLoopTag,
+                 QString("TOOL LOOP: compacted exhausted-summary context from %1 to %2 bytes")
+                     .arg(before)
+                     .arg(after));
 
         QJsonObject fu;
         fu["model"] = model_;
@@ -305,17 +301,6 @@ LlmResponse LlmService::do_tool_loop(QJsonArray loop_messages, const QString& ur
             fu[QStringLiteral("max_completion_tokens")] = summary_limit;
         else
             fu[QStringLiteral("max_tokens")] = summary_limit;
-        // Once either provider-reported token budget is spent, this request must
-        // be a final answer: advertising tools invites another paid round and
-        // also resends the schema block. Round/time exhaustion keeps the old
-        // behaviour because a critical last structured call may still finish
-        // the task.
-        if (budget.allows_summary_tool_calls()) {
-            QJsonArray tools =
-                mcp::McpService::instance().format_tools_for_openai(detail::apply_request_policy(tool_filter_));
-            if (!tools.isEmpty())
-                fu["tools"] = tools;
-        }
         if (provider_ == QLatin1String("deepseek"))
             apply_deepseek_thinking(fu, detail::t_reasoning_effort);
 
@@ -339,37 +324,13 @@ LlmResponse LlmService::do_tool_loop(QJsonArray loop_messages, const QString& ur
                     LOG_DEBUG(kLlmToolLoopTag,
                               QString("TOOL LOOP: summary fallback produced %1 chars").arg(resp.content.length()));
 
-                    // If the model emitted text-tool markup instead of structured
-                    // tool_calls, run it through extraction so the markup is
-                    // executed instead of dumped raw into the chat bubble.
-                    static const QRegularExpression rx_has_text_markup(
-                        QStringLiteral("<\\s*/?\\s*(?:\\w+\\s*:\\s*)?tool_call\\b|<\\s*invoke\\s+name="),
-                        QRegularExpression::CaseInsensitiveOption);
-                    if (resp.success && budget.allows_summary_tool_calls() &&
-                        rx_has_text_markup.match(resp.content).hasMatch()) {
-                        LOG_DEBUG(kLlmToolLoopTag, "TOOL LOOP: summary fallback has text-tool markup — re-routing");
-                        QString user_msg;
-                        for (const auto& v : loop_messages) {
-                            QJsonObject o = v.toObject();
-                            if (o["role"].toString() == "user") {
-                                user_msg = o["content"].toString();
-                                break;
-                            }
-                        }
-                        auto text_result =
-                            try_extract_and_execute_text_tool_calls(resp.content, user_msg, url, headers);
-                        if (text_result.has_value() && (text_result->success || text_result->cancelled)) {
-                            llm_tool_loop_add_usage(*text_result, usage);
-                            return text_result.value();
-                        }
-                    }
                     if (resp.success)
                         return resp;
                 }
             }
         }
     }
-    resp.error = "Tool call loop exceeded maximum rounds";
+    resp.error = "Tool call loop ended without an answer — " + exhaustion;
     return resp;
 }
 

@@ -882,6 +882,17 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertIn("ant_budget.clamp_completion_allowance(resolved_max_tokens())", native_loops)
         self.assertIn("gem_budget.clamp_completion_allowance(resolved_max_tokens())", native_loops)
 
+    def test_exhausted_tool_loop_summary_is_compact_and_tool_free(self):
+        source = (ROOT / "src/services/llm/LlmToolLoop.cpp").read_text(encoding="utf-8")
+        summary = source[source.index("// Budget exhausted. Force one final turn"):
+                         source.index("// Text-based tool call extraction")]
+
+        self.assertIn("bounded_tool_summary_messages", summary)
+        self.assertIn("Do not call or emit tools", summary)
+        self.assertNotIn("allows_summary_tool_calls", summary)
+        self.assertNotIn('fu["tools"]', summary)
+        self.assertNotIn("try_extract_and_execute_text_tool_calls", summary)
+
     def test_selected_agent_profiles_share_runtime_provider_policy(self):
         header = (ROOT / "src/storage/repositories/LlmProfileRepository.h").read_text(encoding="utf-8")
         source = (ROOT / "src/storage/repositories/LlmProfileRepository.cpp").read_text(encoding="utf-8")
