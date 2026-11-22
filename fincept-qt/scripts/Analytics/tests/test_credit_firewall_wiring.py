@@ -433,6 +433,19 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertIn("provider_is_visible_in_community", body)
         self.assertIn("set_active(fallback)", body)
 
+    def test_llm_settings_surfaces_provider_read_failures(self):
+        source = (ROOT / "src/screens/settings/LlmConfigSection_Providers.cpp").read_text(encoding="utf-8")
+        load = source[source.index("void LlmConfigSection::load_providers()"):
+                      source.index("void LlmConfigSection::populate_form")]
+        form = source[source.index("void LlmConfigSection::populate_form"):
+                      source.index("void LlmConfigSection::on_provider_selected")]
+        self.assertIn("if (result.is_err())", load)
+        self.assertIn("Could not read provider settings", load)
+        self.assertIn("privacy::redact_text(error)", load)
+        self.assertIn("if (result.is_err())", form)
+        self.assertIn("Could not load provider settings", form)
+        self.assertIn("privacy::redact_text(error)", form)
+
     def test_local_chat_mode_diagnostics_scrub_conversation_storage_errors(self):
         source = (ROOT / "src/screens/chat_mode/ChatModeScreen.cpp").read_text(encoding="utf-8")
         self.assertIn('#include "core/privacy/LogRedact.h"', source)

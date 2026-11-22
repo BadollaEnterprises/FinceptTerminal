@@ -553,7 +553,11 @@ void LlmConfigSection::load_providers() {
     QString active_provider;
     QString first_visible_provider;
     auto result = LlmConfigRepository::instance().list_providers();
-    if (result.is_ok()) {
+    if (result.is_err()) {
+        const QString error = QString::fromStdString(result.error());
+        show_status(tr("Could not read provider settings: ") + error, true);
+        LOG_ERROR(TAG_PROVIDERS, "load_providers failed: " + privacy::redact_text(error));
+    } else {
         for (const auto& p : result.value()) {
             // Rows created by older builds stay in storage for explicit user
             // recovery, but cannot reappear or become effective in this UI.
@@ -680,8 +684,12 @@ void LlmConfigSection::populate_form(const QString& provider) {
     QString def_url = default_base_url(provider);
 
     auto result = LlmConfigRepository::instance().list_providers();
-    if (result.is_err())
+    if (result.is_err()) {
+        const QString error = QString::fromStdString(result.error());
+        show_status(tr("Could not load provider settings: ") + error, true);
+        LOG_ERROR(TAG_PROVIDERS, "populate_form failed: " + privacy::redact_text(error));
         return;
+    }
 
     for (const auto& p : result.value()) {
         if (p.provider.toLower() == provider.toLower()) {
