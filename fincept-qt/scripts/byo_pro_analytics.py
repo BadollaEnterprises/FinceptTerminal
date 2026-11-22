@@ -134,7 +134,9 @@ def portfolio_report(
     returns: Mapping[str, Sequence[float]],
     benchmark_returns: Sequence[float] | None = None,
 ) -> Dict[str, Any]:
-    weight_map = dict(zip(symbols, weights)) if len(weights) == len(symbols) else None
+    if weights and len(weights) != len(symbols):
+        raise ValueError("portfolio risk needs exactly one weight per symbol, or no weights for equal weighting")
+    weight_map = dict(zip(symbols, weights)) if weights else None
     risk_payload: Dict[str, Any] = {"returns": returns, "weights": weight_map}
     if benchmark_returns is not None:
         risk_payload["benchmark_returns"] = benchmark_returns

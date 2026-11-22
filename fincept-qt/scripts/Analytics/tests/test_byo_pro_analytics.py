@@ -221,6 +221,15 @@ class ByoProAnalyticsTest(unittest.TestCase):
         self.assertTrue({"Beta vs S&P 500", "Annualized alpha", "Diversification ratio"} <= stat_labels)
         self.assertIn("Correlation matrix", {table["title"] for table in report["tables"]})
 
+    def test_portfolio_report_rejects_partial_weights_instead_of_using_equal_weights(self):
+        mod = load_module()
+        returns = {
+            "ALPHA": [0.01, -0.02, 0.015],
+            "BETA": [0.005, -0.01, 0.004],
+        }
+        with self.assertRaisesRegex(ValueError, "one weight per symbol"):
+            mod.portfolio_report(["ALPHA", "BETA"], [0.6], returns)
+
     def test_options_and_market_reports_are_zero_credit(self):
         mod = load_module()
         options = mod.options_report(
