@@ -232,6 +232,7 @@ AnalyticsRequest run_metrics_command(QObject* ctx, const QString& command, const
     opts.timeout_ms = timeout_ms;
     opts.stdin_data = QJsonDocument(payload).toJson(QJsonDocument::Compact);
     opts.cancel_token = req.token;
+    opts.credential_allowlist = QStringList{};
     QPointer<QObject> guard(ctx);
     python::PythonRunner::instance().run_with_options(
         QStringLiteral("portfolio_metrics.py"), {command}, opts,

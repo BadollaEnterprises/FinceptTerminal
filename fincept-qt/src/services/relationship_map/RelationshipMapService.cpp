@@ -229,6 +229,7 @@ void RelationshipMapService::start_run(const QString& key, const QString& ticker
     opts.cancel_token = run.cancel;
     opts.timeout_ms = kRmsScriptTimeoutMs;
     opts.stream_stdout = false; // progress on stderr; the one big JSON on stdout is never scanned per line
+    opts.credential_allowlist = QStringList{};
     QPointer<RelationshipMapService> self = this;
     python::PythonRunner::instance().run_with_options(
         QStringLiteral("relationship_map.py"), args, opts,

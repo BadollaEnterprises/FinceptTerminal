@@ -134,6 +134,12 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertIn("isrs_public_python_options", resolver)
         self.assertNotIn("PythonRunner::instance().run(", resolver)
 
+    def test_portfolio_and_relationship_workers_are_secretless(self):
+        portfolio = (ROOT / "src/services/portfolio/PortfolioService_Metrics.cpp").read_text(encoding="utf-8")
+        relationship = (ROOT / "src/services/relationship_map/RelationshipMapService.cpp").read_text(encoding="utf-8")
+        self.assertIn("opts.credential_allowlist = QStringList{}", portfolio)
+        self.assertIn("opts.credential_allowlist = QStringList{}", relationship)
+
     def test_macro_and_geopolitics_services_check_firewall(self):
         geopolitics = (ROOT / "src/services/geopolitics/GeopoliticsService.cpp").read_text(encoding="utf-8")
         macro = (ROOT / "src/services/economics/FinceptMacroService.cpp").read_text(encoding="utf-8")
