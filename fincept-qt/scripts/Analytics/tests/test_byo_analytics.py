@@ -146,6 +146,16 @@ class ByoAnalyticsTest(unittest.TestCase):
         self.assertEqual(result["unusual_activity"][0]["strike"], 90.0)
         self.assertEqual(result["unusual_activity"][0]["side"], "PUT")
 
+    def test_put_implied_volatility_accepts_valid_price_above_spot(self):
+        mod = load_module()
+        spot, strike, years, rate, volatility = 50.0, 120.0, 1.0, 0.04, 0.30
+        price = mod._black_scholes_price(spot, strike, years, rate, volatility, False)
+        self.assertGreater(price, spot)
+
+        implied = mod._implied_volatility(price, spot, strike, years, rate, False)
+        self.assertIsNotNone(implied)
+        self.assertAlmostEqual(implied, volatility, places=6)
+
     def test_fixed_income_matches_zero_coupon_price_and_duration(self):
         mod = load_module()
         result = mod.fixed_income(

@@ -387,10 +387,12 @@ def _black_scholes_price(spot: float, strike: float, years: float, rate: float, 
 
 def _implied_volatility(price: float, spot: float, strike: float, years: float, rate: float,
                         is_call: bool) -> float | None:
-    intrinsic = max(0.0, spot - strike * math.exp(-rate * years)) if is_call else max(
-        0.0, strike * math.exp(-rate * years) - spot
+    discounted_strike = strike * math.exp(-rate * years)
+    intrinsic = max(0.0, spot - discounted_strike) if is_call else max(
+        0.0, discounted_strike - spot
     )
-    if price <= intrinsic + 1e-8 or price >= spot:
+    theoretical_maximum = spot if is_call else discounted_strike
+    if price <= intrinsic + 1e-8 or price >= theoretical_maximum:
         return None
     low, high = 1e-4, 5.0
     if _black_scholes_price(spot, strike, years, rate, high, is_call) < price:
