@@ -197,8 +197,10 @@ void SecFilingsService::run_shared(const QString& key, const QStringList& argv, 
     waiters_.insert(key, {std::move(done)});
 
     QPointer<SecFilingsService> self = this;
-    python::PythonRunner::instance().run(
-        QString::fromLatin1(kSecSvcScript), argv, [self, key](python::PythonResult r) {
+    python::PythonRunner::RunOptions opts;
+    opts.credential_allowlist = QStringList{};
+    python::PythonRunner::instance().run_with_options(
+        QString::fromLatin1(kSecSvcScript), argv, opts, [self, key](python::PythonResult r) {
             if (!self)
                 return;
             bool ok = r.success;

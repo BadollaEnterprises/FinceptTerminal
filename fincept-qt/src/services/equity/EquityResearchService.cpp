@@ -353,7 +353,9 @@ EquityResearchService::EquityResearchService(QObject* parent) : QObject(parent) 
 void EquityResearchService::run_python(const QString& script, const QStringList& args,
                                        std::function<void(bool, const QString&)> cb) {
     QPointer<EquityResearchService> self = this;
-    python::PythonRunner::instance().run(script, args, [self, cb](python::PythonResult result) {
+    python::PythonRunner::RunOptions opts;
+    opts.credential_allowlist = QStringList{};
+    python::PythonRunner::instance().run_with_options(script, args, opts, [self, cb](python::PythonResult result) {
         if (!self)
             return;
         cb(result.success, result.success ? result.output : result.error);
@@ -362,7 +364,9 @@ void EquityResearchService::run_python(const QString& script, const QStringList&
 
 void EquityResearchService::run_python_coded(const QString& script, const QStringList& args, PyCodedCallback cb) {
     QPointer<EquityResearchService> self = this;
-    python::PythonRunner::instance().run(script, args, [self, cb](python::PythonResult result) {
+    python::PythonRunner::RunOptions opts;
+    opts.credential_allowlist = QStringList{};
+    python::PythonRunner::instance().run_with_options(script, args, opts, [self, cb](python::PythonResult result) {
         if (!self)
             return;
         if (result.success) {

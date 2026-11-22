@@ -252,8 +252,11 @@ void EquityResearchService::resolve_symbol(const QString& text, ResolveCallback 
     // Straight to the runner (not run_python): on failure the reply JSON in `output` can
     // still answer the question ({"error", "found": false, "candidates": [...]}).
     QPointer<EquityResearchService> self = this;
-    python::PythonRunner::instance().run(
+    python::PythonRunner::RunOptions opts;
+    opts.credential_allowlist = QStringList{};
+    python::PythonRunner::instance().run_with_options(
         QStringLiteral("yfinance_data.py"), {QStringLiteral("resolve_symbol"), query},
+        opts,
         [self, query, cache_key, done](python::PythonResult result) {
             if (!self)
                 return;

@@ -86,6 +86,7 @@ void EquitySegmentsTab::request(bool refresh) {
     options.timeout_ms = 45'000;
     options.max_output_bytes = 4 * 1024 * 1024;
     options.stream_stdout = false;
+    options.credential_allowlist = QStringList{};
     QPointer<EquitySegmentsTab> self(this);
     QStringList arguments{QStringLiteral("segments"), symbol};
     if (refresh)

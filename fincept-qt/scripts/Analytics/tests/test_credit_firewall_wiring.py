@@ -95,6 +95,16 @@ class CreditFirewallWiringTest(unittest.TestCase):
                 self.assertIn("opts.credential_allowlist = QStringList{}", source)
                 self.assertNotIn("PythonRunner::instance().run(\n", source)
 
+    def test_equity_and_sec_public_workers_are_secretless(self):
+        core = (ROOT / "src/services/equity/EquityResearchService.cpp").read_text(encoding="utf-8")
+        extension = (ROOT / "src/services/equity/EquityResearchService_Ext.cpp").read_text(encoding="utf-8")
+        filings = (ROOT / "src/services/equity/SecFilingsService.cpp").read_text(encoding="utf-8")
+        segments = (ROOT / "src/screens/equity_research/EquitySegmentsTab.cpp").read_text(encoding="utf-8")
+        self.assertGreaterEqual(core.count("credential_allowlist = QStringList{}"), 2)
+        self.assertIn("credential_allowlist = QStringList{}", extension)
+        self.assertIn("credential_allowlist = QStringList{}", filings)
+        self.assertIn("credential_allowlist = QStringList{}", segments)
+
     def test_macro_and_geopolitics_services_check_firewall(self):
         geopolitics = (ROOT / "src/services/geopolitics/GeopoliticsService.cpp").read_text(encoding="utf-8")
         macro = (ROOT / "src/services/economics/FinceptMacroService.cpp").read_text(encoding="utf-8")
