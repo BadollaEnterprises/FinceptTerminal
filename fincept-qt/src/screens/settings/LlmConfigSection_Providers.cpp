@@ -555,6 +555,11 @@ void LlmConfigSection::load_providers() {
     auto result = LlmConfigRepository::instance().list_providers();
     if (result.is_err()) {
         const QString error = QString::fromStdString(result.error());
+        api_key_edit_->clear();
+        save_btn_->setEnabled(false);
+        test_btn_->setEnabled(false);
+        fetch_btn_->setEnabled(false);
+        delete_btn_->setEnabled(false);
         show_status(tr("Could not read provider settings: ") + error, true);
         LOG_ERROR(TAG_PROVIDERS, "load_providers failed: " + privacy::redact_text(error));
     } else {

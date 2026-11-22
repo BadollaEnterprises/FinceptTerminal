@@ -478,6 +478,10 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertIn("if (result.is_err())", load)
         self.assertIn("Could not read provider settings", load)
         self.assertIn("privacy::redact_text(error)", load)
+        provider_error = load[load.index("if (result.is_err())"):load.index("} else {")]
+        self.assertIn("api_key_edit_->clear()", provider_error)
+        self.assertIn("save_btn_->setEnabled(false)", provider_error)
+        self.assertIn("test_btn_->setEnabled(false)", provider_error)
         self.assertIn("if (result.is_err())", form)
         self.assertIn("Could not load provider settings", form)
         self.assertIn("privacy::redact_text(error)", form)
@@ -509,6 +513,10 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertIn("if (result.is_err())", load)
         self.assertIn("Could not read LLM profiles", load)
         self.assertIn("privacy::redact_text(error)", load)
+        profile_error = load[load.index("if (result.is_err())"):load.index("} else {")]
+        self.assertIn("editing_profile_id_.clear()", profile_error)
+        self.assertIn("profile_api_key_edit_->clear()", profile_error)
+        self.assertIn("profile_save_btn_->setEnabled(false)", profile_error)
 
         selected = source[source.index("void LlmConfigSection::on_profile_selected"):
                           source.index("void LlmConfigSection::on_profile_provider_changed")]

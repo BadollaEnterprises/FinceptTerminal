@@ -416,6 +416,11 @@ void LlmConfigSection::load_profiles() {
     auto result = LlmProfileRepository::instance().list_all_profiles();
     if (result.is_err()) {
         const QString error = QString::fromStdString(result.error());
+        editing_profile_id_.clear();
+        profile_api_key_edit_->clear();
+        profile_save_btn_->setEnabled(false);
+        profile_delete_btn_->setEnabled(false);
+        profile_default_btn_->setEnabled(false);
         show_profile_status(tr("Could not read LLM profiles: ") + error, true);
         LOG_ERROR(TAG_PROFILES, "load_profiles failed: " + privacy::redact_text(error));
     } else {
