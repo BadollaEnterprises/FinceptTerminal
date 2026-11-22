@@ -251,6 +251,13 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertIn("Could not save pinned sessions.", sessions)
         self.assertIn("if (was_pinned)", sessions)
 
+    def test_sign_out_reports_credential_cleanup_failures(self):
+        auth = (ROOT / "src/auth/AuthManager.cpp").read_text(encoding="utf-8")
+        self.assertIn("const auto log_cleanup_failure", auth)
+        self.assertGreaterEqual(auth.count("log_cleanup_failure("), 5)
+        self.assertIn("privacy::redact_text", auth)
+        self.assertIn("during sign-out", auth)
+
     def test_llm_settings_diagnostics_scrub_storage_errors_and_profile_identity(self):
         providers = (ROOT / "src/screens/settings/LlmConfigSection_Providers.cpp").read_text(encoding="utf-8")
         profiles = (ROOT / "src/screens/settings/LlmConfigSection_Profiles.cpp").read_text(encoding="utf-8")

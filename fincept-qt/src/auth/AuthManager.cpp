@@ -7,6 +7,7 @@
 #include "auth/UserApi.h"
 #include "core/logging/Logger.h"
 #include "core/policy/CommunityPolicy.h"
+#include "core/privacy/LogRedact.h"
 #include "network/http/HttpClient.h"
 #include "storage/repositories/LlmConfigRepository.h"
 #include "storage/repositories/LlmProfileRepository.h"
@@ -391,10 +392,19 @@ void AuthManager::clear_session() {
     clear_tokens();
     // A sign-out (or a key the server refused): the plaintext copies an older
     // build left go with the rest.
-    fincept::SettingsRepository::instance().remove("fincept_session");
-    fincept::SettingsRepository::instance().remove("fincept_api_key");
-    fincept::SecureStorage::instance().remove("api_key");
-    fincept::SecureStorage::instance().remove("session_token");
+    const auto log_cleanup_failure = [](const QString& item, const auto& result) {
+        if (result.is_err())
+            LOG_ERROR("Auth", QStringLiteral("Could not remove %1 during sign-out: %2")
+                                  .arg(item, privacy::redact_text(QString::fromStdString(result.error()))));
+    };
+    const auto session_row_removed = fincept::SettingsRepository::instance().remove("fincept_session");
+    log_cleanup_failure(QStringLiteral("the legacy session row"), session_row_removed);
+    const auto api_key_row_removed = fincept::SettingsRepository::instance().remove("fincept_api_key");
+    log_cleanup_failure(QStringLiteral("the legacy API-key row"), api_key_row_removed);
+    const auto api_key_removed = fincept::SecureStorage::instance().remove("api_key");
+    log_cleanup_failure(QStringLiteral("the stored API key"), api_key_removed);
+    const auto token_removed = fincept::SecureStorage::instance().remove("session_token");
+    log_cleanup_failure(QStringLiteral("the stored session token"), token_removed);
     legacy_ = LegacyCopies{};
     confirmed_api_key_.clear();
     // An explicit sign-out: whatever could not be read is now deliberately gone.
@@ -410,7 +420,8 @@ void AuthManager::clear_session() {
 
     // A legacy build may have provisioned this metered route. It is account
     // state, not a user-owned credential, so sign-out retires it as well.
-    LlmConfigRepository::instance().delete_provider("fincept");
+    const auto provider_removed = LlmConfigRepository::instance().delete_provider("fincept");
+    log_cleanup_failure(QStringLiteral("the legacy Fincept LLM provider"), provider_removed);
 }
 
 bool AuthManager::needs_pin_setup() const {
