@@ -9,6 +9,15 @@ DEPRECATED_PROVIDERS = frozenset({"fincept", "ollama", "codex", "harness:codex"}
 PREFERRED_BYO_PROVIDERS = ("deepseek", "anthropic", "google", "groq", "openai", "openrouter")
 
 
+def resolved_configuration_error(model_config: Mapping[str, Any] | None) -> str | None:
+    """Return the host's routing error marker before any key-based inference."""
+    error = (model_config or {}).get("configuration_error")
+    if not isinstance(error, str):
+        return None
+    error = error.strip()
+    return error or None
+
+
 def _normalized(keys: Mapping[str, Any] | None) -> Dict[str, Any]:
     return {str(key).strip().lower(): value for key, value in (keys or {}).items()}
 

@@ -19,6 +19,8 @@ SUPER_AGENT = MODULE.parent / "super_agent.py"
 CORE_AGENT = MODULE.parent / "core_agent.py"
 AGENT_SERVICE = MODULE.parents[3] / "src" / "services" / "agents" / "AgentService.cpp"
 LLM_SERVICE_HEADER = MODULE.parents[3] / "src" / "services" / "llm" / "LlmService.h"
+LLM_SERVICE_SOURCE = LLM_SERVICE_HEADER.with_suffix(".cpp")
+AGENT_MAIN = MODULE.with_name("main.py")
 LOCAL_AGENT_ENGINE = MODULE.parents[3] / "src" / "services" / "agent_tasks" / "LocalAgentEngine.cpp"
 RDAGENT_CLI = MODULE.parent.parent / "rdagents" / "cli.py"
 RDAGENT_LOOPS = RDAGENT_CLI.with_name("loops.py")
@@ -83,6 +85,25 @@ class AgentProviderPolicyTest(unittest.TestCase):
         policy = load_module()
         configured = {"provider": "anthropic", "model_id": "claude-sonnet", "temperature": 0.1}
         self.assertEqual(policy.normalize_byo_model_config(configured, {}), configured)
+
+    def test_routing_configuration_errors_block_agent_provider_inference(self):
+        policy = load_module()
+        marker = {"configuration_error": "Could not read LLM model assignments"}
+        self.assertEqual(policy.resolved_configuration_error(marker), marker["configuration_error"])
+        self.assertIsNone(policy.resolved_configuration_error({"provider": "deepseek"}))
+
+        service = LLM_SERVICE_SOURCE.read_text(encoding="utf-8")
+        resolved = service[service.index("QJsonObject LlmService::resolved_config_json"):
+                           service.index("int LlmService::active_max_tool_rounds")]
+        self.assertIn('out[QStringLiteral("configuration_error")]', resolved)
+        self.assertIn("privacy::redact_text(cfg.config_error)", resolved)
+
+        main = AGENT_MAIN.read_text(encoding="utf-8")
+        parsed = main[main.index('active_llm = payload.get("active_llm", {})'):
+                      main.index("# Enable streaming in params")]
+        self.assertIn("resolved_configuration_error(active_llm)", parsed)
+        self.assertLess(parsed.index("resolved_configuration_error(active_llm)"),
+                        parsed.index("if active_llm:"))
 
     def test_super_agent_normalizes_saved_legacy_model_before_llm_routing(self):
         source = SUPER_AGENT.read_text(encoding="utf-8")

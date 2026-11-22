@@ -638,6 +638,11 @@ QJsonObject LlmService::resolved_config_json(const ChatRoute& route) const {
         return {};
 
     const ConfigSnapshot cfg = snapshot_for(chain.constFirst(), feature);
+    if (!cfg.config_error.isEmpty()) {
+        QJsonObject out;
+        out[QStringLiteral("configuration_error")] = privacy::redact_text(cfg.config_error);
+        return out;
+    }
     if (!llm_svc_provider_allowed(cfg.provider) || ProviderCatalog::is_blocked(cfg.provider, cfg.base_url) ||
         (ProviderCatalog::requires_api_key(cfg.provider) && cfg.api_key.trimmed().isEmpty()))
         return {};

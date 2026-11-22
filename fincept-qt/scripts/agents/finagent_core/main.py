@@ -43,6 +43,8 @@ parent_dir = str(Path(__file__).parent.parent)
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
+from finagent_core.provider_policy import resolved_configuration_error
+
 # Timeout for discovery operations (seconds)
 DISCOVERY_TIMEOUT = 30.0
 
@@ -324,6 +326,14 @@ def main(args=None):
         params = payload.get("params", {})
         config = payload.get("config", {})
         active_llm = payload.get("active_llm", {})
+
+        # The host deliberately sends this marker when persisted routing state
+        # could not be read. Never infer another provider from api_keys in that
+        # case: doing so could change the user's selected model or billing path.
+        routing_error = resolved_configuration_error(active_llm)
+        if routing_error:
+            return json.dumps({"success": False,
+                               "error": f"LLM configuration unavailable: {routing_error}"})
 
         # Per-profile durable agent state (agent_tasks.db). AgentService also
         # sets the env var on spawn; the payload copy wins so a run is correct
