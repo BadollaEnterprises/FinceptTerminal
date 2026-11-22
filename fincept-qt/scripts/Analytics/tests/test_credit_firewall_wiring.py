@@ -284,8 +284,8 @@ class CreditFirewallWiringTest(unittest.TestCase):
         save = profiles[profiles.index("Result<void> LlmProfileRepository::save_profile"):
                         profiles.index("Result<void> LlmProfileRepository::delete_profile")]
         self.assertIn("auto saved = exec_write", save)
-        self.assertIn("if (saved.is_ok() && harness)", save)
-        self.assertLess(save.index("auto saved = exec_write"), save.index("SecureStorage::instance().remove"))
+        self.assertIn("if (saved.is_err())", save)
+        self.assertLess(save.index("if (saved.is_err())"), save.index("SecureStorage::instance().remove"))
 
     def test_data_mapping_delete_is_atomic_and_keeps_secret_until_commit(self):
         source = (ROOT / "src/storage/repositories/DataMappingRepository.cpp").read_text(encoding="utf-8")
@@ -322,6 +322,31 @@ class CreditFirewallWiringTest(unittest.TestCase):
             self.assertIn(mutation, body)
             self.assertLess(body.index("if (result.is_err())"), body.index(mutation))
         self.assertIn("UPDATE data_sources SET config = ? WHERE id = ?", body)
+
+    def test_llm_and_mcp_saves_commit_rows_before_secure_storage(self):
+        cases = {
+            "src/storage/repositories/LlmConfigRepository.cpp": (
+                ("Result<void> LlmConfigRepository::save_provider", "Result<void> LlmConfigRepository::set_active"),
+                ("Result<void> LlmConfigRepository::save_model", "Result<void> LlmConfigRepository::delete_model"),
+            ),
+            "src/storage/repositories/LlmProfileRepository.cpp": (
+                ("Result<void> LlmProfileRepository::save_profile", "Result<void> LlmProfileRepository::delete_profile"),
+            ),
+            "src/storage/repositories/McpServerRepository.cpp": (
+                ("Result<void> McpServerRepository::save", "Result<void> McpServerRepository::remove"),
+            ),
+        }
+        for relative, spans in cases.items():
+            source = (ROOT / relative).read_text(encoding="utf-8")
+            for start, end in spans:
+                with self.subTest(source=relative, method=start):
+                    body = source[source.index(start):source.index(end)]
+                    self.assertIn("auto saved = exec_write", body)
+                    self.assertIn("if (saved.is_err())", body)
+                    self.assertIn("SecureStorage::instance().store_verified", body)
+                    self.assertLess(body.index("if (saved.is_err())"),
+                                    body.index("SecureStorage::instance().store_verified"))
+                    self.assertIn("UPDATE ", body)
 
     def test_local_chat_mode_diagnostics_scrub_conversation_storage_errors(self):
         source = (ROOT / "src/screens/chat_mode/ChatModeScreen.cpp").read_text(encoding="utf-8")

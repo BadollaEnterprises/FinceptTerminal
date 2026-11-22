@@ -45,17 +45,19 @@ Result<McpServer> McpServerRepository::get(const QString& id) {
 }
 
 Result<void> McpServerRepository::save(const McpServer& s) {
-    // Encrypt the env blob; blank the column only once the encrypted copy was
-    // written and read back equal — otherwise the plaintext stays (never lost).
-    QString column_env = s.env;
-    if (!s.env.isEmpty() && SecureStorage::instance().store_verified(mcp_env_secret_key(s.id), s.env).is_ok())
-        column_env.clear();
-    return exec_write(
+    // Save the recoverable row first, then move its environment blob into
+    // SecureStorage and scrub the column only after verification.
+    auto saved = exec_write(
         "INSERT OR REPLACE INTO mcp_servers "
         "(id, name, description, command, args, env, category, icon, enabled, auto_start, status, updated_at) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))",
-        {s.id, s.name, s.description, s.command, s.args, column_env, s.category, s.icon, s.enabled ? 1 : 0,
+        {s.id, s.name, s.description, s.command, s.args, s.env, s.category, s.icon, s.enabled ? 1 : 0,
          s.auto_start ? 1 : 0, s.status});
+    if (saved.is_err())
+        return saved;
+    if (!s.env.isEmpty() && SecureStorage::instance().store_verified(mcp_env_secret_key(s.id), s.env).is_ok())
+        (void)exec_write("UPDATE mcp_servers SET env = '' WHERE id = ?", {s.id});
+    return saved;
 }
 
 Result<void> McpServerRepository::remove(const QString& id) {

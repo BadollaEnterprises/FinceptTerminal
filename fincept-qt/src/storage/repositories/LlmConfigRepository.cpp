@@ -80,16 +80,18 @@ Result<LlmConfig> LlmConfigRepository::get_active_provider() {
 }
 
 Result<void> LlmConfigRepository::save_provider(const LlmConfig& c) {
-    // Move the API key into SecureStorage; blank the plaintext column only if the
-    // encrypted store succeeded, so a SecureStorage failure never loses the key.
-    QString column_key = c.api_key;
-    if (!c.api_key.isEmpty() &&
-        SecureStorage::instance().store_verified(provider_secret_key(c.provider), c.api_key).is_ok())
-        column_key.clear();
-    return exec_write(
+    // Persist the recoverable row copy before changing the encrypted key. Once
+    // the secure write is verified, scrub the plaintext column.
+    auto saved = exec_write(
         "INSERT OR REPLACE INTO llm_configs (provider, api_key, base_url, model, is_active, tools_enabled, updated_at) "
         "VALUES (?, ?, ?, ?, ?, ?, datetime('now'))",
-        {c.provider, column_key, c.base_url, c.model, c.is_active ? 1 : 0, c.tools_enabled ? 1 : 0});
+        {c.provider, c.api_key, c.base_url, c.model, c.is_active ? 1 : 0, c.tools_enabled ? 1 : 0});
+    if (saved.is_err())
+        return saved;
+    if (!c.api_key.isEmpty() &&
+        SecureStorage::instance().store_verified(provider_secret_key(c.provider), c.api_key).is_ok())
+        (void)exec_write("UPDATE llm_configs SET api_key = '' WHERE provider = ?", {c.provider});
+    return saved;
 }
 
 Result<void> LlmConfigRepository::set_active(const QString& provider) {
@@ -173,16 +175,17 @@ Result<QVector<LlmModelConfig>> LlmConfigRepository::list_models(const QString& 
 }
 
 Result<void> LlmConfigRepository::save_model(const LlmModelConfig& m) {
-    // Same as save_provider: encrypt the per-model API key, blank the column
-    // only if the encrypted store succeeded.
-    QString column_key = m.api_key;
+    auto saved = exec_write(
+        "INSERT OR REPLACE INTO llm_model_configs "
+        "(id, provider, model_id, display_name, api_key, base_url, is_enabled, is_default, updated_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))",
+        {m.id, m.provider, m.model_id, m.display_name, m.api_key, m.base_url, m.is_enabled ? 1 : 0,
+         m.is_default ? 1 : 0});
+    if (saved.is_err())
+        return saved;
     if (!m.api_key.isEmpty() && SecureStorage::instance().store_verified(model_secret_key(m.id), m.api_key).is_ok())
-        column_key.clear();
-    return exec_write("INSERT OR REPLACE INTO llm_model_configs "
-                      "(id, provider, model_id, display_name, api_key, base_url, is_enabled, is_default, updated_at) "
-                      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))",
-                      {m.id, m.provider, m.model_id, m.display_name, column_key, m.base_url, m.is_enabled ? 1 : 0,
-                       m.is_default ? 1 : 0});
+        (void)exec_write("UPDATE llm_model_configs SET api_key = '' WHERE id = ?", {m.id});
+    return saved;
 }
 
 Result<void> LlmConfigRepository::delete_model(const QString& id) {
