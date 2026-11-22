@@ -150,6 +150,10 @@ class CreditFirewallWiringTest(unittest.TestCase):
                 source = (ROOT / relative).read_text(encoding="utf-8")
                 self.assertIn("build_python_env(QStringList{})", source)
                 self.assertNotIn("QProcessEnvironment::systemEnvironment()", source)
+                self.assertIn('#include "core/privacy/LogRedact.h"', source)
+                self.assertGreaterEqual(source.count("privacy::redact_text"), 4)
+                self.assertNotIn('QString("Provider[%1] stdout: %2")', source)
+                self.assertNotIn('QString("stdout: %1")', source)
 
     def test_external_mcp_servers_only_receive_declared_credentials(self):
         source = (ROOT / "src/mcp/McpClient.cpp").read_text(encoding="utf-8")

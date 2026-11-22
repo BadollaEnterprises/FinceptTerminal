@@ -8,6 +8,7 @@
 
 #include "core/config/AppConfig.h"
 #include "core/logging/Logger.h"
+#include "core/privacy/LogRedact.h"
 #include "core/process/ProcessTree.h"
 #include "python/PythonRunner.h"
 #include "python/PythonSetupManager.h"
@@ -179,7 +180,7 @@ void ClapDetectorService::on_stdout_ready() {
         const QByteArray line = stdout_buffer_.left(newline_pos).trimmed();
         stdout_buffer_.remove(0, newline_pos + 1);
         if (!line.isEmpty()) {
-            LOG_DEBUG(CLAP_TAG, QString("stdout: %1").arg(QString::fromUtf8(line.left(200))));
+            LOG_DEBUG(CLAP_TAG, logf("stdout frame", {{"bytes", line.size()}}));
             parse_line(line);
         }
     }
@@ -195,8 +196,9 @@ void ClapDetectorService::on_stderr_ready() {
     if (!text.isEmpty()) {
         // Stderr is verbose by design (per-candidate logs): DEBUG only (policy B.9);
         // its last line goes into the exit line when the detector fails.
-        last_stderr_ = text.section(QLatin1Char('\n'), -1).trimmed();
-        LOG_DEBUG(CLAP_TAG, QString("stderr: %1").arg(text));
+        const QString safe = privacy::redact_text(text);
+        last_stderr_ = safe.section(QLatin1Char('\n'), -1).trimmed();
+        LOG_DEBUG(CLAP_TAG, QString("stderr: %1").arg(safe));
     }
 }
 
@@ -204,7 +206,7 @@ void ClapDetectorService::parse_line(const QByteArray& line) {
     QJsonParseError parse_err;
     const QJsonDocument doc = QJsonDocument::fromJson(line, &parse_err);
     if (parse_err.error != QJsonParseError::NoError) {
-        LOG_DEBUG(CLAP_TAG, QString("non-JSON stdout: %1").arg(QString::fromUtf8(line)));
+        LOG_DEBUG(CLAP_TAG, logf("non-JSON stdout ignored", {{"bytes", line.size()}}));
         return;
     }
     const QJsonObject obj = doc.object();
@@ -216,12 +218,12 @@ void ClapDetectorService::parse_line(const QByteArray& line) {
         LOG_DEBUG(CLAP_TAG, QString("status: %1").arg(obj["status"].toString()));
     } else if (obj.contains("error")) {
         const QString msg = obj["error"].toString();
-        LOG_WARN(CLAP_TAG, QString("script error: %1").arg(msg));
+        LOG_WARN(CLAP_TAG, QString("script error: %1").arg(privacy::redact_text(msg)));
         script_error_emitted_ = true;
         emit error_occurred(msg);
     } else if (obj.contains("fatal")) {
         const QString msg = obj["fatal"].toString();
-        LOG_ERROR(CLAP_TAG, QString("script fatal: %1").arg(msg));
+        LOG_ERROR(CLAP_TAG, QString("script fatal: %1").arg(privacy::redact_text(msg)));
         script_error_emitted_ = true;
         emit error_occurred(msg);
     }
@@ -232,9 +234,10 @@ void ClapDetectorService::on_process_finished(int exit_code, QProcess::ExitStatu
         const QByteArray remaining_err = process_->readAllStandardError();
         if (!remaining_err.isEmpty()) {
             const QString tail = QString::fromUtf8(remaining_err).trimmed();
-            if (!tail.isEmpty())
-                last_stderr_ = tail.section(QLatin1Char('\n'), -1).trimmed();
-            LOG_DEBUG(CLAP_TAG, QString("final stderr: %1").arg(tail));
+            const QString safe = privacy::redact_text(tail);
+            if (!safe.isEmpty())
+                last_stderr_ = safe.section(QLatin1Char('\n'), -1).trimmed();
+            LOG_DEBUG(CLAP_TAG, QString("final stderr: %1").arg(safe));
         }
     }
 

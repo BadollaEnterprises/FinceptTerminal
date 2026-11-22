@@ -17,6 +17,7 @@
 
 #include "core/config/AppConfig.h"
 #include "core/logging/Logger.h"
+#include "core/privacy/LogRedact.h"
 #include "core/process/ProcessTree.h"
 #include "python/PythonRunner.h"
 #include "python/PythonSetupManager.h"
@@ -208,7 +209,9 @@ class PythonSttProvider : public SttProvider {
             stdout_buffer_.remove(0, newline_pos + 1);
 
             if (!line.isEmpty()) {
-                LOG_DEBUG(TAG, QString("Provider[%1] stdout: %2").arg(name(), QString::fromUtf8(line.left(400))));
+                // A successful frame can contain the user's transcript. Log
+                // shape only; parse_line forwards the text to the UI.
+                LOG_DEBUG(TAG, logf("Provider stdout frame", {{"provider", name()}, {"bytes", line.size()}}));
                 parse_line(line);
             }
         }
@@ -229,8 +232,9 @@ class PythonSttProvider : public SttProvider {
         // Policy B.9: stderr at DEBUG only; its last line goes into the exit line if the process fails.
         const QString text = QString::fromUtf8(chunk).trimmed();
         if (!text.isEmpty()) {
-            last_stderr_ = text.section(QLatin1Char('\n'), -1).trimmed();
-            LOG_DEBUG(TAG, QString("Provider[%1] stderr: %2").arg(name(), text));
+            const QString safe = privacy::redact_text(text);
+            last_stderr_ = safe.section(QLatin1Char('\n'), -1).trimmed();
+            LOG_DEBUG(TAG, QString("Provider[%1] stderr: %2").arg(name(), safe));
         }
     }
 
@@ -238,8 +242,7 @@ class PythonSttProvider : public SttProvider {
         QJsonParseError parse_err;
         const QJsonDocument doc = QJsonDocument::fromJson(line, &parse_err);
         if (parse_err.error != QJsonParseError::NoError) {
-            LOG_DEBUG(TAG,
-                      QString("Provider[%1]: non-JSON stdout line ignored: %2").arg(name(), QString::fromUtf8(line)));
+            LOG_DEBUG(TAG, logf("Provider non-JSON stdout ignored", {{"provider", name()}, {"bytes", line.size()}}));
             return;
         }
 
@@ -255,11 +258,12 @@ class PythonSttProvider : public SttProvider {
             }
         } else if (obj.contains("error")) {
             const QString msg = obj["error"].toString();
-            LOG_WARN(TAG, QString("Provider[%1] STT error event: %2").arg(name(), msg));
+            LOG_WARN(TAG, QString("Provider[%1] STT error event: %2").arg(name(), privacy::redact_text(msg)));
             emit error(msg);
         } else if (obj.contains("fatal")) {
             const QString msg = obj["fatal"].toString();
-            LOG_ERROR(TAG, QString("Provider[%1] STT FATAL event: %2 — tearing down provider").arg(name(), msg));
+            LOG_ERROR(TAG, QString("Provider[%1] STT FATAL event: %2 — tearing down provider")
+                               .arg(name(), privacy::redact_text(msg)));
             emit fatal_error(msg);
             stop();
         } else if (obj.contains("status")) {
@@ -278,9 +282,10 @@ class PythonSttProvider : public SttProvider {
             const QByteArray remaining_err = process_->readAllStandardError();
             if (!remaining_err.isEmpty()) {
                 const QString tail = QString::fromUtf8(remaining_err).trimmed();
-                if (!tail.isEmpty())
-                    last_stderr_ = tail.section(QLatin1Char('\n'), -1).trimmed();
-                LOG_DEBUG(TAG, QString("Provider[%1] final stderr: %2").arg(name(), tail));
+                const QString safe = privacy::redact_text(tail);
+                if (!safe.isEmpty())
+                    last_stderr_ = safe.section(QLatin1Char('\n'), -1).trimmed();
+                LOG_DEBUG(TAG, QString("Provider[%1] final stderr: %2").arg(name(), safe));
             }
             const QByteArray remaining_out = process_->readAllStandardOutput();
             if (!remaining_out.isEmpty()) {
