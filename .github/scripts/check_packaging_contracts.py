@@ -183,6 +183,12 @@ def main() -> int:
     )
     require(
         lint_text,
+        "python3 .github/scripts/test_ci_app_checks.py",
+        "packaging-metadata job must test packaged self-test discovery",
+        failures,
+    )
+    require(
+        lint_text,
         "python3 .github/scripts/test_check_windows_dependency_closure.py",
         "packaging-metadata job must test the Windows dependency closure checker",
         failures,

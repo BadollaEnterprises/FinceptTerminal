@@ -13,13 +13,13 @@
 #   itself is *discovered from the binary* (see below) rather than typed here.
 #
 # FLAG DISCOVERY
-#   Preferred: `<binary> --selftest-list` prints one flag per line. That flag
-#   does not exist yet (see the CROSS-FILE note in the CI report / the header
-#   comment in main.cpp's self-test dispatch loop) so this script probes for it
-#   safely and falls back to the hard-coded list below. The probe first greps
-#   the binary image for the literal string: if main.cpp has no --selftest-list
-#   handler, an unknown flag would make the app boot the *full GUI* instead of
-#   printing a list, so we must never run the probe blind.
+#   Preferred: `<binary> --profile <isolated> --selftest-list` prints one flag
+#   per line. The profile is essential: without it, an already-running normal
+#   app makes the probe a secondary instance, which exits 0 without reaching
+#   self-test dispatch. The probe first greps the binary image for the literal
+#   string: if an older main.cpp has no --selftest-list handler, an unknown flag
+#   would make the app boot the *full GUI* instead of printing a list, so we
+#   must never run the probe blind.
 #
 # PROFILE ISOLATION
 #   Every run passes --profile <name> (default "ci"). --selftest-paper and
@@ -40,9 +40,13 @@ set -uo pipefail
 # deliberately absent: it is a catalog dump, not a pass/fail check.
 FALLBACK_SELFTESTS="
 --selftest-tools
+--selftest-llm-tools
+--selftest-mcp-server
+--selftest-ui-tools
 --selftest-feeds
 --selftest-dock-layout
 --selftest-live-table
+--selftest-chart-kit
 --selftest-fno-algo
 --selftest-universe-scan
 --selftest-paper
@@ -81,10 +85,10 @@ run_with_timeout() {
 
 # Echo the discovered self-test flags, one per line. Falls back silently.
 discover_selftests() {
-    local bin="$1" listing rc=1
+    local bin="$1" profile="$2" listing rc=1
     if grep -aq -- '--selftest-list' "$bin" 2>/dev/null; then
         listing="$(mktemp)"
-        if run_with_timeout 60 "$bin" --selftest-list >"$listing" 2>/dev/null; then
+        if run_with_timeout 60 "$bin" --profile "$profile" --selftest-list >"$listing" 2>/dev/null; then
             rc=0
         fi
         if [ "$rc" -eq 0 ] && [ -s "$listing" ]; then
@@ -93,7 +97,9 @@ discover_selftests() {
             local cleaned
             cleaned="$(tr -d '\r' <"$listing" | sed '/^[[:space:]]*$/d')"
             if [ -n "$cleaned" ] && ! printf '%s\n' "$cleaned" | grep -qvE '^--selftest-[a-z0-9-]+$'; then
-                echo "discovered $(printf '%s\n' "$cleaned" | wc -l) self-test(s) via --selftest-list" >&2
+                local count
+                count="$(printf '%s\n' "$cleaned" | wc -l | tr -d '[:space:]')"
+                echo "discovered ${count} self-test(s) via --selftest-list" >&2
                 printf '%s\n' "$cleaned"
                 rm -f "$listing"
                 return 0
@@ -146,7 +152,7 @@ case "$MODE" in
             fi
             echo "::endgroup::"
         done <<EOF
-$(discover_selftests "$BINARY")
+$(discover_selftests "$BINARY" "$PROFILE")
 EOF
         if [ -n "$FAILED" ]; then
             echo "::error::self-tests failed:${FAILED}"
