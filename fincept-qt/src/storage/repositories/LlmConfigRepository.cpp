@@ -83,8 +83,11 @@ Result<void> LlmConfigRepository::save_provider(const LlmConfig& c) {
     // Persist the recoverable row copy before changing the encrypted key. Once
     // the secure write is verified, scrub the plaintext column.
     auto saved = exec_write(
-        "INSERT OR REPLACE INTO llm_configs (provider, api_key, base_url, model, is_active, tools_enabled, updated_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, datetime('now'))",
+        "INSERT INTO llm_configs (provider, api_key, base_url, model, is_active, tools_enabled, updated_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, datetime('now')) "
+        "ON CONFLICT(provider) DO UPDATE SET "
+        "api_key = excluded.api_key, base_url = excluded.base_url, model = excluded.model, "
+        "is_active = excluded.is_active, tools_enabled = excluded.tools_enabled, updated_at = datetime('now')",
         {c.provider, c.api_key, c.base_url, c.model, c.is_active ? 1 : 0, c.tools_enabled ? 1 : 0});
     if (saved.is_err())
         return saved;
