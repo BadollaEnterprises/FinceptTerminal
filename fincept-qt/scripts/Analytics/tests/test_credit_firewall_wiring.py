@@ -237,6 +237,15 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertNotIn("LLM profile saved: %1", profiles)
         self.assertNotIn('"LLM profile deleted: " + editing_profile_id_', profiles)
 
+    def test_local_chat_mode_diagnostics_scrub_conversation_storage_errors(self):
+        source = (ROOT / "src/screens/chat_mode/ChatModeScreen.cpp").read_text(encoding="utf-8")
+        self.assertIn('#include "core/privacy/LogRedact.h"', source)
+        for name in ("history.error()", "saved.error()"):
+            self.assertIn(f"privacy::redact_text(QString::fromStdString({name}))", source)
+        self.assertGreaterEqual(source.count("privacy::redact_text(QString::fromStdString(saved.error()))"), 2)
+        self.assertNotIn(".arg(QString::fromStdString(history.error()))", source)
+        self.assertNotIn(".arg(QString::fromStdString(saved.error()))", source)
+
     def test_broker_auth_diagnostics_redact_provider_errors(self):
         for relative, minimum in (
             ("src/trading/brokers/angelone/AngelOneBroker.cpp", 2),

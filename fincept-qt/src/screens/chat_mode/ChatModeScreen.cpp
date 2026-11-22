@@ -8,6 +8,7 @@
 #include "core/events/EventBus.h"
 #include "core/logging/Logger.h"
 #include "core/policy/CommunityPolicy.h"
+#include "core/privacy/LogRedact.h"
 #include "core/session/ScreenStateManager.h"
 #include "screens/chat_mode/ChatAgentPanel.h"
 #include "screens/chat_mode/ChatComposer.h"
@@ -980,7 +981,7 @@ void ChatModeScreen::start_chat_run(agt::RunRequest request, const QString& sess
             request.prompt = compose_local_chat_prompt(history.value(), visible_prompt);
         } else {
             LOG_WARN("ChatModeScreen", QStringLiteral("Could not load local conversation context: %1")
-                                           .arg(QString::fromStdString(history.error())));
+                                           .arg(privacy::redact_text(QString::fromStdString(history.error()))));
         }
         if (request.title.trimmed().isEmpty())
             request.title = visible_prompt.simplified().left(80);
@@ -1001,7 +1002,7 @@ void ChatModeScreen::start_chat_run(agt::RunRequest request, const QString& sess
                                                  QStringLiteral("user"), visible_prompt);
         if (saved.is_err())
             LOG_WARN("ChatModeScreen", QStringLiteral("Could not persist local user turn: %1")
-                                           .arg(QString::fromStdString(saved.error())));
+                                           .arg(privacy::redact_text(QString::fromStdString(saved.error()))));
         const auto session = repo.get_session(session_uuid);
         const agt::TaskRun* run = agt::TaskRunService::instance().find_run(run_id);
         if (session.is_ok() && run && session.value().title == QLatin1String(kChatDefaultSessionTitle) &&
@@ -1192,7 +1193,7 @@ void ChatModeScreen::on_run_finished(const QString& run_id) {
             policy::default_llm_provider(), policy::default_llm_model(), static_cast<int>(r->tokens_used));
         if (saved.is_err())
             LOG_WARN("ChatModeScreen", QStringLiteral("Could not persist local assistant turn: %1")
-                                           .arg(QString::fromStdString(saved.error())));
+                                           .arg(privacy::redact_text(QString::fromStdString(saved.error()))));
     }
     message_panel_->on_run_finished(run_id);
     if (r && !r->session_uuid.isEmpty() && r->session_uuid == active_session_uuid_ && isVisible()) {
