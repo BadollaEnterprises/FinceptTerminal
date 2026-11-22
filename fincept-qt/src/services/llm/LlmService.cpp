@@ -901,6 +901,10 @@ LlmResponse LlmService::do_request(const QString& user_message, const std::vecto
         if (stop_reason == "tool_use") {
             LOG_DEBUG(kLlmSvcTag, "Anthropic requested tool_use");
 
+            LlmResponse ant_usage;
+            parse_usage(ant_usage, rj, provider_);
+            ProviderUsageScope preserve_usage(resp, ant_usage);
+
             // Build follow-up messages: original + assistant turn + tool results
             QJsonArray loop_msgs;
             if (!system_prompt_.isEmpty()) {
@@ -949,8 +953,6 @@ LlmResponse LlmService::do_request(const QString& user_message, const std::vecto
             const int kMaxRounds = active_max_tool_rounds();
             // Rounds cap the token spend; the deadline caps the wait. See ToolLoopBudget.
             detail::ToolLoopBudget ant_budget(kMaxRounds);
-            LlmResponse ant_usage;
-            parse_usage(ant_usage, rj, provider_);
             ant_budget.note_prompt_tokens(ant_usage.prompt_tokens);
             ant_budget.note_completion_tokens(ant_usage.completion_tokens);
             for (int round = 0; !ant_budget.exhausted(); ++round) {
@@ -1074,7 +1076,6 @@ LlmResponse LlmService::do_request(const QString& user_message, const std::vecto
                     resp.error = "Anthropic tool loop ended without an answer — " + ant_budget.exhaustion_note();
                 }
             }
-            add_provider_usage(resp, ant_usage);
         } else {
             resp.content = extract_anthropic_content_text(content);
         }
@@ -1104,6 +1105,7 @@ LlmResponse LlmService::do_request(const QString& user_message, const std::vecto
                 detail::ToolLoopBudget gem_budget(kMaxRounds);
                 LlmResponse gem_usage;
                 parse_usage(gem_usage, rj, provider_);
+                ProviderUsageScope preserve_usage(resp, gem_usage);
                 gem_budget.note_prompt_tokens(gem_usage.prompt_tokens);
                 gem_budget.note_completion_tokens(gem_usage.completion_tokens);
 
@@ -1308,7 +1310,6 @@ LlmResponse LlmService::do_request(const QString& user_message, const std::vecto
                     }
                     resp.content = fallback;
                 }
-                add_provider_usage(resp, gem_usage);
             } else {
                 resp.content = extract_gemini_parts_text(parts);
             }
