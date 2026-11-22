@@ -834,8 +834,7 @@ void AiChatScreen::update_status() {
                                                .arg(aichat::format_count(std::max<qint64>(run_prompt_tokens_, 0)),
                                                     aichat::format_count(std::max<qint64>(run_completion_tokens_, 0)));
         if (run_cached_prompt_tokens_ > 0) {
-            const int pct = ai_chat::prompt_cache_hit_percent(static_cast<int>(run_prompt_tokens_),
-                                                              static_cast<int>(run_cached_prompt_tokens_));
+            const int pct = ai_chat::prompt_cache_hit_percent(run_prompt_tokens_, run_cached_prompt_tokens_);
             text += QStringLiteral("  ") + tr("CACHE %1 (%2%)")
                                                .arg(aichat::format_count(run_cached_prompt_tokens_))
                                                .arg(pct);

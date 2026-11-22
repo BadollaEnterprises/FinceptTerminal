@@ -105,6 +105,7 @@ void TestLlmUsage::malformed_usage_cannot_reduce_accounting() {
 void TestLlmUsage::cache_hit_percent_is_safe_for_display() {
     QCOMPARE(prompt_cache_hit_percent(12000, 9000), 75);
     QCOMPARE(prompt_cache_hit_percent(100, 120), 100);
+    QCOMPARE(prompt_cache_hit_percent(qint64(3'000'000'000), qint64(1'500'000'000)), 50);
     QCOMPARE(prompt_cache_hit_percent(0, 0), -1);
 }
 

@@ -64,10 +64,13 @@ class ProviderUsageScope {
     const Usage& accrued_;
 };
 
-inline int prompt_cache_hit_percent(int prompt_tokens, int cached_prompt_tokens) {
+inline int prompt_cache_hit_percent(qint64 prompt_tokens, qint64 cached_prompt_tokens) {
     if (prompt_tokens <= 0)
         return -1;
-    return std::clamp(static_cast<int>((100LL * std::max(0, cached_prompt_tokens)) / prompt_tokens), 0, 100);
+    const long double percent =
+        (100.0L * static_cast<long double>(std::max<qint64>(0, cached_prompt_tokens))) /
+        static_cast<long double>(prompt_tokens);
+    return std::clamp(static_cast<int>(percent), 0, 100);
 }
 
 /// Normalize token accounting from the provider dialects used by LlmService.

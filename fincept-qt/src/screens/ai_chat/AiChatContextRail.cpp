@@ -760,8 +760,7 @@ void AicContextRail::update_stats() {
                             .arg(s.prompt_tokens >= 0 ? format_count(s.prompt_tokens) : QStringLiteral("—"),
                                  s.completion_tokens >= 0 ? format_count(s.completion_tokens) : QStringLiteral("—"));
         if (s.cached_prompt_tokens > 0) {
-            const int pct = ai_chat::prompt_cache_hit_percent(static_cast<int>(s.prompt_tokens),
-                                                              static_cast<int>(s.cached_prompt_tokens));
+            const int pct = ai_chat::prompt_cache_hit_percent(s.prompt_tokens, s.cached_prompt_tokens);
             usage += tr(" · cached %1 (%2%)").arg(format_count(s.cached_prompt_tokens)).arg(pct);
         }
         cr_set_text(p.st_run, usage);
