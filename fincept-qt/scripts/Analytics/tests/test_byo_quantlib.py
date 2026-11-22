@@ -583,6 +583,23 @@ class ByoQuantLibTest(unittest.TestCase):
         )
         self.assertAlmostEqual(answer["data"]["yield_rate"], 0.05, places=5)
 
+    def test_fixed_income_payment_schedules_are_bounded(self):
+        mod = load_module()
+        bond = {"issue_date": "2024-01-15", "maturity_date": "2029-01-15",
+                "coupon_rate": 0.05, "yield_rate": 0.045}
+        swap = {"effective_date": "2024-01-15", "maturity_date": "2029-01-15",
+                "curve_tenors": [1, 5], "curve_rates": [0.04, 0.05]}
+        cases = (
+            ("instruments/bond/fixed/analytics", {**bond, "frequency": 0}),
+            ("instruments/bond/fixed/cashflows", {**bond, "frequency": 367}),
+            ("instruments/swap/irs/value", {**swap, "payments_per_year": 367}),
+        )
+        for route, body in cases:
+            with self.subTest(route=route):
+                answer = mod.execute(route, body)
+                self.assertIn("payment schedule is outside local limits", answer.get("error", ""))
+                self.assertEqual(answer["meta"]["fincept_credits"], 0)
+
     def test_fx_cds_and_zero_coupon_routes(self):
         mod = load_module()
         forward = mod.execute("instruments/fx/forward",

@@ -2020,13 +2020,21 @@ def _bond_years(body: Mapping[str, Any]) -> float:
     return years
 
 
+def _payment_schedule(body: Mapping[str, Any], years: float, name: str) -> tuple[int, int]:
+    raw = float(body.get(name, 1))
+    frequency = int(raw)
+    periods = round(years * frequency)
+    if raw != frequency or not 1 <= frequency <= 366 or not 1 <= periods <= 10000:
+        raise ValueError("payment schedule is outside local limits")
+    return frequency, periods
+
+
 def _bond_metrics(body: Mapping[str, Any]) -> Dict[str, float]:
     years = _bond_years(body)
     coupon = _number(body, "coupon_rate")
     ytm = _number(body, "yield_rate")
     face = float(body.get("face_value", 100.0))
-    frequency = int(body.get("frequency", 1))
-    periods = max(1, round(years * frequency))
+    frequency, periods = _payment_schedule(body, years, "frequency")
     periodic_yield = ytm / frequency
     cash_coupon = face * coupon / frequency
     cashflows = [cash_coupon] * periods
@@ -2051,8 +2059,7 @@ def _bond_price(body: Mapping[str, Any]) -> Dict[str, float]:
 def _bond_cashflows(body: Mapping[str, Any]) -> Dict[str, Any]:
     years = _bond_years(body)
     face = float(body.get("face_value", 100.0))
-    frequency = int(body.get("frequency", 1))
-    periods = max(1, round(years * frequency))
+    frequency, periods = _payment_schedule(body, years, "frequency")
     coupon = face * _number(body, "coupon_rate") / frequency
     return {"cashflows": [{"time": (index + 1) / frequency,
                             "amount": coupon + (face if index + 1 == periods else 0.0)}
@@ -2088,10 +2095,7 @@ def _swap_metrics(body: Mapping[str, Any]) -> Dict[str, float]:
     years = (maturity - start).days / 365.25
     if years <= 0:
         raise ValueError("maturity_date must follow effective_date")
-    payments_per_year = int(body.get("payments_per_year", 1))
-    if payments_per_year <= 0:
-        raise ValueError("payments_per_year must be positive")
-    count = max(1, round(years * payments_per_year))
+    payments_per_year, count = _payment_schedule(body, years, "payments_per_year")
     dt = 1 / payments_per_year
     tenors, rates = _vector(body, "curve_tenors"), _vector(body, "curve_rates")
     payment_times = [min(years, (index + 1) * dt) for index in range(count)]
