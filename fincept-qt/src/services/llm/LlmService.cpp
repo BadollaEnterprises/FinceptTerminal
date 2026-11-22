@@ -348,6 +348,14 @@ void LlmService::ensure_config() const {
         system_prompt_ = gs.value().system_prompt;
         // Clamp [1, 200] so a corrupt DB row can't lock the loop at 0 or run forever.
         max_tool_rounds_ = std::clamp(gs.value().max_tool_rounds, 1, 200);
+    } else {
+        const QString error = QStringLiteral("Could not read global LLM settings: %1")
+                                  .arg(QString::fromStdString(gs.error()));
+        if (config_error_.isEmpty())
+            config_error_ = error;
+        else
+            config_error_ += QLatin1Char('\n') + error;
+        LOG_ERROR(kLlmSvcTag, privacy::redact_text(error));
     }
 
     // Default system prompt — primes the model to use the terminal's tools instead of
@@ -794,11 +802,13 @@ LlmResponse LlmService::do_request(const QString& user_message, const std::vecto
         resp.error = QStringLiteral("This AI backend is disabled. Configure a user-owned provider such as DeepSeek.");
         return resp;
     }
+    if (!config_error_.isEmpty()) {
+        resp.error = config_error_;
+        return resp;
+    }
     if (ProviderCatalog::requires_api_key(provider_) && api_key_.trimmed().isEmpty()) {
-        resp.error = config_error_.isEmpty()
-                         ? QStringLiteral(
-                               "No LLM provider configured: add your own API key in Settings › LLM Configuration.")
-                         : config_error_;
+        resp.error = QStringLiteral(
+            "No LLM provider configured: add your own API key in Settings › LLM Configuration.");
         return resp;
     }
 
@@ -1394,12 +1404,16 @@ LlmResponse LlmService::do_streaming_request(const QString& user_message,
         on_chunk("", true);
         return resp;
     }
+    if (!config_error_.isEmpty()) {
+        LlmResponse resp;
+        resp.error = config_error_;
+        on_chunk("", true);
+        return resp;
+    }
     if (ProviderCatalog::requires_api_key(provider_) && api_key_.trimmed().isEmpty()) {
         LlmResponse resp;
-        resp.error = config_error_.isEmpty()
-                         ? QStringLiteral(
-                               "No LLM provider configured: add your own API key in Settings › LLM Configuration.")
-                         : config_error_;
+        resp.error = QStringLiteral(
+            "No LLM provider configured: add your own API key in Settings › LLM Configuration.");
         on_chunk("", true);
         return resp;
     }

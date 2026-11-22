@@ -511,9 +511,10 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertIn("config_error_.clear()", source)
         self.assertIn("Could not read LLM configuration", source)
         self.assertIn("Could not read selected LLM profile", source)
+        self.assertIn("Could not read global LLM settings", source)
         self.assertIn("s.config_error = config_error_", source)
         self.assertIn("config_error_ = snap.config_error", source)
-        self.assertGreaterEqual(source.count("config_error_.isEmpty()"), 2)
+        self.assertGreaterEqual(source.count("if (!config_error_.isEmpty())"), 2)
 
     def test_deleting_active_provider_selects_deterministic_byo_fallback(self):
         source = (ROOT / "src/screens/settings/LlmConfigSection_Providers.cpp").read_text(encoding="utf-8")
