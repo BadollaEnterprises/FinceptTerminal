@@ -248,10 +248,38 @@ Result<QVector<DataMappingRevision>> DataMappingRepository::list_revisions(const
 }
 
 Result<void> DataMappingRepository::remove(const QString& id) {
-    SecureStorage::instance().remove(dm_secret_handle(id));
-    exec_write("DELETE FROM data_mapping_revisions WHERE mapping_id = ?", {id});
-    exec_write("DELETE FROM mapped_datasets WHERE mapping_id = ?", {id});
-    return exec_write("DELETE FROM data_mappings WHERE id = ?", {id});
+    auto tx = db().begin_transaction();
+    if (tx.is_err())
+        return tx;
+
+    auto deleted = exec_write("DELETE FROM data_mapping_revisions WHERE mapping_id = ?", {id});
+    if (deleted.is_err()) {
+        db().rollback();
+        return deleted;
+    }
+    deleted = exec_write("DELETE FROM mapped_datasets WHERE mapping_id = ?", {id});
+    if (deleted.is_err()) {
+        db().rollback();
+        return deleted;
+    }
+    deleted = exec_write("DELETE FROM data_mappings WHERE id = ?", {id});
+    if (deleted.is_err()) {
+        db().rollback();
+        return deleted;
+    }
+
+    auto committed = db().commit();
+    if (committed.is_err()) {
+        db().rollback();
+        return committed;
+    }
+
+    // The encrypted token is deleted only after every relational row is gone
+    // and the transaction is durable. A failed cleanup must leave the mapping
+    // and its credential usable together.
+    (void)SecureStorage::instance().remove(dm_secret_handle(id));
+    dm_mark_unreadable(id, false);
+    return Result<void>::ok();
 }
 
 Result<void> DataMappingRepository::update_run_stats(const QString& id, const QString& status, int rows, int errors) {

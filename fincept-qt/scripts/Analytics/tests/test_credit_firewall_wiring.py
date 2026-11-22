@@ -287,6 +287,18 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertIn("if (saved.is_ok() && harness)", save)
         self.assertLess(save.index("auto saved = exec_write"), save.index("SecureStorage::instance().remove"))
 
+    def test_data_mapping_delete_is_atomic_and_keeps_secret_until_commit(self):
+        source = (ROOT / "src/storage/repositories/DataMappingRepository.cpp").read_text(encoding="utf-8")
+        body = source[source.index("Result<void> DataMappingRepository::remove"):
+                      source.index("Result<void> DataMappingRepository::update_run_stats")]
+        self.assertIn("db().begin_transaction()", body)
+        self.assertGreaterEqual(body.count("if (deleted.is_err())"), 3)
+        self.assertGreaterEqual(body.count("db().rollback()"), 4)
+        self.assertIn("auto committed = db().commit()", body)
+        self.assertLess(body.index("auto committed = db().commit()"),
+                        body.index("SecureStorage::instance().remove"))
+        self.assertIn("dm_mark_unreadable(id, false)", body)
+
     def test_local_chat_mode_diagnostics_scrub_conversation_storage_errors(self):
         source = (ROOT / "src/screens/chat_mode/ChatModeScreen.cpp").read_text(encoding="utf-8")
         self.assertIn('#include "core/privacy/LogRedact.h"', source)
