@@ -314,25 +314,15 @@ void PythonRunner::shutdown_now() {
 // Python subprocesses where they'd be visible via /proc/<pid>/environ on
 // Linux or process inspection tools elsewhere.
 //
-// Suffix list narrowed vs. PR #214: we omit bare _TOKEN because legitimate
-// non-credential vars use it (CSRF_TOKEN, GITHUB_TOKEN for tooling). The
-// kManagedCredentialKeys allow-list is checked first so any key the user
-// configured in Settings is preserved, regardless of suffix.
+// The kManagedCredentialKeys allow-list is checked first so any key the user
+// configured in Settings is preserved, regardless of suffix. Generic tokens
+// such as GITHUB_TOKEN and CSRF_TOKEN are credentials too: app-owned analytics
+// never need to inherit them merely because the parent shell did.
 static void strip_unmanaged_credentials(QProcessEnvironment& env, const QStringList& managed) {
-    static const QStringList kSuffixes = {
-        "_API_KEY", "_SECRET", "_SECRET_KEY", "_ACCESS_TOKEN", "_AUTH_TOKEN", "_PASSWORD", "_PRIVATE_KEY",
-    };
     const QStringList all_keys = env.keys();
     for (const QString& k : all_keys) {
-        if (managed.contains(k))
-            continue; // we just injected this one — keep it
-        const QString upper = k.toUpper();
-        for (const QString& sfx : kSuffixes) {
-            if (upper.endsWith(sfx)) {
-                env.remove(k);
-                break;
-            }
-        }
+        if (environment_detail::should_strip_unmanaged_credential(k, managed))
+            env.remove(k);
     }
 }
 

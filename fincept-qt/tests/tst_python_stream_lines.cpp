@@ -10,6 +10,7 @@
 #include <QtTest>
 
 using namespace fincept::python;
+using namespace fincept::python::environment_detail;
 using namespace fincept::python::stream_detail;
 
 namespace {
@@ -53,6 +54,23 @@ struct StreamSim {
 class TstPythonStreamLines : public QObject {
     Q_OBJECT
   private slots:
+    void unmanaged_credential_environment_keys_are_stripped() {
+        const QStringList managed{QStringLiteral("FINNHUB_API_KEY")};
+
+        QVERIFY(should_strip_unmanaged_credential(QStringLiteral("GITHUB_TOKEN"), managed));
+        QVERIFY(should_strip_unmanaged_credential(QStringLiteral("gh_token"), managed));
+        QVERIFY(should_strip_unmanaged_credential(QStringLiteral("AWS_ACCESS_KEY_ID"), managed));
+        QVERIFY(should_strip_unmanaged_credential(QStringLiteral("AWS_SESSION_TOKEN"), managed));
+        QVERIFY(should_strip_unmanaged_credential(QStringLiteral("MY_SERVICE_PAT"), managed));
+        QVERIFY(should_strip_unmanaged_credential(QStringLiteral("DOCKER_AUTH_CONFIG"), managed));
+        QVERIFY(should_strip_unmanaged_credential(QStringLiteral("CSRF_TOKEN"), managed));
+
+        QVERIFY(!should_strip_unmanaged_credential(QStringLiteral("FINNHUB_API_KEY"), managed));
+        QVERIFY(!should_strip_unmanaged_credential(QStringLiteral("PATH"), managed));
+        QVERIFY(!should_strip_unmanaged_credential(QStringLiteral("PYTHONPATH"), managed));
+        QVERIFY(!should_strip_unmanaged_credential(QStringLiteral("TOKENIZERS_PARALLELISM"), managed));
+    }
+
     void options_default_streams_both_channels() {
         PythonRunner::RunOptions o;
         QVERIFY(o.stream_stdout);

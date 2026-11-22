@@ -239,6 +239,57 @@ class PythonRunner : public QObject {
 /// Extract last JSON line/block from Python output
 QString extract_json(const QString& output);
 
+/// Pure policy for credentials inherited from the parent shell. PythonRunner
+/// injects explicitly managed Settings credentials first; every other
+/// credential-shaped variable is removed before a child starts. Kept here so
+/// the security boundary is testable without spawning a process or unlocking
+/// SecureStorage.
+namespace environment_detail {
+
+inline bool should_strip_unmanaged_credential(const QString& key, const QStringList& managed) {
+    for (const QString& allowed : managed) {
+        if (key.compare(allowed, Qt::CaseInsensitive) == 0)
+            return false;
+    }
+
+    const QString upper = key.trimmed().toUpper();
+    if (upper.isEmpty())
+        return false;
+
+    // These do not share a reliable suffix but commonly carry credentials.
+    static const QStringList kExact = {
+        QStringLiteral("AWS_ACCESS_KEY_ID"),
+        QStringLiteral("DOCKER_AUTH_CONFIG"),
+        QStringLiteral("GOOGLE_APPLICATION_CREDENTIALS"),
+    };
+    if (kExact.contains(upper))
+        return true;
+
+    // Bare _TOKEN is intentionally included. A CSRF/session token is still a
+    // secret and an app-owned analytics process has no reason to inherit it.
+    static const QStringList kSuffixes = {
+        QStringLiteral("_API_KEY"),
+        QStringLiteral("_SECRET"),
+        QStringLiteral("_SECRET_KEY"),
+        QStringLiteral("_ACCESS_KEY"),
+        QStringLiteral("_ACCESS_KEY_ID"),
+        QStringLiteral("_ACCESS_TOKEN"),
+        QStringLiteral("_AUTH_TOKEN"),
+        QStringLiteral("_SESSION_TOKEN"),
+        QStringLiteral("_PASSWORD"),
+        QStringLiteral("_PRIVATE_KEY"),
+        QStringLiteral("_TOKEN"),
+        QStringLiteral("_PAT"),
+    };
+    for (const QString& suffix : kSuffixes) {
+        if (upper.endsWith(suffix))
+            return true;
+    }
+    return false;
+}
+
+} // namespace environment_detail
+
 /// Pure pieces of the per-line stream (PythonRunner's stream callback), QtCore
 /// only and tested by tst_python_stream_lines. The runner calls them once per
 /// line, looking its buffers up again between lines (the callback may re-enter
