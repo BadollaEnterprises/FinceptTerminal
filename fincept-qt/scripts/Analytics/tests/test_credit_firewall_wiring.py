@@ -311,6 +311,18 @@ class CreditFirewallWiringTest(unittest.TestCase):
             self.assertLess(body.index("if (saved.is_err())"), body.index(mutation))
         self.assertIn("UPDATE data_mappings SET auth_token = ''", body)
 
+    def test_data_source_save_commits_row_before_mutating_secure_credentials(self):
+        source = (ROOT / "src/storage/repositories/DataSourceRepository.cpp").read_text(encoding="utf-8")
+        body = source[source.index("Result<void> DataSourceRepository::save(const DataSource& ds)"):
+                      source.index("Result<void> DataSourceRepository::remove")]
+        self.assertIn("ds_prepare_save", body)
+        self.assertIn("auto result =", body)
+        self.assertIn("if (result.is_err())", body)
+        for mutation in ("SecureStorage::instance().remove", "SecureStorage::instance().store_verified"):
+            self.assertIn(mutation, body)
+            self.assertLess(body.index("if (result.is_err())"), body.index(mutation))
+        self.assertIn("UPDATE data_sources SET config = ? WHERE id = ?", body)
+
     def test_local_chat_mode_diagnostics_scrub_conversation_storage_errors(self):
         source = (ROOT / "src/screens/chat_mode/ChatModeScreen.cpp").read_text(encoding="utf-8")
         self.assertIn('#include "core/privacy/LogRedact.h"', source)

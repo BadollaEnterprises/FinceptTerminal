@@ -162,6 +162,67 @@ bool ds_config_for_column(const QString& id, const QString& config, QString* col
     return true;
 }
 
+struct DsPreparedSave {
+    QString initial_column;
+    QString scrubbed_column;
+    QString secure_payload;
+    bool remove_secret = false;
+};
+
+/// Prepare a user save without mutating SecureStorage. The database write must
+/// succeed before the caller applies remove/store, otherwise a failed SQL save
+/// could silently change the credentials used by the still-current row.
+bool ds_prepare_save(const QString& id, const QString& config, DsPreparedSave* out, QString* error) {
+    out->initial_column = config;
+    out->scrubbed_column = config;
+
+    const QJsonDocument doc = QJsonDocument::fromJson(config.toUtf8());
+    if (!doc.isObject() || id.isEmpty())
+        return true;
+
+    QJsonObject obj = doc.object();
+    QJsonObject secrets;
+    for (auto it = obj.constBegin(); it != obj.constEnd(); ++it) {
+        if (ds_is_secret_entry(it.key(), it.value()))
+            secrets.insert(it.key(), it.value());
+    }
+
+    if (secrets.isEmpty()) {
+        if (ds_is_unreadable(id)) {
+            LOG_WARN("DataSourceRepo", "Stored connection credentials kept: they could not be read when the "
+                                       "connection was loaded, so blank fields are not a deletion id=" + id);
+        } else {
+            out->remove_secret = true;
+        }
+        return true;
+    }
+
+    if (ds_is_unreadable(id)) {
+        const SecretRead sr = SecureStorage::instance().read(ds_secret_handle(id));
+        if (sr.failed()) {
+            *error = QStringLiteral("Could not read secure storage: %1. The connection's saved credentials were "
+                                    "not changed.")
+                         .arg(sr.reason());
+            return false;
+        }
+        ds_mark_unreadable(id, false);
+        if (sr.found()) {
+            const QJsonObject stored = QJsonDocument::fromJson(sr.value.toUtf8()).object();
+            for (auto it = stored.constBegin(); it != stored.constEnd(); ++it) {
+                const QJsonValue current = obj.value(it.key());
+                if (!secrets.contains(it.key()) && current.isString() && current.toString().isEmpty())
+                    secrets.insert(it.key(), it.value());
+            }
+        }
+    }
+
+    out->secure_payload = QString::fromUtf8(QJsonDocument(secrets).toJson(QJsonDocument::Compact));
+    for (const QString& key : secrets.keys())
+        obj.insert(key, QString());
+    out->scrubbed_column = QString::fromUtf8(QJsonDocument(obj).toJson(QJsonDocument::Compact));
+    return true;
+}
+
 /// Merge SecureStorage-held secrets back into a config read from the column.
 /// A non-empty column value (legacy plaintext, or a save made while the encrypted
 /// store was down) wins over the stored copy.
@@ -301,10 +362,11 @@ Result<DataSource> DataSourceRepository::get(const QString& id) {
 }
 
 Result<void> DataSourceRepository::save(const DataSource& ds) {
-    // Credentials go to SecureStorage; the column keeps the non-secret fields.
-    QString column_config;
+    // First persist a recoverable row copy. SecureStorage is changed only after
+    // that succeeds, then verified credentials are scrubbed from the column.
+    DsPreparedSave prepared;
     QString secret_error;
-    if (!ds_config_for_column(ds.id, ds.config, &column_config, &secret_error))
+    if (!ds_prepare_save(ds.id, ds.config, &prepared, &secret_error))
         return Result<void>::err(secret_error.toStdString());
     auto result =
         exec_write("INSERT INTO data_sources "
@@ -323,14 +385,37 @@ Result<void> DataSourceRepository::save(const DataSource& ds) {
                    "enabled = excluded.enabled, "
                    "tags = excluded.tags, "
                    "updated_at = datetime('now')",
-                   {ds.id, ds.alias, ds.display_name, ds.description, ds.type, ds.provider, ds.category, column_config,
-                    ds.enabled ? 1 : 0, ds.tags, ds.id});
+                   {ds.id, ds.alias, ds.display_name, ds.description, ds.type, ds.provider, ds.category,
+                    prepared.initial_column, ds.enabled ? 1 : 0, ds.tags, ds.id});
+    if (result.is_err())
+        return result;
+
+    if (prepared.remove_secret) {
+        (void)SecureStorage::instance().remove(ds_secret_handle(ds.id));
+    } else if (!prepared.secure_payload.isEmpty()) {
+        const auto stored = SecureStorage::instance().store_verified(ds_secret_handle(ds.id), prepared.secure_payload);
+        LOG_TRANSITION("DataSourceRepo", QStringLiteral("secret_move|") + ds.id, stored.is_err(),
+                       stored.is_err() ? LogLevel::Warn : LogLevel::Info,
+                       stored.is_err()
+                           ? logf("Connection credentials kept in the config column, secure storage write not "
+                                  "confirmed",
+                                  {{"id", ds.id}, {"error", QString::fromStdString(stored.error())}})
+                           : logf("Connection credentials stored in secure storage again", {{"id", ds.id}}));
+        if (stored.is_ok()) {
+            ds_mark_unreadable(ds.id, false);
+            const auto scrubbed = exec_write("UPDATE data_sources SET config = ? WHERE id = ?",
+                                             {prepared.scrubbed_column, ds.id});
+            if (scrubbed.is_err())
+                LOG_WARN_RL("DataSourceRepo", QStringLiteral("scrub|") + ds.id, 3600 * 1000,
+                            logf("Connection credentials stored but the config column could not be blanked",
+                                 {{"id", ds.id}, {"error", QString::fromStdString(scrubbed.error())}}));
+        }
+    }
     // A market-data key typed into a connection (Finnhub, Polygon, Alpha Vantage, ...) used to
     // stay in this store only, so the Python connectors that read FINNHUB_API_KEY etc. never
     // saw it. Copy it to the env-named SecureStorage slot PythonRunner injects — only when that
     // slot is still empty. Covers every save path: the dialog, import and the MCP ds_* tools.
-    if (result.is_ok())
-        services::connectors::bridge_connection_credentials(ds.provider, ds.config);
+    services::connectors::bridge_connection_credentials(ds.provider, ds.config);
     return result;
 }
 
