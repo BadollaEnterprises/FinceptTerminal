@@ -365,6 +365,14 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertIn("ON CONFLICT(id) DO UPDATE SET", body)
         self.assertIn("reasoning_effort = excluded.reasoning_effort", body)
 
+    def test_mcp_server_save_is_true_upsert_and_preserves_discovered_tools(self):
+        source = (ROOT / "src/storage/repositories/McpServerRepository.cpp").read_text(encoding="utf-8")
+        body = source[source.index("Result<void> McpServerRepository::save"):
+                      source.index("Result<void> McpServerRepository::remove")]
+        self.assertNotIn("INSERT OR REPLACE INTO mcp_servers", body)
+        self.assertIn("ON CONFLICT(id) DO UPDATE SET", body)
+        self.assertIn("status = excluded.status", body)
+
     def test_local_chat_mode_diagnostics_scrub_conversation_storage_errors(self):
         source = (ROOT / "src/screens/chat_mode/ChatModeScreen.cpp").read_text(encoding="utf-8")
         self.assertIn('#include "core/privacy/LogRedact.h"', source)

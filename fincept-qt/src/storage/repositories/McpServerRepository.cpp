@@ -47,10 +47,17 @@ Result<McpServer> McpServerRepository::get(const QString& id) {
 Result<void> McpServerRepository::save(const McpServer& s) {
     // Save the recoverable row first, then move its environment blob into
     // SecureStorage and scrub the column only after verification.
+    // REPLACE would delete the server row first and cascade-delete every
+    // discovered mcp_tools row. Update the existing row in place instead.
     auto saved = exec_write(
-        "INSERT OR REPLACE INTO mcp_servers "
+        "INSERT INTO mcp_servers "
         "(id, name, description, command, args, env, category, icon, enabled, auto_start, status, updated_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))",
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now')) "
+        "ON CONFLICT(id) DO UPDATE SET "
+        "name = excluded.name, description = excluded.description, command = excluded.command, "
+        "args = excluded.args, env = excluded.env, category = excluded.category, icon = excluded.icon, "
+        "enabled = excluded.enabled, auto_start = excluded.auto_start, status = excluded.status, "
+        "updated_at = datetime('now')",
         {s.id, s.name, s.description, s.command, s.args, s.env, s.category, s.icon, s.enabled ? 1 : 0,
          s.auto_start ? 1 : 0, s.status});
     if (saved.is_err())
