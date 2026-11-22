@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import sys
 import types
 import unittest
@@ -37,6 +38,7 @@ AGENT_PROFILE_ROWS = CREATE_AGENT.with_name("AgentProfileRows.h")
 LLM_PROFILE_HEADER = MODULE.parents[3] / "src" / "storage" / "repositories" / "LlmProfileRepository.h"
 RDAGENT_CLI = MODULE.parent.parent / "rdagents" / "cli.py"
 RDAGENT_LOOPS = RDAGENT_CLI.with_name("loops.py")
+RDAGENT_CONFIG = RDAGENT_CLI.with_name("config.py")
 
 
 def load_module():
@@ -574,6 +576,37 @@ class AgentProviderPolicyTest(unittest.TestCase):
                            service.index("bool AIQuantLabService::rd_spawn")]
         self.assertIn("std::clamp", rd_start)
         self.assertIn("kMaxRdIterations", rd_start)
+
+    def test_rd_agent_forwards_profile_output_and_transport_settings(self):
+        config = load_path("finagent_rdagent_config", RDAGENT_CONFIG)
+        with mock.patch.dict(os.environ, {}, clear=True):
+            values = config.apply_llm_config({
+                "llm_provider": "deepseek",
+                "llm_api_key": "owned",
+                "llm_model": "deepseek-flash",
+                "llm_base_url": "https://proxy.example/v1",
+                "llm_max_tokens": 777,
+            })
+            self.assertEqual(values["CHAT_MAX_TOKENS"], "777")
+            self.assertEqual(values["LITELLM_CHAT_MAX_TOKENS"], "777")
+            self.assertEqual(values["OPENAI_API_BASE"], "https://proxy.example/v1")
+            self.assertEqual(values["DEEPSEEK_API_KEY"], "owned")
+            config.clear_llm_config()
+            self.assertNotIn("DEEPSEEK_API_KEY", os.environ)
+            self.assertNotIn("OPENAI_API_BASE", os.environ)
+            self.assertNotIn("CHAT_MAX_TOKENS", os.environ)
+
+        with mock.patch.dict(os.environ, {}, clear=True):
+            values = config.apply_llm_config({
+                "llm_provider": "deepseek", "llm_api_key": "owned", "llm_max_tokens": 10**12,
+            })
+            self.assertEqual(values["CHAT_MAX_TOKENS"], "2000000")
+
+        with mock.patch.dict(os.environ, {}, clear=True):
+            values = config.apply_llm_config({
+                "llm_provider": "deepseek", "llm_api_key": "owned", "llm_max_tokens": "bad",
+            })
+            self.assertEqual(values["CHAT_MAX_TOKENS"], "4096")
 
     def test_agent_payload_uses_one_resolved_api_config_not_mixed_active_fields(self):
         service = AGENT_SERVICE.read_text(encoding="utf-8")

@@ -38,9 +38,22 @@ _LITELLM_PREFIXES: dict[str, str] = {
     "fireworks":  "fireworks_ai/",
     "openrouter": "openrouter/",
 }
+_PROVIDER_API_KEY_NAMES = tuple(f"{provider.upper()}_API_KEY" for provider in _LITELLM_PREFIXES)
 
 # Default embedding model
 _DEFAULT_EMBEDDING = "text-embedding-3-small"
+_DEFAULT_OUTPUT_TOKENS = 4096
+_MAX_OUTPUT_TOKENS = 2_000_000
+
+
+def _bounded_output_tokens(value: Any) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError, OverflowError):
+        parsed = _DEFAULT_OUTPUT_TOKENS
+    if parsed <= 0:
+        parsed = _DEFAULT_OUTPUT_TOKENS
+    return min(parsed, _MAX_OUTPUT_TOKENS)
 
 
 def apply_llm_config(config: dict[str, Any]) -> dict[str, str]:
@@ -56,10 +69,11 @@ def apply_llm_config(config: dict[str, Any]) -> dict[str, str]:
     Returns:
         Dict of env vars that were set (for logging/debugging).
     """
-    provider   = config.get("llm_provider", "openai").lower()
+    provider   = str(config.get("llm_provider") or "openai").lower()
     api_key    = config.get("llm_api_key", "")
     model      = config.get("llm_model", "gpt-4o")
     base_url   = config.get("llm_base_url", "")
+    max_tokens = _bounded_output_tokens(config.get("llm_max_tokens"))
 
     env_vars: dict[str, str] = {}
 
@@ -83,6 +97,13 @@ def apply_llm_config(config: dict[str, Any]) -> dict[str, str]:
     env_vars["OPENAI_API_KEY"] = api_key
     os.environ["OPENAI_API_KEY"] = api_key
 
+    # LiteLLM's provider adapters also read their provider-specific standard
+    # variable (the RD-Agent DeepSeek setup documents DEEPSEEK_API_KEY). Keep
+    # the universal key above for OpenAI-compatible custom gateways.
+    provider_key = f"{provider.upper()}_API_KEY"
+    env_vars[provider_key] = api_key
+    os.environ[provider_key] = api_key
+
     # Anthropic also reads its own env var
     if provider == "anthropic":
         env_vars["ANTHROPIC_API_KEY"] = api_key
@@ -92,9 +113,21 @@ def apply_llm_config(config: dict[str, Any]) -> dict[str, str]:
     if base_url:
         env_vars["CHAT_OPENAI_BASE_URL"] = base_url
         os.environ["CHAT_OPENAI_BASE_URL"] = base_url
-    elif "CHAT_OPENAI_BASE_URL" in os.environ:
+        env_vars["OPENAI_API_BASE"] = base_url
+        os.environ["OPENAI_API_BASE"] = base_url
+    else:
         # Clear stale base URL from previous call
-        del os.environ["CHAT_OPENAI_BASE_URL"]
+        os.environ.pop("CHAT_OPENAI_BASE_URL", None)
+        os.environ.pop("OPENAI_API_BASE", None)
+
+    # RDAgent 0.8's LLMSettings.chat_max_tokens reaches LiteLLM's
+    # completion(max_tokens=...). The subclass accepts both the parent name
+    # and its LITELLM_ prefixed form; set both so version-specific settings
+    # source ordering cannot silently drop the user's profile ceiling.
+    token_text = str(max_tokens)
+    for name in ("CHAT_MAX_TOKENS", "LITELLM_CHAT_MAX_TOKENS"):
+        env_vars[name] = token_text
+        os.environ[name] = token_text
 
     # --- Embedding model ---
     embedding_model = config.get("llm_embedding_model", _DEFAULT_EMBEDDING)
@@ -107,5 +140,6 @@ def apply_llm_config(config: dict[str, Any]) -> dict[str, str]:
 def clear_llm_config() -> None:
     """Remove rdagent LLM env vars (call between tasks if needed)."""
     for key in ("CHAT_MODEL", "OPENAI_API_KEY", "ANTHROPIC_API_KEY",
-                "CHAT_OPENAI_BASE_URL", "EMBEDDING_MODEL"):
+                "CHAT_OPENAI_BASE_URL", "OPENAI_API_BASE", "CHAT_MAX_TOKENS",
+                "LITELLM_CHAT_MAX_TOKENS", "EMBEDDING_MODEL", *_PROVIDER_API_KEY_NAMES):
         os.environ.pop(key, None)
