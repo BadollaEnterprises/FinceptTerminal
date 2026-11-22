@@ -68,6 +68,7 @@ LlmResponse LlmService::do_tool_loop(QJsonArray loop_messages, const QString& ur
                                      int initial_completion_tokens) {
     LlmResponse resp;
     LlmResponse usage; // summed over every round of this loop
+    ProviderUsageScope preserve_usage(resp, usage);
     // Operating the terminal takes a few rounds per task (look, open, act,
     // read), and ui_act batches up to ten steps per round.
     const int MAX_ROUNDS = active_max_tool_rounds();
@@ -227,10 +228,6 @@ LlmResponse LlmService::do_tool_loop(QJsonArray loop_messages, const QString& ur
             continue;
         }
 
-        resp.prompt_tokens = usage.prompt_tokens;
-        resp.completion_tokens = usage.completion_tokens;
-        resp.total_tokens = usage.total_tokens;
-        resp.cached_prompt_tokens = usage.cached_prompt_tokens;
         resp.success = !resp.content.isEmpty();
         // An empty final turn used to come back as a failure with NO message, which
         // the Quick Chat bubble rendered as a bare "Error: ".
@@ -261,8 +258,8 @@ LlmResponse LlmService::do_tool_loop(QJsonArray loop_messages, const QString& ur
             }
             auto text_result = try_extract_and_execute_text_tool_calls(resp.content, user_msg, url, headers);
             if (text_result.has_value() && (text_result->success || text_result->cancelled)) {
-                llm_tool_loop_add_usage(*text_result, usage);
-                return text_result.value();
+                resp = text_result.value();
+                return resp;
             }
         }
         return resp;
@@ -316,10 +313,6 @@ LlmResponse LlmService::do_tool_loop(QJsonArray loop_messages, const QString& ur
                     LlmResponse round_usage;
                     parse_usage(round_usage, rj, provider_);
                     llm_tool_loop_add_usage(usage, round_usage);
-                    resp.prompt_tokens = usage.prompt_tokens;
-                    resp.completion_tokens = usage.completion_tokens;
-                    resp.total_tokens = usage.total_tokens;
-                    resp.cached_prompt_tokens = usage.cached_prompt_tokens;
                     resp.success = !resp.content.isEmpty();
                     LOG_DEBUG(kLlmToolLoopTag,
                               QString("TOOL LOOP: summary fallback produced %1 chars").arg(resp.content.length()));

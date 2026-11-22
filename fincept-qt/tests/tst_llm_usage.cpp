@@ -11,6 +11,7 @@ class TestLlmUsage : public QObject {
     void openai_nested_cache_hits_are_preserved();
     void gemini_cached_content_is_preserved();
     void multi_round_usage_includes_every_cache_hit();
+    void scoped_usage_survives_early_return();
     void cache_hit_percent_is_safe_for_display();
 };
 
@@ -62,6 +63,22 @@ void TestLlmUsage::multi_round_usage_includes_every_cache_hit() {
     QCOMPARE(total.completion_tokens, 1200);
     QCOMPARE(total.total_tokens, 23200);
     QCOMPARE(total.cached_prompt_tokens, 19000);
+}
+
+void TestLlmUsage::scoped_usage_survives_early_return() {
+    ProviderUsage response{10, 2, 12, 4};
+    auto fail_after_billed_round = [&response]() {
+        const ProviderUsage accrued{100, 20, 120, 80};
+        ProviderUsageScope preserve(response, accrued);
+        return;
+    };
+
+    fail_after_billed_round();
+
+    QCOMPARE(response.prompt_tokens, 110);
+    QCOMPARE(response.completion_tokens, 22);
+    QCOMPARE(response.total_tokens, 132);
+    QCOMPARE(response.cached_prompt_tokens, 84);
 }
 
 void TestLlmUsage::cache_hit_percent_is_safe_for_display() {

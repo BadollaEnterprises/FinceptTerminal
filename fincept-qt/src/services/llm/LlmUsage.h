@@ -26,6 +26,24 @@ inline void add_provider_usage(Usage& total, const Usage& round) {
     total.cached_prompt_tokens += round.cached_prompt_tokens;
 }
 
+/// Preserve usage accrued by a multi-request operation on every exit path.
+/// Network, parse, cancellation, and budget failures are still billable, so a
+/// caller must not lose completed-round usage merely because the final result
+/// is unsuccessful.
+template <typename Usage>
+class ProviderUsageScope {
+  public:
+    ProviderUsageScope(Usage& target, const Usage& accrued) : target_(target), accrued_(accrued) {}
+    ~ProviderUsageScope() { add_provider_usage(target_, accrued_); }
+
+    ProviderUsageScope(const ProviderUsageScope&) = delete;
+    ProviderUsageScope& operator=(const ProviderUsageScope&) = delete;
+
+  private:
+    Usage& target_;
+    const Usage& accrued_;
+};
+
 inline int prompt_cache_hit_percent(int prompt_tokens, int cached_prompt_tokens) {
     if (prompt_tokens <= 0)
         return -1;
