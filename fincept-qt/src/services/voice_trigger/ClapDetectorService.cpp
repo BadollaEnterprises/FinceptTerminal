@@ -72,7 +72,7 @@ void ClapDetectorService::start() {
 
     process_ = new QProcess(this);
 
-    QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+    QProcessEnvironment env = python::PythonRunner::instance().build_python_env(QStringList{});
     env.insert("PYTHONIOENCODING", "utf-8");
     env.insert("PYTHONDONTWRITEBYTECODE", "1");
     env.insert("PYTHONUNBUFFERED", "1");

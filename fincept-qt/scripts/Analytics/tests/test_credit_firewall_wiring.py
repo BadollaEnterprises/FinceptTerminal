@@ -140,6 +140,17 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertIn("opts.credential_allowlist = QStringList{}", portfolio)
         self.assertIn("opts.credential_allowlist = QStringList{}", relationship)
 
+    def test_voice_workers_start_from_scrubbed_environments(self):
+        for relative in (
+            "src/services/stt/SpeechService.cpp",
+            "src/services/tts/TtsService.cpp",
+            "src/services/voice_trigger/ClapDetectorService.cpp",
+        ):
+            with self.subTest(service=relative):
+                source = (ROOT / relative).read_text(encoding="utf-8")
+                self.assertIn("build_python_env(QStringList{})", source)
+                self.assertNotIn("QProcessEnvironment::systemEnvironment()", source)
+
     def test_macro_and_geopolitics_services_check_firewall(self):
         geopolitics = (ROOT / "src/services/geopolitics/GeopoliticsService.cpp").read_text(encoding="utf-8")
         macro = (ROOT / "src/services/economics/FinceptMacroService.cpp").read_text(encoding="utf-8")
