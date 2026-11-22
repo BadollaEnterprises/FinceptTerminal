@@ -16,6 +16,7 @@ namespace {
 fincept::python::PythonRunner::RunOptions asia_svc_options(const fincept::services::asia_markets::CancelToken& cancel) {
     fincept::python::PythonRunner::RunOptions opts;
     opts.cancel_token = cancel;
+    opts.credential_allowlist = QStringList{};
     return opts;
 }
 

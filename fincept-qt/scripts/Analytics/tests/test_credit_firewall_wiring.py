@@ -44,6 +44,20 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertIn("py.build_python_env(QStringList{})", quant)
         self.assertGreaterEqual(quant.count("credential_allowlist = QStringList{}"), 2)
 
+    def test_deterministic_analytics_services_are_secretless(self):
+        for relative in (
+            "src/services/akshare/AkShareService.cpp",
+            "src/services/asia_markets/AsiaMarketsService.cpp",
+            "src/services/portfolio/PortfolioAnalyticsService.cpp",
+            "src/services/backtesting/BacktestingService.cpp",
+        ):
+            with self.subTest(service=relative):
+                source = (ROOT / relative).read_text(encoding="utf-8")
+                self.assertIn("credential_allowlist = QStringList{}", source)
+
+        backtesting = (ROOT / "src/services/backtesting/BacktestingService.cpp").read_text(encoding="utf-8")
+        self.assertNotIn("PythonRunner::instance().run(", backtesting)
+
     def test_macro_and_geopolitics_services_check_firewall(self):
         geopolitics = (ROOT / "src/services/geopolitics/GeopoliticsService.cpp").read_text(encoding="utf-8")
         macro = (ROOT / "src/services/economics/FinceptMacroService.cpp").read_text(encoding="utf-8")

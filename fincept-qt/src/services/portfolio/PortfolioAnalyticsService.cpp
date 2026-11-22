@@ -108,6 +108,7 @@ AnalyticsRequest PortfolioAnalyticsService::run_script(const QString& script, co
     const AnalyticsRequest req = make_request();
     python::PythonRunner::RunOptions opts;
     opts.cancel_token = req.token;
+    opts.credential_allowlist = QStringList{};
     if (via_stdin)
         opts.stdin_data = args_json.toUtf8();
     python::PythonRunner::instance().run_with_options(

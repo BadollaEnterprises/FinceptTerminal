@@ -16,6 +16,7 @@ namespace {
 fincept::python::PythonRunner::RunOptions akshare_svc_options(const fincept::services::akshare::CancelToken& cancel) {
     fincept::python::PythonRunner::RunOptions opts;
     opts.cancel_token = cancel;
+    opts.credential_allowlist = QStringList{};
     return opts;
 }
 

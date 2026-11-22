@@ -24,6 +24,16 @@ static constexpr int kCapabilitiesTtlSec = 24 * 60 * 60;
 
 namespace fincept::services::backtest {
 
+namespace {
+
+python::PythonRunner::RunOptions backtesting_svc_options() {
+    python::PythonRunner::RunOptions opts;
+    opts.credential_allowlist = QStringList{};
+    return opts;
+}
+
+} // namespace
+
 BacktestingService& BacktestingService::instance() {
     static BacktestingService inst;
     return inst;
@@ -162,6 +172,7 @@ void BacktestingService::dispatch_python(quint64 run_id, const QString& provider
     // lists) blew past the ~32 KB Windows command-line limit, and argv is readable
     // by other same-user processes. Every provider's main() accepts `--stdin`.
     python::PythonRunner::RunOptions opts;
+    opts.credential_allowlist = QStringList{};
     opts.stdin_data = QJsonDocument(args).toJson(QJsonDocument::Compact);
     const auto run_it = runs_.constFind(run_id);
     if (run_it != runs_.constEnd())
@@ -273,8 +284,8 @@ void BacktestingService::load_strategies(const QString& provider) {
 
     auto script = QString("Analytics/backtesting/%1/%1_provider.py").arg(provider);
     QPointer<BacktestingService> self = this;
-    python::PythonRunner::instance().run(
-        script, {"get_strategies", QStringLiteral("{\"includeUnsupported\": true}")},
+    python::PythonRunner::instance().run_with_options(
+        script, {"get_strategies", QStringLiteral("{\"includeUnsupported\": true}")}, backtesting_svc_options(),
         [self, provider, cache_key](python::PythonResult result) {
             if (!self)
                 return;
@@ -310,8 +321,9 @@ void BacktestingService::load_command_options(const QString& provider) {
 
     auto script = QString("Analytics/backtesting/%1/%1_provider.py").arg(provider);
     QPointer<BacktestingService> self = this;
-    python::PythonRunner::instance().run(
-        script, {"get_command_options", "{}"}, [self, provider, cache_key](python::PythonResult result) {
+    python::PythonRunner::instance().run_with_options(
+        script, {"get_command_options", "{}"}, backtesting_svc_options(),
+        [self, provider, cache_key](python::PythonResult result) {
             if (!self)
                 return;
             if (!result.success) {
@@ -343,8 +355,9 @@ void BacktestingService::load_capabilities(const QString& provider) {
     }
     const auto script = QString("Analytics/backtesting/%1/%1_provider.py").arg(provider);
     QPointer<BacktestingService> self = this;
-    python::PythonRunner::instance().run(
-        script, {"get_capabilities", "{}"}, [self, provider, cache_key](python::PythonResult result) {
+    python::PythonRunner::instance().run_with_options(
+        script, {"get_capabilities", "{}"}, backtesting_svc_options(),
+        [self, provider, cache_key](python::PythonResult result) {
             if (!self || !result.success)
                 return; // engines without get_capabilities keep provider_support()
             const auto doc = QJsonDocument::fromJson(python::extract_json(result.output).toUtf8());
