@@ -286,6 +286,15 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertNotIn("summary.unpriced.join", source)
         self.assertNotIn("summary.fx_missing.join", source)
 
+    def test_paper_mark_diagnostics_mask_portfolios_and_external_errors(self):
+        source = (ROOT / "src/trading/PaperMarkService.cpp").read_text(encoding="utf-8")
+        self.assertIn('#include "core/privacy/LogRedact.h"', source)
+        self.assertGreaterEqual(source.count("log_mask(portfolio_id)"), 4)
+        self.assertGreaterEqual(source.count("log_mask(pid)"), 2)
+        self.assertIn("privacy::redact_text(e.what())", source)
+        self.assertNotIn(".arg(portfolio_id, b.account_currency)", source)
+        self.assertNotIn(".arg(n).arg(pid)", source)
+
     def test_account_stream_diagnostics_mask_accounts_and_broker_errors(self):
         source = (ROOT / "src/trading/AccountDataStream.cpp").read_text(encoding="utf-8")
         self.assertIn('#include "core/privacy/LogRedact.h"', source)

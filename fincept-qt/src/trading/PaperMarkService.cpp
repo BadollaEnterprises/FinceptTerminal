@@ -3,6 +3,7 @@
 #include "core/logging/Logger.h"
 #include "core/market/InstrumentCurrency.h"
 #include "core/market/MarketSessions.h"
+#include "core/privacy/LogRedact.h"
 #include "datahub/DataHub.h"
 #include "datahub/DataHubMetaTypes.h"
 #include "services/markets/FxRateService.h"
@@ -99,7 +100,7 @@ void PaperMarkService::start() {
             const auto pf = pt_get_portfolio(acct.paper_portfolio_id);
             track_public_portfolio(pf.id, pf.currency);
         } catch (const std::exception& e) {
-            LOG_WARN(TAG, QString("Built-in paper portfolio unavailable: %1").arg(e.what()));
+            LOG_WARN(TAG, QString("Built-in paper portfolio unavailable: %1").arg(privacy::redact_text(e.what())));
         }
     };
     connect(&AccountManager::instance(), &AccountManager::builtin_paper_reset, this,
@@ -249,7 +250,7 @@ void PaperMarkService::track_public_portfolio(const QString& portfolio_id, const
         if (b.account_currency.isEmpty())
             LOG_WARN(TAG, QString("Delayed-price tracking for %1: the book's currency is unknown — fills of "
                                   "foreign-currency symbols wait for one")
-                              .arg(portfolio_id));
+                              .arg(log_mask(portfolio_id)));
     }
     b.to_yahoo = std::move(to_yahoo);
     if (fresh) {
@@ -268,7 +269,8 @@ void PaperMarkService::track_public_portfolio(const QString& portfolio_id, const
             if (o.order_type != QLatin1String("market") || venue_settled)
                 OrderMatcher::instance().add_order(o);
         }
-        LOG_INFO(TAG, QString("Delayed-price tracking on for portfolio %1 (%2)").arg(portfolio_id, b.account_currency));
+        LOG_INFO(TAG, QString("Delayed-price tracking on for portfolio %1 (%2)")
+                          .arg(log_mask(portfolio_id), b.account_currency));
     }
     if (started_)
         resync(); // suspends a broker binding of the same portfolio, subscribes its symbols
@@ -279,7 +281,7 @@ void PaperMarkService::track_public_portfolio(const QString& portfolio_id, const
 void PaperMarkService::untrack_public_portfolio(const QString& portfolio_id) {
     if (public_.remove(portfolio_id) == 0)
         return;
-    LOG_INFO(TAG, QString("Delayed-price tracking off for portfolio %1").arg(portfolio_id));
+    LOG_INFO(TAG, QString("Delayed-price tracking off for portfolio %1").arg(log_mask(portfolio_id)));
     if (started_)
         resync(); // re-binds the broker stream, drops unused quote subscriptions
     else
@@ -597,7 +599,8 @@ void PaperMarkService::resync_public() {
                 },
                 now);
             if (n > 0) {
-                LOG_INFO(TAG, QString("Session close: %1 position(s)/order(s) settled in %2").arg(n).arg(pid));
+                LOG_INFO(TAG,
+                         QString("Session close: %1 position(s)/order(s) settled in %2").arg(n).arg(log_mask(pid)));
                 emit portfolio_changed(pid);
             }
         }
@@ -743,7 +746,8 @@ void PaperMarkService::flush_prices() {
         auto c = db.commit();
         if (c.is_err()) {
             LOG_ERROR_RL(TAG, QStringLiteral("flush_commit"), 60000,
-                         logf("Paper price marks could not be saved", {{"error", QString::fromStdString(c.error())}}));
+                         logf("Paper price marks could not be saved",
+                              {{"error", privacy::redact_text(QString::fromStdString(c.error()))}}));
             db.rollback();
             return; // nothing landed — don't tell listeners marks are fresh
         }
