@@ -99,6 +99,20 @@ class TstPythonStreamLines : public QObject {
         QCOMPARE(env.value(QStringLiteral("PATH")), QStringLiteral("/usr/bin"));
     }
 
+    void bundled_public_scripts_default_to_secretless_environments() {
+        QVERIFY(defaults_to_secretless_credentials(QStringLiteral("yfinance_data.py")));
+        QVERIFY(defaults_to_secretless_credentials(QStringLiteral("./sec_data.py")));
+        QVERIFY(defaults_to_secretless_credentials(
+            QStringLiteral("Analytics\\corporateFinance\\valuation\\sec_segment_revenue.py")));
+        QVERIFY(defaults_to_secretless_credentials(QStringLiteral("byo_quantlib.py")));
+        QVERIFY(defaults_to_secretless_credentials(QStringLiteral("ai_quant_lab/qlib_rl.py")));
+
+        QVERIFY(!defaults_to_secretless_credentials(QStringLiteral("fred_data.py")));
+        QVERIFY(!defaults_to_secretless_credentials(QStringLiteral("databento_provider.py")));
+        QVERIFY(!defaults_to_secretless_credentials(QStringLiteral("notebook_cell_runner.py")));
+        QVERIFY(!defaults_to_secretless_credentials(QStringLiteral("agents/deepagents/cli.py")));
+    }
+
     void options_default_streams_both_channels() {
         PythonRunner::RunOptions o;
         QVERIFY(o.stream_stdout);

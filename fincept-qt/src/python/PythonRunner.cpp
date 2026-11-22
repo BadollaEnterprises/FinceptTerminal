@@ -957,9 +957,13 @@ void PythonRunner::run_with_options(const QString& script, const QStringList& ar
     const int resolved_timeout =
         (opts.timeout_ms == kTimeoutFromScript) ? default_timeout_for_script(script) : opts.timeout_ms;
 
+    std::optional<QStringList> credential_allowlist = opts.credential_allowlist;
+    if (!credential_allowlist.has_value() && environment_detail::defaults_to_secretless_credentials(script))
+        credential_allowlist = QStringList{};
+
     queue_.enqueue({script, args, std::move(cb), std::move(on_line), opts.stdin_data,
                     script_supports_arg_spill(script, args), opts.expect_json, resolved_timeout, opts.cancel_token,
-                    opts.credential_allowlist, opts.max_output_bytes, opts.stream_stdout});
+                    credential_allowlist, opts.max_output_bytes, opts.stream_stdout});
     start_next();
 }
 

@@ -73,10 +73,11 @@ class PythonRunner : public QObject {
 
         /// When set, ONLY these stored credentials are injected into the child's
         /// environment (the env vars the script itself reads); every other key
-        /// in SecureStorage stays out. Unset = every managed credential, as the
-        /// terminal's own screens expect. Agent-started runs (the MCP `python`
-        /// tool) always set it, so a script an agent runs cannot read keys it has
-        /// no business with (exchange secrets in a data connector's environment).
+        /// in SecureStorage stays out. Unset keeps the compatibility behaviour
+        /// for reviewed credential-using scripts; known public/local helpers
+        /// are still forced secretless at the runner boundary. Agent-started
+        /// runs (the MCP `python` tool) always set it, so a script an agent runs
+        /// cannot read keys it has no business with.
         std::optional<QStringList> credential_allowlist{};
 
         /// Stop a run whose stdout grows past this many bytes: the process is
@@ -140,7 +141,7 @@ class PythonRunner : public QObject {
     /// a "parent-of-pkg" directory to PYTHONPATH themselves — this helper only
     /// sets the shared base env.
     /// `credential_allowlist` controls which Settings-managed secrets reach the
-    /// child. Unset preserves trusted app-script and notebook behaviour; an
+    /// child. Unset preserves direct trusted-caller and notebook behaviour; an
     /// empty list produces a secretless environment for public-data workers.
     QProcessEnvironment
     build_python_env(const std::optional<QStringList>& credential_allowlist = std::nullopt) const;
@@ -316,6 +317,30 @@ inline void apply_credential_allowlist(QProcessEnvironment& env, const QStringLi
         if (!allowed)
             env.remove(key);
     }
+}
+
+/// Public/local bundled helpers that never need a Settings-managed secret.
+/// Keep this deliberately exact: a new script stays on the compatibility path
+/// until its credential contract is reviewed. Explicit RunOptions always win.
+inline bool defaults_to_secretless_credentials(QString script) {
+    script.replace(QLatin1Char('\\'), QLatin1Char('/'));
+    while (script.startsWith(QLatin1String("./")))
+        script.remove(0, 2);
+    script = script.toLower();
+
+    static const QStringList kSecretlessScripts = {
+        QStringLiteral("yfinance_data.py"),
+        QStringLiteral("sec_data.py"),
+        QStringLiteral("relationship_map.py"),
+        QStringLiteral("byo_public_data.py"),
+        QStringLiteral("byo_dashboard_data.py"),
+        QStringLiteral("byo_equity_data.py"),
+        QStringLiteral("byo_quantlib.py"),
+        QStringLiteral("byo_pro_analytics.py"),
+        QStringLiteral("portfolio_metrics.py"),
+        QStringLiteral("analytics/corporatefinance/valuation/sec_segment_revenue.py"),
+    };
+    return kSecretlessScripts.contains(script) || script.startsWith(QLatin1String("ai_quant_lab/"));
 }
 
 } // namespace environment_detail
