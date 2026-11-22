@@ -58,6 +58,10 @@ import fincept_yahoo as fy  # noqa: E402  (guards every yfinance request of the 
 
 _DAY_S = 86400                 # profile, calendar, statements, dividends / splits, earnings history
 _PEER_LIST_S = 3 * 86400       # screener answers, industry / sector leaders
+_US_EARNINGS_EXCHANGES = {
+    "NMS", "NGM", "NCM", "NYQ", "ASE", "PCX", "BTS",
+    "NASDAQ", "NYSE", "AMEX", "ARCA", "XNAS", "XNYS",
+}
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -148,6 +152,61 @@ def _day(v):
 
 def _failure(symbol, code, message):
     return {"error": message, "code": code, "symbol": symbol}
+
+
+def _resolve_public_earnings_session(symbol, start, end):
+    """Cached zero-credit Nasdaq calendar lookup, imported lazily for CLI isolation."""
+    import byo_equity_data
+
+    key = f"{symbol}:{start}:{end}"
+    return fy.cached(
+        "nasdaq_earnings_session", key,
+        lambda: byo_equity_data.find_earnings_session(symbol, start, end),
+        max_age=_DAY_S,
+    )
+
+
+def _apply_public_earnings_session(out, symbol, *, today=None, resolver=None):
+    """Resolve Yahoo date ranges to an exact public date/session when available.
+
+    This deliberately enriches only major US listings.  Failure is non-fatal because
+    Yahoo's existing earnings date remains useful and the public calendar can be absent
+    or temporarily unreachable.
+    """
+    exchange = str(out.get("exchange") or "").strip().upper()
+    if exchange not in _US_EARNINGS_EXCHANGES:
+        return out
+    start_text = str(out.get("next_earnings") or "")[:10]
+    end_text = str(out.get("next_earnings_end") or start_text)[:10]
+    try:
+        start_day, end_day = date.fromisoformat(start_text), date.fromisoformat(end_text)
+    except ValueError:
+        return out
+    today = today or date.today()
+    if end_day < today or end_day < start_day or (end_day - start_day).days >= 31:
+        return out
+    try:
+        session = (resolver or _resolve_public_earnings_session)(
+            str(symbol or "").strip().upper(), start_day.isoformat(), end_day.isoformat(),
+        )
+    except Exception as exc:
+        _diag(f"WARNING Public earnings session unavailable symbol={symbol} error={type(exc).__name__}")
+        return out
+    if not isinstance(session, dict):
+        return out
+    timing = str(session.get("timing") or "").strip().upper()
+    try:
+        exact_day = date.fromisoformat(str(session.get("date") or "")[:10])
+    except ValueError:
+        return out
+    if timing not in {"BMO", "AMC", "TAS"} or not start_day <= exact_day <= end_day:
+        return out
+    exact = exact_day.isoformat()
+    out["next_earnings"] = exact
+    out["next_earnings_end"] = exact
+    out["next_earnings_timing"] = timing
+    out["next_earnings_timing_source"] = "nasdaq_public"
+    return out
 
 
 def _classify(exc):
@@ -457,6 +516,7 @@ def get_events(symbol):
         ts = _num(info.get("earningsTimestampStart")) or _num(info.get("earningsTimestamp"))
         if ts and ts > time.time() - 86400:
             out["next_earnings"] = _day(ts)
+    _apply_public_earnings_session(out, symbol)
 
     # Dividends / splits (as quoted — pence for LSE, cents for JSE).
     try:

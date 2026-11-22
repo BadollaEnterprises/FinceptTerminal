@@ -304,6 +304,54 @@ def parse_earnings_calendar(start: str, end: str, rows: Sequence[Mapping[str, An
                      max_age=21600, pagination=pagination)
 
 
+def find_earnings_session(symbol: str, start: str, end: str, *, fetcher=None) -> Dict[str, Any]:
+    """Return one exact public-calendar match for ``symbol`` within the date range.
+
+    The small normalized result is suitable for enriching a company profile without
+    coupling that caller to the full calendar response.  Empty means that the public
+    source did not provide a trustworthy exact match; callers should retain their
+    existing date and omit the session label.
+    """
+    wanted = str(symbol or "").strip().upper()
+    if not wanted:
+        return {}
+    # Validate locally even when a test double is supplied.  Production fetching also
+    # enforces the public endpoint's 31-day range limit.
+    start_day, end_day = date.fromisoformat(str(start)), date.fromisoformat(str(end))
+    if end_day < start_day or (end_day - start_day).days >= 31:
+        return {}
+    request = {
+        "operation": "earnings", "symbol": wanted,
+        "start_date": start_day.isoformat(), "end_date": end_day.isoformat(),
+        "page": 1, "page_size": 10,
+    }
+    answer = (fetcher or fetch)(request)
+    data = answer.get("data") if isinstance(answer, Mapping) else None
+    events = data.get("events") if isinstance(data, Mapping) else None
+    if not isinstance(events, list):
+        return {}
+    for event in events:
+        if not isinstance(event, Mapping) or str(event.get("symbol") or "").strip().upper() != wanted:
+            continue
+        timing = str(event.get("timing") or "").strip().upper()
+        event_day = str(event.get("datetime") or "")[:10]
+        try:
+            parsed_day = date.fromisoformat(event_day)
+        except ValueError:
+            continue
+        if timing not in {"BMO", "AMC", "TAS"} or not start_day <= parsed_day <= end_day:
+            continue
+        result: Dict[str, Any] = {
+            "date": parsed_day.isoformat(), "timing": timing,
+            "source": "nasdaq_public", "fincept_credits": 0,
+        }
+        estimate = _num(event.get("eps_estimate"))
+        if estimate is not None:
+            result["eps_estimate"] = estimate
+        return result
+    return {}
+
+
 def _page(events: Sequence[Dict[str, Any]], page: int, page_size: int) -> tuple[list[Dict[str, Any]], Dict[str, Any]]:
     page = max(1, int(page))
     page_size = max(1, min(100, int(page_size)))

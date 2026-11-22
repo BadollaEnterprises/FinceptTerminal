@@ -226,13 +226,24 @@ void EquityEarningsTab::render() {
         tile(tr("LAST REPORT"), en_uf::calendar_date(events_.next_earnings), tr("next date not announced yet"),
              tr("%n day(s) ago", "", static_cast<int>(events_.next_earnings.daysTo(QDate::currentDate()))));
     } else if (events_.next_earnings.isValid()) {
-        QString sub;
+        QStringList details;
+        const QString session = equity_fmt::earnings_session(events_.next_earnings_timing);
+        if (!session.isEmpty())
+            details << session;
+        QString eps_detail;
         if (en_ok(events_.est_eps_avg))
-            sub = tr("EPS est. %1").arg(eps(events_.est_eps_avg));
+            eps_detail = tr("EPS est. %1").arg(eps(events_.est_eps_avg));
         if (en_ok(events_.est_eps_low) && en_ok(events_.est_eps_high))
-            sub += tr(" (%1 – %2)").arg(eps(events_.est_eps_low), eps(events_.est_eps_high));
-        tile(tr("NEXT REPORT"), en_uf::calendar_date(events_.next_earnings), sub,
-             tr("%n day(s) away", "", static_cast<int>(QDate::currentDate().daysTo(events_.next_earnings))));
+            eps_detail += eps_detail.isEmpty()
+                              ? tr("EPS range %1 – %2").arg(eps(events_.est_eps_low), eps(events_.est_eps_high))
+                              : tr(" (%1 – %2)").arg(eps(events_.est_eps_low), eps(events_.est_eps_high));
+        if (!eps_detail.isEmpty())
+            details << eps_detail;
+        QString tip = tr("%n day(s) away", "", static_cast<int>(QDate::currentDate().daysTo(events_.next_earnings)));
+        if (events_.next_earnings_timing_source == QLatin1String("nasdaq_public"))
+            tip += QStringLiteral("\n") + tr("Session timing: Nasdaq public earnings calendar");
+        tile(tr("NEXT REPORT"), en_uf::calendar_date(events_.next_earnings),
+             details.join(QStringLiteral(" · ")), tip);
     }
     int beats = 0, scored = 0;
     double sum1 = 0, sum5 = 0, abs1 = 0;

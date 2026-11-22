@@ -541,6 +541,9 @@ void EquityOverviewTab::render_company() {
         QString e = ov_uf::calendar_date(events_.next_earnings);
         if (!past && events_.next_earnings_end.isValid() && events_.next_earnings_end != events_.next_earnings)
             e += QStringLiteral(" – ") + ov_uf::calendar_date(events_.next_earnings_end);
+        const QString session = equity_fmt::earnings_session(events_.next_earnings_timing);
+        if (!past && !session.isEmpty())
+            e += QStringLiteral(" · ") + session;
         if (!past && ov_ok(events_.est_eps_avg))
             e += tr(" (EPS est. %1)").arg(ov_uf::number(events_.est_eps_avg, 2));
         dates << (past ? tr("Last earnings: %1") : tr("Next earnings: %1")).arg(e);

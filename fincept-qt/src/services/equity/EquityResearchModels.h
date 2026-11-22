@@ -247,6 +247,8 @@ struct EquityEvents {
     QDate most_recent_quarter;
     QDate next_earnings;
     QDate next_earnings_end;
+    QString next_earnings_timing;        ///< BMO, AMC or TAS; empty when unavailable
+    QString next_earnings_timing_source; ///< e.g. nasdaq_public
     double est_eps_avg = std::numeric_limits<double>::quiet_NaN();
     double est_eps_low = std::numeric_limits<double>::quiet_NaN();
     double est_eps_high = std::numeric_limits<double>::quiet_NaN();

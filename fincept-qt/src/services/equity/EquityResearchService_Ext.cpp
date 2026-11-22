@@ -104,6 +104,8 @@ EquityEvents EquityResearchService::parse_events(const QJsonObject& o) const {
     e.most_recent_quarter = eqrs_day(o.value(QStringLiteral("most_recent_quarter")));
     e.next_earnings = eqrs_day(o.value(QStringLiteral("next_earnings")));
     e.next_earnings_end = eqrs_day(o.value(QStringLiteral("next_earnings_end")));
+    e.next_earnings_timing = o.value(QStringLiteral("next_earnings_timing")).toString();
+    e.next_earnings_timing_source = o.value(QStringLiteral("next_earnings_timing_source")).toString();
     const QJsonObject est = o.value(QStringLiteral("earnings_estimate")).toObject();
     e.est_eps_avg = eqrs_num(est.value(QStringLiteral("avg")));
     e.est_eps_low = eqrs_num(est.value(QStringLiteral("low")));

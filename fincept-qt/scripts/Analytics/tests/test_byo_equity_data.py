@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import importlib.util
 import unittest
+from datetime import date
 from pathlib import Path
 
 
 SCRIPT = Path(__file__).resolve().parents[2] / "byo_equity_data.py"
+EQUITY_RESEARCH_SCRIPT = Path(__file__).resolve().parents[2] / "equity_research_data.py"
 
 
 def load_module():
@@ -20,7 +22,82 @@ def load_module():
     return module
 
 
+def load_equity_research_module():
+    spec = importlib.util.spec_from_file_location("equity_research_data", EQUITY_RESEARCH_SCRIPT)
+    module = importlib.util.module_from_spec(spec)
+    assert spec and spec.loader
+    spec.loader.exec_module(module)
+    return module
+
+
 class ByoEquityDataTest(unittest.TestCase):
+    def test_public_session_enriches_only_supported_future_us_listing(self):
+        mod = load_equity_research_module()
+        calls = []
+
+        def resolver(symbol, start, end):
+            calls.append((symbol, start, end))
+            return {"date": "2026-11-24", "timing": "BMO", "source": "nasdaq_public"}
+
+        result = mod._apply_public_earnings_session(
+            {"exchange": "NMS", "next_earnings": "2026-11-23",
+             "next_earnings_end": "2026-11-25"},
+            "msft", today=date(2026, 11, 22), resolver=resolver,
+        )
+
+        self.assertEqual(calls, [("MSFT", "2026-11-23", "2026-11-25")])
+        self.assertEqual(result["next_earnings"], "2026-11-24")
+        self.assertEqual(result["next_earnings_end"], "2026-11-24")
+        self.assertEqual(result["next_earnings_timing"], "BMO")
+        self.assertEqual(result["next_earnings_timing_source"], "nasdaq_public")
+
+        calls.clear()
+        unsupported = mod._apply_public_earnings_session(
+            {"exchange": "LSE", "next_earnings": "2026-11-24"},
+            "VOD.L", today=date(2026, 11, 22), resolver=resolver,
+        )
+        self.assertEqual(calls, [])
+        self.assertNotIn("next_earnings_timing", unsupported)
+
+    def test_exact_earnings_session_is_selected_from_public_calendar(self):
+        mod = load_module()
+        requests = []
+
+        def fake_fetch(request):
+            requests.append(request)
+            return {"data": {"events": [
+                {"datetime": "2026-11-24T21:00:00Z", "symbol": "MSFT",
+                 "timing": "AMC", "eps_estimate": 4.12},
+            ]}, "meta": {"source": "nasdaq_public", "fincept_credits": 0}}
+
+        answer = mod.find_earnings_session(
+            "msft", "2026-11-23", "2026-11-25", fetcher=fake_fetch,
+        )
+
+        self.assertEqual(requests, [{
+            "operation": "earnings", "symbol": "MSFT",
+            "start_date": "2026-11-23", "end_date": "2026-11-25",
+            "page": 1, "page_size": 10,
+        }])
+        self.assertEqual(answer, {
+            "date": "2026-11-24", "timing": "AMC", "eps_estimate": 4.12,
+            "source": "nasdaq_public", "fincept_credits": 0,
+        })
+
+    def test_earnings_session_rejects_wrong_symbol_or_invalid_timing(self):
+        mod = load_module()
+
+        def fake_fetch(_request):
+            return {"data": {"events": [
+                {"datetime": "2026-11-24T13:00:00Z", "symbol": "AAPL", "timing": "BMO"},
+                {"datetime": "2026-11-24T21:00:00Z", "symbol": "MSFT", "timing": "UNKNOWN"},
+            ]}, "meta": {"source": "nasdaq_public", "fincept_credits": 0}}
+
+        self.assertEqual(
+            mod.find_earnings_session("MSFT", "2026-11-24", "2026-11-24", fetcher=fake_fetch),
+            {},
+        )
+
     def test_nasdaq_earnings_rows_are_filtered_sorted_and_paginated(self):
         mod = load_module()
         answer = mod.parse_earnings_calendar(

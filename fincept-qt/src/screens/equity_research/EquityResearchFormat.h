@@ -53,6 +53,20 @@ inline QString grouped(double v, int decimals = 2) {
     return missing(v) ? dash() : uf::number(v, decimals);
 }
 
+/// Public earnings-calendar session code. Unknown values stay hidden rather than
+/// implying a time the source did not provide.
+inline QString earnings_session(const QString& code) {
+    const QString key = code.trimmed().toUpper();
+    const char* ctx = "EquityResearchFormat";
+    if (key == QLatin1String("BMO"))
+        return QCoreApplication::translate(ctx, "Before market open");
+    if (key == QLatin1String("AMC"))
+        return QCoreApplication::translate(ctx, "After market close");
+    if (key == QLatin1String("TAS"))
+        return QCoreApplication::translate(ctx, "Time not supplied");
+    return {};
+}
+
 /// A fraction as a percentage: 0.1234 → "12.34%"; `signed_` adds "+" to positives.
 inline QString pct(double fraction, int decimals = 2, bool signed_ = false) {
     return missing(fraction) ? dash() : uf::fraction_pct(fraction, decimals, signed_);

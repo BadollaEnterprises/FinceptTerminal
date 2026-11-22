@@ -1342,6 +1342,11 @@ fincept_add_test(tst_equity_financials_analytics
     "${PROJECT_SOURCE_DIR}/src/screens/equity_research/EquityFinancialsAnalytics.cpp"
     "${PROJECT_SOURCE_DIR}/src/screens/equity_research/EquityStatementModel.cpp")
 
+# src/screens/equity_research/EquityResearchFormat.h — pure display mappings that must
+# remain consistent between the Overview and Earnings tabs.
+fincept_add_test(tst_equity_research_format
+    tst_equity_research_format.cpp)
+
 # One target that builds every suite and nothing of the app:
 #   cmake --build <build> --target fincept_unit_tests && ctest --test-dir <build>
 # (CI uses this, so a new suite is picked up without touching the workflow.)
