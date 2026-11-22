@@ -681,6 +681,8 @@ bool EquityBottomPanel::show_section(const QString& id) {
                     : k == QLatin1String("holdings")  ? holdings_tab_idx_
                     : k == QLatin1String("orders")    ? orders_tab_idx_
                     : k == QLatin1String("fills")     ? fills_tab_idx_
+                    : k == QLatin1String("time_sales") || k == QLatin1String("tas") || k == QLatin1String("tape")
+                        ? time_sales_tab_idx_
                     : k == QLatin1String("funds")     ? funds_tab_idx_
                     : k == QLatin1String("stats")     ? stats_tab_idx_
                                                       : -1;

@@ -121,7 +121,7 @@ QString cph_view_of(const QString& lower) {
         {QStringLiteral("trade"), QStringLiteral("trade")},
         {QStringLiteral("ticket"), QStringLiteral("trade")},
         {QStringLiteral("order"), QStringLiteral("trade")},
-        {QStringLiteral("tas"), QStringLiteral("trade")},
+        {QStringLiteral("tas"), QStringLiteral("time_sales")},
         {QStringLiteral("backtest"), QStringLiteral("backtest")},
         {QStringLiteral("peers"), QStringLiteral("peers")},
         {QStringLiteral("comps"), QStringLiteral("peers")},

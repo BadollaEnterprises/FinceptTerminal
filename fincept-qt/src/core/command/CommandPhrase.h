@@ -34,7 +34,7 @@ namespace fincept::command::phrase {
 enum class Kind {
     None,
     Scope,      ///< scope = "action" | "instrument" | "help"; text = the rest
-    SymbolView, ///< view = chart | news | options | trade | backtest | peers | research:<tab>; symbols[0]
+    SymbolView, ///< view = chart | news | options | trade | time_sales | backtest | peers | research:<tab>; symbols[0]
     Ticket,     ///< side = buy | sell; quantity (0 = none); symbols[0]; price (0 = none); order_type limit|market|""
     Compare,    ///< symbols (2+)
     FxPair,     ///< pair "EURUSD"; symbols[0] = "EURUSD=X" (Yahoo)

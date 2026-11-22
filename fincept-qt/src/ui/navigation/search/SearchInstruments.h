@@ -24,6 +24,7 @@ inline constexpr char kResearch[] = "research";
 inline constexpr char kNews[] = "news";
 inline constexpr char kBuy[] = "buy";
 inline constexpr char kSell[] = "sell";
+inline constexpr char kTimeSales[] = "time_sales";
 inline constexpr char kWatch[] = "watch";
 inline constexpr char kOptions[] = "options";
 inline constexpr char kBacktest[] = "backtest";

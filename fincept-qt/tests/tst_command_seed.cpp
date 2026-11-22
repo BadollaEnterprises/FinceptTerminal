@@ -63,9 +63,17 @@ void TestCommandSeed::terminal_aliases_are_discoverable() {
     QVERIFY(ownership->keywords.contains(QStringLiteral("hds")));
     QVERIFY(ownership->keywords.contains(QStringLiteral("tran")));
 
+    const auto* peers = find(QStringLiteral("equity_research.peers"));
+    QVERIFY(peers);
+    QVERIFY(peers->keywords.contains(QStringLiteral("hms")));
+
     const auto* options = find(QStringLiteral("equity_research.options"));
     QVERIFY(options);
     QVERIFY(options->keywords.contains(QStringLiteral("omon")));
+
+    const auto* time_sales = find(QStringLiteral("equity_trading.time_sales"));
+    QVERIFY(time_sales);
+    QVERIFY(time_sales->keywords.contains(QStringLiteral("tas")));
 }
 
 QTEST_GUILESS_MAIN(TestCommandSeed)

@@ -103,6 +103,8 @@ QStringList action_ids(const Instrument& inst) {
         ids << QString::fromLatin1(act::kNews);
     if (si_equity_like(inst) || crypto)
         ids << QString::fromLatin1(act::kSell);
+    if (si_equity_like(inst))
+        ids << QString::fromLatin1(act::kTimeSales);
     if (si_equity_like(inst) || inst.asset_class == AssetClass::Index)
         ids << QString::fromLatin1(act::kOptions);
     if (!inst.symbol.isEmpty())
@@ -126,6 +128,8 @@ QString action_label(const QString& id) {
         return si_tr("Buy…");
     if (id == QLatin1String(act::kSell))
         return si_tr("Sell…");
+    if (id == QLatin1String(act::kTimeSales))
+        return si_tr("Time & Sales");
     if (id == QLatin1String(act::kWatch))
         return si_tr("Watch");
     if (id == QLatin1String(act::kOptions))
@@ -208,6 +212,8 @@ QString sentence(const Instrument& inst, const QString& action, const QVariantMa
             what += si_tr(", market");
         return what + si_tr(" — nothing is sent");
     }
+    if (action == QLatin1String(act::kTimeSales))
+        return si_tr("Opens Time & Sales for %1").arg(code);
     if (action == QLatin1String(act::kWatch)) {
         const QString list = args.value(QStringLiteral("watchlist")).toString();
         return list.isEmpty() ? si_tr("Adds %1 to your watchlist").arg(code) : si_tr("Adds %1 to the %2 watchlist").arg(code, list);
@@ -273,6 +279,13 @@ QString run(const actions::Ctx& ctx_in, const Instrument& inst, const QString& a
     if (action == QLatin1String(act::kNews)) {
         actions::open_symbol(ctx, QStringLiteral("news"), inst.symbol.isEmpty() ? si_code(inst) : inst.symbol,
                              route.asset_class, exchange);
+        return {};
+    }
+    if (action == QLatin1String(act::kTimeSales)) {
+        if (!si_equity_like(inst) || inst.symbol.trimmed().isEmpty())
+            return si_tr("Time & Sales is available for stocks and ETFs");
+        actions::open_symbol(ctx, QStringLiteral("equity_trading"), inst.symbol, route.asset_class, exchange);
+        actions::open_screen(ctx, QStringLiteral("equity_trading"), QStringLiteral("time_sales"));
         return {};
     }
     if (action == QLatin1String(act::kBuy) || action == QLatin1String(act::kSell)) {

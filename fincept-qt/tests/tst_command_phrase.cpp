@@ -44,7 +44,7 @@ void TestCommandPhrase::symbol_research_views_data() {
     QTest::newRow("earnings-code") << QStringLiteral("NFLX ERN") << QStringLiteral("NFLX")
                                     << QStringLiteral("research:earnings");
     QTest::newRow("time-sales-code") << QStringLiteral("TAS MSFT") << QStringLiteral("MSFT")
-                                      << QStringLiteral("trade");
+                                      << QStringLiteral("time_sales");
 }
 
 void TestCommandPhrase::symbol_research_views() {

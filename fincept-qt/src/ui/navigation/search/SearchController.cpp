@@ -122,6 +122,8 @@ QString sc_view_action(const QString& view) {
         return QString::fromLatin1(act::kOptions);
     if (view == QLatin1String("trade"))
         return QString::fromLatin1(act::kBuy);
+    if (view == QLatin1String("time_sales"))
+        return QString::fromLatin1(act::kTimeSales);
     if (view == QLatin1String("backtest"))
         return QString::fromLatin1(act::kBacktest);
     if (view == QLatin1String("peers"))
