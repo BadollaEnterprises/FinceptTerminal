@@ -2058,7 +2058,7 @@ static void wire_utility_bridges(NodeRegistry& registry) {
                 if (const QByteArray bytes_out = content.toUtf8(); file.write(bytes_out) != bytes_out.size())
                     LOG_ERROR("ServiceBridges", logf("Workflow file node could not write", {{"path", log_path(path)},
                                                                                            {"bytes", bytes_out.size()},
-                                                                                           {"error", file.errorString()}}));
+                                                                                           {"error", privacy::redact_text(file.errorString())}}));
                 QJsonObject out;
                 out["path"] = path;
                 out["operation"] = operation;
@@ -2122,14 +2122,14 @@ static void wire_utility_bridges(NodeRegistry& registry) {
                     file.write(bytes_out) != bytes_out.size())
                     LOG_ERROR("ServiceBridges", logf("Workflow file node could not write", {{"path", log_path(path)},
                                                                                            {"bytes", bytes_out.size()},
-                                                                                           {"error", file.errorString()}}));
+                                                                                           {"error", privacy::redact_text(file.errorString())}}));
             } else {
                 // CSV from an array of objects
                 if (const QByteArray bytes_out = bridge_csv_from_rows(inputs[0].toArray()).toUtf8();
                     file.write(bytes_out) != bytes_out.size())
                     LOG_ERROR("ServiceBridges", logf("Workflow file node could not write", {{"path", log_path(path)},
                                                                                            {"bytes", bytes_out.size()},
-                                                                                           {"error", file.errorString()}}));
+                                                                                           {"error", privacy::redact_text(file.errorString())}}));
             }
             file.close();
 
@@ -2194,7 +2194,7 @@ static void wire_utility_bridges(NodeRegistry& registry) {
                 if (file.write(bytes) != bytes.size())
                     LOG_ERROR("ServiceBridges", logf("Workflow file node could not write", {{"path", log_path(path)},
                                                                                            {"bytes", bytes.size()},
-                                                                                           {"error", file.errorString()}}));
+                                                                                           {"error", privacy::redact_text(file.errorString())}}));
                 file.close();
 
                 QJsonObject out;
@@ -2241,7 +2241,7 @@ static void wire_utility_bridges(NodeRegistry& registry) {
                 if (out_file.write(decompressed) != decompressed.size())
                     LOG_ERROR("ServiceBridges", logf("Workflow file node could not write", {{"path", log_path(out_path)},
                                                                                            {"bytes", decompressed.size()},
-                                                                                           {"error", out_file.errorString()}}));
+                                                                                           {"error", privacy::redact_text(out_file.errorString())}}));
 
                 QJsonObject out;
                 out["input_path"] = path;
@@ -2262,7 +2262,7 @@ static void wire_utility_bridges(NodeRegistry& registry) {
                 if (out_file.write(compressed) != compressed.size())
                     LOG_ERROR("ServiceBridges", logf("Workflow file node could not write", {{"path", log_path(out_path)},
                                                                                            {"bytes", compressed.size()},
-                                                                                           {"error", out_file.errorString()}}));
+                                                                                           {"error", privacy::redact_text(out_file.errorString())}}));
 
                 QJsonObject out;
                 out["input_path"] = path;
@@ -2582,7 +2582,9 @@ static void wire_utility_bridges(NodeRegistry& registry) {
             (void)QtConcurrent::run([cb, op, query, db_path, source]() {
                 const db_node::Outcome r = db_node::run(db_path, source, op, query);
                 if (!r.log_detail.isEmpty())
-                    LOG_WARN("WorkflowDbNode", QString("%1 — %2").arg(r.error, r.log_detail));
+                    LOG_WARN("WorkflowDbNode", QString("%1 — %2")
+                                                   .arg(privacy::redact_text(r.error),
+                                                        privacy::redact_text(r.log_detail)));
                 cb(r.ok, r.ok ? QJsonValue(r.output) : QJsonValue(), r.error);
             });
         };

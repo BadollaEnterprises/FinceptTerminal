@@ -347,6 +347,19 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertNotIn('{{"order_id", order_id}, {"error", ex.what()}}', source)
         self.assertNotIn('{{"error", ex.what()}}', source)
 
+    def test_workflow_database_diagnostics_scrub_driver_details(self):
+        source = (ROOT / "src/services/workflow/adapters/ServiceBridges.cpp").read_text(encoding="utf-8")
+        self.assertIn("privacy::redact_text(r.error)", source)
+        self.assertIn("privacy::redact_text(r.log_detail)", source)
+        self.assertNotIn('QString("%1 — %2").arg(r.error, r.log_detail)', source)
+
+    def test_workflow_file_diagnostics_scrub_platform_errors(self):
+        source = (ROOT / "src/services/workflow/adapters/ServiceBridges.cpp").read_text(encoding="utf-8")
+        self.assertGreaterEqual(source.count("privacy::redact_text(file.errorString())"), 4)
+        self.assertGreaterEqual(source.count("privacy::redact_text(out_file.errorString())"), 2)
+        self.assertNotIn('{{"error", file.errorString()}}', source)
+        self.assertNotIn('{{"error", out_file.errorString()}}', source)
+
     def test_exchange_process_diagnostics_redact_external_errors(self):
         pool = (ROOT / "src/trading/ExchangeDaemonPool.cpp").read_text(encoding="utf-8")
         session = (ROOT / "src/trading/ExchangeSession.cpp").read_text(encoding="utf-8")
