@@ -1,4 +1,5 @@
 import importlib.util
+import io
 import pathlib
 import unittest
 
@@ -126,6 +127,13 @@ class PublicDataTest(unittest.TestCase):
             "published": "",
             "domain": "news.example.test",
         }])
+
+    def test_public_response_size_is_bounded(self):
+        module = load_module(self)
+        self.assertEqual(module._read_public_response(io.BytesIO(b"ok")), b"ok")
+        oversized = io.BytesIO(b"x" * (module.PUBLIC_RESPONSE_MAX_BYTES + 1))
+        with self.assertRaisesRegex(ValueError, "response is too large"):
+            module._read_public_response(oversized)
 
 
 if __name__ == "__main__":

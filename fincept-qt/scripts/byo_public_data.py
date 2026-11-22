@@ -21,6 +21,7 @@ from typing import Any, Dict, Mapping
 
 USER_AGENT = "FinceptTerminalCommunity/4.5 public-data-adapter"
 GEOPOLITICS_RSS_FALLBACK = "https://feeds.bbci.co.uk/news/world/rss.xml"
+PUBLIC_RESPONSE_MAX_BYTES = 8 * 1024 * 1024
 
 
 def _validate_public_url(url: str, *, resolver=socket.getaddrinfo) -> str:
@@ -65,6 +66,13 @@ class _PublicRedirectHandler(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         _validate_public_url(newurl)
         return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def _read_public_response(response) -> bytes:
+    raw = response.read(PUBLIC_RESPONSE_MAX_BYTES + 1)
+    if len(raw) > PUBLIC_RESPONSE_MAX_BYTES:
+        raise ValueError(f"public data response is too large (limit {PUBLIC_RESPONSE_MAX_BYTES} bytes)")
+    return raw
 
 
 def _sources():
@@ -213,7 +221,7 @@ def _get(url: str, *, json_response: bool = False):
     request = urllib.request.Request(safe_url, headers={"User-Agent": USER_AGENT, "Accept": "application/json,text/csv,*/*"})
     opener = urllib.request.build_opener(_PublicRedirectHandler())
     with opener.open(request, timeout=30) as response:
-        raw = response.read().decode("utf-8", errors="replace")
+        raw = _read_public_response(response).decode("utf-8", errors="replace")
     return json.loads(raw) if json_response else raw
 
 
