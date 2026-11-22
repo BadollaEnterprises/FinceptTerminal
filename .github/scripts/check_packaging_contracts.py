@@ -258,6 +258,18 @@ def main() -> int:
         failures,
     )
     require(
+        cmake_text,
+        "fincept-openssl-3.5.9-macos13-${_fincept_macos_openssl_arch}",
+        "macOS developer builds must reuse the verified deployment-compatible OpenSSL cache",
+        failures,
+    )
+    require(
+        cmake_text,
+        'set(OPENSSL_ROOT_DIR "${_fincept_macos_openssl_cache}" CACHE PATH',
+        "macOS cached OpenSSL must become the discovery root before FindOpenSSL runs",
+        failures,
+    )
+    require(
         text,
         "actions/checkout@v4\n\n      - name: Download macOS arm64",
         "macOS Universal job must check out repository scripts before using them",

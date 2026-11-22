@@ -4292,6 +4292,46 @@ if(WIN32 AND NOT OPENSSL_ROOT_DIR AND NOT DEFINED ENV{OPENSSL_ROOT_DIR})
     endif()
 endif()
 
+# A normal macOS developer configure does not pass OPENSSL_ROOT_DIR. Qt's kit
+# may expose libssl.dylib symlinks into Homebrew, whose binaries can target the
+# host OS instead of this application's macOS 13 deployment target. Release
+# builds create a pinned, validated OpenSSL cache; reuse that cache for local
+# builds when its marker and libraries match, before FindOpenSSL caches the Qt /
+# Homebrew paths. We deliberately do not download or compile anything during a
+# CMake configure.
+if(APPLE AND NOT OPENSSL_ROOT_DIR AND NOT DEFINED ENV{OPENSSL_ROOT_DIR})
+    set(_fincept_macos_openssl_arch "${CMAKE_OSX_ARCHITECTURES}")
+    if(NOT _fincept_macos_openssl_arch MATCHES "^(arm64|x86_64)$")
+        set(_fincept_macos_openssl_arch "${CMAKE_HOST_SYSTEM_PROCESSOR}")
+    endif()
+    if(_fincept_macos_openssl_arch MATCHES "^(aarch64|arm64)$")
+        set(_fincept_macos_openssl_arch "arm64")
+    elseif(_fincept_macos_openssl_arch MATCHES "^(amd64|x64|x86_64)$")
+        set(_fincept_macos_openssl_arch "x86_64")
+    endif()
+    set(_fincept_macos_openssl_cache
+        "$ENV{HOME}/Library/Caches/FinceptTerminal/fincept-openssl-3.5.9-macos13-${_fincept_macos_openssl_arch}")
+    set(_fincept_macos_openssl_marker "${_fincept_macos_openssl_cache}/.fincept-openssl-build")
+    if(EXISTS "${_fincept_macos_openssl_marker}"
+       AND EXISTS "${_fincept_macos_openssl_cache}/include/openssl/ssl.h"
+       AND EXISTS "${_fincept_macos_openssl_cache}/lib/libssl.3.dylib"
+       AND EXISTS "${_fincept_macos_openssl_cache}/lib/libcrypto.3.dylib")
+        file(READ "${_fincept_macos_openssl_marker}" _fincept_macos_openssl_marker_value)
+        string(STRIP "${_fincept_macos_openssl_marker_value}" _fincept_macos_openssl_marker_value)
+        if(_fincept_macos_openssl_marker_value STREQUAL
+           "version=3.5.9;macos=13.0;arch=${_fincept_macos_openssl_arch}")
+            set(OPENSSL_ROOT_DIR "${_fincept_macos_openssl_cache}" CACHE PATH
+                "Deployment-compatible OpenSSL for local macOS builds" FORCE)
+            # FindOpenSSL retains absolute results across reconfigures; clear a
+            # prior Qt/Homebrew resolution when adopting the verified cache.
+            unset(OPENSSL_INCLUDE_DIR CACHE)
+            unset(OPENSSL_SSL_LIBRARY CACHE)
+            unset(OPENSSL_CRYPTO_LIBRARY CACHE)
+            message(STATUS "Using cached macOS-13 OpenSSL: ${OPENSSL_ROOT_DIR}")
+        endif()
+    endif()
+endif()
+
 if(OPENSSL_ROOT_DIR)
     message(STATUS "OPENSSL_ROOT_DIR: ${OPENSSL_ROOT_DIR}")
 endif()
