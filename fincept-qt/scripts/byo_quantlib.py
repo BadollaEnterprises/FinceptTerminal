@@ -3276,7 +3276,8 @@ def _auction_simulate(body: Mapping[str, Any]) -> Dict[str, Any]:
     auction_type = str(body.get("auction_type", "first_price")).lower()
     bidder_count = int(body.get("n_bidders", 0))
     simulations = int(body.get("n_simulations", 1000))
-    if bidder_count < 2 or not 1 <= simulations <= 100000:
+    if (not 2 <= bidder_count <= 1000 or not 1 <= simulations <= 100000 or
+            bidder_count * simulations > 1000000):
         raise ValueError("auction simulation sizes are outside local limits")
     generator = random.Random(int(body.get("seed", 42)))
     revenues = []

@@ -826,6 +826,14 @@ class ByoQuantLibTest(unittest.TestCase):
             self.assertEqual(answer["meta"]["fincept_credits"], 0)
             self.assertFalse(answer["meta"]["llm_used"])
 
+    def test_auction_simulation_bounds_bidder_fanout(self):
+        mod = load_module()
+        answer = mod.execute("economics/auctions/simulate", {
+            "auction_type": "first_price", "n_bidders": 1001, "n_simulations": 1,
+        })
+        self.assertIn("auction simulation sizes are outside local limits", answer.get("error", ""))
+        self.assertEqual(answer["meta"]["fincept_credits"], 0)
+
     def test_all_statistics_routes_are_local_and_zero_credit(self):
         mod = load_module()
         distribution_routes = {
