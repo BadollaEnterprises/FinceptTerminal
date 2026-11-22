@@ -57,6 +57,17 @@ class ByoEquityDataTest(unittest.TestCase):
         mod._fetch_options({"symbol": "A/B"})
         self.assertIn("/quote/A%2FB/option-chain?", seen[0])
 
+    def test_ipo_calendar_rejects_reversed_or_unbounded_ranges_before_fetching(self):
+        mod = load_module()
+        calls = []
+        mod._nasdaq = lambda path: calls.append(path) or {}
+
+        with self.assertRaisesRegex(ValueError, "End date must not be before start date"):
+            mod._fetch_ipos({"start_date": "2026-12-01", "end_date": "2026-11-01"})
+        with self.assertRaisesRegex(ValueError, "ranges up to 366 days"):
+            mod._fetch_ipos({"start_date": "2025-01-01", "end_date": "2026-02-01"})
+        self.assertEqual(calls, [])
+
     def test_public_session_enriches_only_supported_future_us_listing(self):
         mod = load_equity_research_module()
         calls = []

@@ -691,6 +691,10 @@ def _month_keys(start: date, end: date) -> list[str]:
 def _fetch_ipos(request: Mapping[str, Any]) -> Dict[str, Any]:
     start = date.fromisoformat(str(request.get("start_date") or date.today().isoformat()))
     end = date.fromisoformat(str(request.get("end_date") or (start + timedelta(days=30)).isoformat()))
+    if end < start:
+        raise ValueError("End date must not be before start date")
+    if (end - start).days > 366:
+        raise ValueError("The public Nasdaq IPO calendar supports ranges up to 366 days")
     months = _month_keys(start, end)
     with ThreadPoolExecutor(max_workers=min(6, len(months))) as pool:
         payloads = list(pool.map(lambda month: _nasdaq("/api/ipo/calendar?" +
