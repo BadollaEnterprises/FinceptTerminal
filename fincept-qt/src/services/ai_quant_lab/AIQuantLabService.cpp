@@ -5,6 +5,7 @@
 #include "core/config/AppPaths.h"
 #include "core/logging/Logger.h"
 #include "core/policy/CommunityPolicy.h"
+#include "core/privacy/LogRedact.h"
 #include "core/process/ProcessTree.h"
 #include "python/PythonRunner.h"
 #include "services/llm/LlmBudgetSettings.h"
@@ -135,7 +136,9 @@ void AIQuantLabService::run_python(const QString& script, const QStringList& arg
                 if (tag.cancel && tag.cancel->load())
                     LOG_DEBUG("AIQuantLab", QString("[%1/%2] Cancelled").arg(module_id, command));
                 else
-                    LOG_ERROR("AIQuantLab", QString("[%1/%2] Failed: %3").arg(module_id, command, result.error));
+                    LOG_ERROR("AIQuantLab",
+                              QString("[%1/%2] Failed: %3")
+                                  .arg(module_id, command, privacy::redact_text(result.error)));
                 self->emit_failed(tag, module_id, result.error);
                 return;
             }
@@ -181,7 +184,9 @@ void AIQuantLabService::run_python_cached(const QString& script, const QStringLi
                 if (tag.cancel && tag.cancel->load())
                     LOG_DEBUG("AIQuantLab", QString("[%1/%2] Cancelled").arg(module_id, command));
                 else
-                    LOG_ERROR("AIQuantLab", QString("[%1/%2] Failed: %3").arg(module_id, command, result.error));
+                    LOG_ERROR("AIQuantLab",
+                              QString("[%1/%2] Failed: %3")
+                                  .arg(module_id, command, privacy::redact_text(result.error)));
                 self->emit_failed(tag, module_id, result.error);
                 return;
             }
@@ -362,7 +367,8 @@ void AIQuantLabService::train_rl_agent(const QJsonObject& params) {
             } else {
                 msg = QStringLiteral("Training ended without result");
             }
-            LOG_ERROR("AIQuantLab", QString("[rl_trading/train] Failed: %1").arg(msg));
+            LOG_ERROR("AIQuantLab",
+                      QString("[rl_trading/train] Failed: %1").arg(privacy::redact_text(msg)));
             self->emit_failed(tag, "rl_trading", msg);
         }
     };
@@ -741,7 +747,9 @@ void AIQuantLabService::rolling_execute_retrain(const QJsonObject& params) {
                 const QString msg = result.error.trimmed().isEmpty()
                                         ? QStringLiteral("Retrain ended without a result")
                                         : result.error.trimmed();
-                LOG_ERROR("AIQuantLab", QString("[rolling_retraining/retrain] Failed: %1").arg(msg));
+                LOG_ERROR("AIQuantLab",
+                          QString("[rolling_retraining/retrain] Failed: %1")
+                              .arg(privacy::redact_text(msg)));
                 // The progress bar / log listen on error_occurred; the request (if any) fails too.
                 emit self->error_occurred("rolling_retraining", msg);
                 if (tag.id != 0)
@@ -831,7 +839,9 @@ void AIQuantLabService::deep_agent_query(const QString& command, QObject* contex
                 on_done(reply);
                 return;
             }
-            LOG_WARN("AIQuantLab", QString("[deep_agent/%1] probe failed: %2").arg(command, result.error.left(200)));
+            LOG_WARN("AIQuantLab",
+                     QString("[deep_agent/%1] probe failed: %2")
+                         .arg(command, privacy::redact_text(result.error).left(200)));
             on_done(QJsonObject{{"success", false},
                                 {"error", result.error.trimmed().isEmpty() ? QStringLiteral("no diagnostic output")
                                                                            : result.error.trimmed()}});
@@ -1049,7 +1059,9 @@ bool AIQuantLabService::rd_spawn(const QString& task_id, const QJsonObject& llm_
                     t->error = tail.isEmpty()
                                    ? QStringLiteral("RD-Agent process exited (code %1) without a result").arg(exit_code)
                                    : tail;
-                    LOG_ERROR("AIQuantLab", QString("[deep_agent/%1] failed: %2").arg(task_id, t->error.left(200)));
+                    LOG_ERROR("AIQuantLab",
+                              QString("[deep_agent/%1] failed: %2")
+                                  .arg(task_id, privacy::redact_text(t->error).left(200)));
                 }
             });
     connect(proc, &QProcess::errorOccurred, this, [self, proc, task_id](QProcess::ProcessError e) {

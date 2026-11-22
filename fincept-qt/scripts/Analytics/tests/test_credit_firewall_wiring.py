@@ -201,6 +201,7 @@ class CreditFirewallWiringTest(unittest.TestCase):
         screen = (ROOT / "src/screens/ai_chat/AiChatScreen_Messaging.cpp").read_text(encoding="utf-8")
         bubble = (ROOT / "src/screens/ai_chat/AiChatBubble.cpp").read_text(encoding="utf-8")
         cloud_agent = (ROOT / "src/services/agent_tasks/CloudAgentClient.cpp").read_text(encoding="utf-8")
+        quant_lab = (ROOT / "src/services/ai_quant_lab/AIQuantLabService.cpp").read_text(encoding="utf-8")
         self.assertGreaterEqual(service.count("privacy::redact_text"), 5)
         self.assertIn("privacy::redact_text(result.error)", http)
         self.assertIn("privacy::redact_text(tr.error)", tools)
@@ -212,6 +213,8 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertIn("privacy::redact_text(response.error)", screen)
         self.assertGreaterEqual(bubble.count("privacy::redact_text"), 3)
         self.assertIn("privacy::redact_text(message)", cloud_agent)
+        self.assertIn('#include "core/privacy/LogRedact.h"', quant_lab)
+        self.assertGreaterEqual(quant_lab.count("privacy::redact_text"), 4)
 
     def test_macro_and_geopolitics_services_check_firewall(self):
         geopolitics = (ROOT / "src/services/geopolitics/GeopoliticsService.cpp").read_text(encoding="utf-8")
