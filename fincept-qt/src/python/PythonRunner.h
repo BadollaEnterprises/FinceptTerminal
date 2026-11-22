@@ -1,4 +1,6 @@
 #pragma once
+
+#include "core/process/ProcessEnvironment.h"
 #include <QByteArray>
 #include <QHash>
 #include <QObject>
@@ -257,45 +259,7 @@ QString extract_json(const QString& output);
 namespace environment_detail {
 
 inline bool should_strip_unmanaged_credential(const QString& key, const QStringList& managed) {
-    for (const QString& allowed : managed) {
-        if (key.compare(allowed, Qt::CaseInsensitive) == 0)
-            return false;
-    }
-
-    const QString upper = key.trimmed().toUpper();
-    if (upper.isEmpty())
-        return false;
-
-    // These do not share a reliable suffix but commonly carry credentials.
-    static const QStringList kExact = {
-        QStringLiteral("AWS_ACCESS_KEY_ID"),
-        QStringLiteral("DOCKER_AUTH_CONFIG"),
-        QStringLiteral("GOOGLE_APPLICATION_CREDENTIALS"),
-    };
-    if (kExact.contains(upper))
-        return true;
-
-    // Bare _TOKEN is intentionally included. A CSRF/session token is still a
-    // secret and an app-owned analytics process has no reason to inherit it.
-    static const QStringList kSuffixes = {
-        QStringLiteral("_API_KEY"),
-        QStringLiteral("_SECRET"),
-        QStringLiteral("_SECRET_KEY"),
-        QStringLiteral("_ACCESS_KEY"),
-        QStringLiteral("_ACCESS_KEY_ID"),
-        QStringLiteral("_ACCESS_TOKEN"),
-        QStringLiteral("_AUTH_TOKEN"),
-        QStringLiteral("_SESSION_TOKEN"),
-        QStringLiteral("_PASSWORD"),
-        QStringLiteral("_PRIVATE_KEY"),
-        QStringLiteral("_TOKEN"),
-        QStringLiteral("_PAT"),
-    };
-    for (const QString& suffix : kSuffixes) {
-        if (upper.endsWith(suffix))
-            return true;
-    }
-    return false;
+    return fincept::process::should_strip_unmanaged_credential(key, managed);
 }
 
 inline void apply_credential_allowlist(QProcessEnvironment& env, const QStringList& managed,

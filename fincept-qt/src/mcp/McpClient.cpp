@@ -3,6 +3,7 @@
 #include "mcp/McpClient.h"
 
 #include "core/logging/Logger.h"
+#include "core/process/ProcessEnvironment.h"
 #include "python/PythonSetupManager.h"
 
 #include <QCoreApplication>
@@ -53,6 +54,7 @@ Result<void> McpClient::start() {
 
     // Merge environment
     QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+    process::strip_unmanaged_credentials(env, config_.env.keys());
     for (auto it = config_.env.constBegin(); it != config_.env.constEnd(); ++it)
         env.insert(it.key(), it.value());
     process_->setProcessEnvironment(env);
@@ -93,6 +95,7 @@ Result<void> McpClient::start() {
             // Python only, no user uv.toml / inherited VIRTUAL_ENV); the server's
             // configured env still wins. uv_environment() is thread-safe.
             QProcessEnvironment uv_env = setup.uv_environment();
+            process::strip_unmanaged_credentials(uv_env, config_.env.keys());
             for (auto it = config_.env.constBegin(); it != config_.env.constEnd(); ++it)
                 uv_env.insert(it.key(), it.value());
             process_->setProcessEnvironment(uv_env);

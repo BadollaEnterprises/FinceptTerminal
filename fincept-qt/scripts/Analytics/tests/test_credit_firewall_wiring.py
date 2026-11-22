@@ -151,6 +151,11 @@ class CreditFirewallWiringTest(unittest.TestCase):
                 self.assertIn("build_python_env(QStringList{})", source)
                 self.assertNotIn("QProcessEnvironment::systemEnvironment()", source)
 
+    def test_external_mcp_servers_only_receive_declared_credentials(self):
+        source = (ROOT / "src/mcp/McpClient.cpp").read_text(encoding="utf-8")
+        self.assertGreaterEqual(source.count("process::strip_unmanaged_credentials"), 2)
+        self.assertIn("config_.env.keys()", source)
+
     def test_macro_and_geopolitics_services_check_firewall(self):
         geopolitics = (ROOT / "src/services/geopolitics/GeopoliticsService.cpp").read_text(encoding="utf-8")
         macro = (ROOT / "src/services/economics/FinceptMacroService.cpp").read_text(encoding="utf-8")

@@ -6,6 +6,7 @@
 // (PythonRunner::start_next, drain_lines) over the same two helpers, without a process.
 
 #include "python/PythonRunner.h"
+#include "core/process/ProcessEnvironment.h"
 
 #include <QtTest>
 
@@ -54,6 +55,22 @@ struct StreamSim {
 class TstPythonStreamLines : public QObject {
     Q_OBJECT
   private slots:
+    void external_process_environment_keeps_only_explicit_credentials() {
+        QProcessEnvironment env;
+        env.insert(QStringLiteral("PATH"), QStringLiteral("/usr/bin"));
+        env.insert(QStringLiteral("GITHUB_TOKEN"), QStringLiteral("drop"));
+        env.insert(QStringLiteral("PRIVATE_API_KEY"), QStringLiteral("drop"));
+        env.insert(QStringLiteral("MCP_SERVER_TOKEN"), QStringLiteral("keep"));
+
+        fincept::process::strip_unmanaged_credentials(
+            env, QStringList{QStringLiteral("mcp_server_token")});
+
+        QCOMPARE(env.value(QStringLiteral("PATH")), QStringLiteral("/usr/bin"));
+        QVERIFY(!env.contains(QStringLiteral("GITHUB_TOKEN")));
+        QVERIFY(!env.contains(QStringLiteral("PRIVATE_API_KEY")));
+        QCOMPARE(env.value(QStringLiteral("MCP_SERVER_TOKEN")), QStringLiteral("keep"));
+    }
+
     void unmanaged_credential_environment_keys_are_stripped() {
         const QStringList managed{QStringLiteral("FINNHUB_API_KEY")};
 
