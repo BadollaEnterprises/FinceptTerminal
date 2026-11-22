@@ -669,9 +669,8 @@ void LlmConfigSection::populate_form(const QString& provider) {
     provider_edit_->setText(provider);
 
     bool is_fincept = (provider.toLower() == "fincept");
-    bool is_ollama = (provider.toLower() == "ollama");
 
-    // Populate model combo with fallback suggestions (empty for ollama — see fallback_models).
+    // Populate model combo with provider-specific fallback suggestions.
     model_combo_->blockSignals(true);
     model_combo_->clear();
     model_combo_->addItems(fallback_models(provider));
@@ -719,21 +718,6 @@ void LlmConfigSection::populate_form(const QString& provider) {
                 model_combo_->setVisible(false);
                 fetch_btn_->setVisible(false);
                 base_url_edit_->setVisible(false);
-            } else if (is_ollama) {
-                // Local provider — no API key needed. Mark the field clearly so users
-                // don't think it's broken or required.
-                api_key_edit_->clear();
-                api_key_edit_->setEnabled(false);
-                api_key_edit_->setPlaceholderText(tr("Not required — local provider"));
-                model_combo_->setVisible(true);
-                model_combo_->setEnabled(true);
-                fetch_btn_->setVisible(true);
-                fetch_btn_->setEnabled(true);
-                base_url_edit_->setVisible(true);
-                base_url_edit_->setEnabled(true);
-                // Auto-fetch installed models from the local Ollama server so the
-                // combo only shows what the user actually has, not hardcoded guesses.
-                QTimer::singleShot(0, this, [this]() { on_fetch_models(); });
             } else {
                 api_key_edit_->setText(p.api_key);
                 api_key_edit_->setEnabled(true);
@@ -751,7 +735,7 @@ void LlmConfigSection::populate_form(const QString& provider) {
 
     // New provider — clear form
     api_key_edit_->clear();
-    api_key_edit_->setEnabled(!is_fincept && !is_ollama);
+    api_key_edit_->setEnabled(!is_fincept);
     if (is_fincept) {
         const QString stored = fincept::auth::AuthManager::instance().fincept_api_key();
         if (!stored.isEmpty())
@@ -761,16 +745,6 @@ void LlmConfigSection::populate_form(const QString& provider) {
         model_combo_->setVisible(false);
         fetch_btn_->setVisible(false);
         base_url_edit_->setVisible(false);
-    } else if (is_ollama) {
-        api_key_edit_->setPlaceholderText(tr("Not required — local provider"));
-        model_combo_->setVisible(true);
-        model_combo_->setEnabled(true);
-        fetch_btn_->setVisible(true);
-        fetch_btn_->setEnabled(true);
-        base_url_edit_->setVisible(true);
-        base_url_edit_->setEnabled(true);
-        base_url_edit_->setText(def_url);
-        QTimer::singleShot(0, this, [this]() { on_fetch_models(); });
     } else {
         api_key_edit_->setPlaceholderText("sk-...");
         model_combo_->setVisible(true);
@@ -827,7 +801,7 @@ void LlmConfigSection::on_save_provider() {
     }
 
     // Basic validation
-    if (!is_fincept && provider != "ollama" && cfg.api_key.isEmpty()) {
+    if (!is_fincept && cfg.api_key.isEmpty()) {
         show_status(tr("API key is required for %1").arg(provider), true);
         return;
     }
@@ -962,11 +936,9 @@ void LlmConfigSection::on_test_connection() {
         return;
     }
 
-    if (provider != "ollama") {
-        if (api_key_edit_->text().trimmed().isEmpty()) {
-            show_status(tr("API key required for test"), true);
-            return;
-        }
+    if (api_key_edit_->text().trimmed().isEmpty()) {
+        show_status(tr("API key required for test"), true);
+        return;
     }
 
     show_status(tr("Testing connection..."), false);
@@ -1008,11 +980,9 @@ void LlmConfigSection::on_fetch_models() {
         return;
     }
 
-    if (provider != "ollama") {
-        if (api_key_edit_->text().trimmed().isEmpty()) {
-            show_status(tr("Enter API key first, then fetch models"), true);
-            return;
-        }
+    if (api_key_edit_->text().trimmed().isEmpty()) {
+        show_status(tr("Enter API key first, then fetch models"), true);
+        return;
     }
 
     show_status(tr("Fetching models..."), false);
@@ -1031,12 +1001,8 @@ void LlmConfigSection::on_models_fetched(const QString& provider, const QStringL
 
     if (!error.isEmpty()) {
         // Show the actual error so users can act on it (timeout, 401, host
-        // not found, etc.) instead of guessing. For ollama add a hint about
-        // the local server in case that's the cause.
-        if (provider.toLower() == "ollama")
-            show_status(tr("Local model server fetch failed: %1 — check the configured base URL").arg(error), true);
-        else
-            show_status(tr("Fetch failed: ") + error, true);
+        // not found, etc.) instead of guessing.
+        show_status(tr("Fetch failed: ") + error, true);
         return;
     }
 

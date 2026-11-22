@@ -348,6 +348,15 @@ class CreditFirewallWiringTest(unittest.TestCase):
                                     body.index("SecureStorage::instance().store_verified"))
                     self.assertIn("UPDATE ", body)
 
+    def test_llm_settings_ui_contains_no_retired_local_backend_wording(self):
+        for relative in (
+            "src/screens/settings/LlmConfigSection_Providers.cpp",
+            "src/screens/settings/LlmConfigSection_Profiles.cpp",
+        ):
+            with self.subTest(source=relative):
+                source = (ROOT / relative).read_text(encoding="utf-8").lower()
+                self.assertNotIn("ollama", source)
+
     def test_local_chat_mode_diagnostics_scrub_conversation_storage_errors(self):
         source = (ROOT / "src/screens/chat_mode/ChatModeScreen.cpp").read_text(encoding="utf-8")
         self.assertIn('#include "core/privacy/LogRedact.h"', source)

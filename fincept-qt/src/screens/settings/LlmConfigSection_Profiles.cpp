@@ -38,8 +38,6 @@ constexpr int kLlmProfilesTokensMax = 128000;
 #include <QUuid>
 #include <QVBoxLayout>
 
-#include <memory>
-
 namespace fincept::screens {
 
 namespace {
@@ -570,41 +568,11 @@ void LlmConfigSection::on_profile_provider_changed(const QString& provider) {
         return;
     }
 
-    const bool is_ollama = (provider.toLower() == "ollama");
     llm_profiles_apply_tokens_cap(profile_tokens_spin_, provider);
 
     profile_model_combo_->clear();
     profile_model_combo_->addItems(fallback_models(provider));
     profile_base_url_edit_->setText(default_base_url(provider));
-
-    if (is_ollama) {
-        // Local provider — no API key needed. One-shot listener pulls live models
-        // from the local Ollama server into the profile combo. Receiver is `this`,
-        // so the connection is auto-severed if the section is destroyed.
-        profile_api_key_edit_->clear();
-        profile_api_key_edit_->setEnabled(false);
-        profile_api_key_edit_->setPlaceholderText(tr("Not required — local provider"));
-
-        auto conn = std::make_shared<QMetaObject::Connection>();
-        *conn =
-            connect(&ai_chat::LlmService::instance(), &ai_chat::LlmService::models_fetched, this,
-                    [this, conn](const QString& p, const QStringList& models, const QString& err) {
-                        if (p.toLower() != "ollama")
-                            return;
-                        disconnect(*conn);
-                        if (!err.isEmpty()) {
-                            show_profile_status(tr("Cannot reach the configured local model server."), true);
-                            return;
-                        }
-                        const QString current = profile_model_combo_->currentText();
-                        profile_model_combo_->clear();
-                        profile_model_combo_->addItems(models);
-                        if (!current.isEmpty())
-                            profile_model_combo_->setCurrentText(current);
-                    });
-        ai_chat::LlmService::instance().fetch_models("ollama", {}, profile_base_url_edit_->text().trimmed());
-        return;
-    }
 
     profile_api_key_edit_->setEnabled(true);
     profile_api_key_edit_->setPlaceholderText(tr("Leave blank to inherit from provider"));
