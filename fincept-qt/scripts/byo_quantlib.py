@@ -89,12 +89,17 @@ def _bs_binary(body: Mapping[str, Any], *, asset: bool = False) -> Dict[str, flo
     return {"price": price}
 
 
-def _binomial(body: Mapping[str, Any], *, american: bool) -> Dict[str, float]:
-    spot, strike, rate, volatility, time, kind = _option_inputs(body)
-    dividend = float(body.get("dividend_yield", 0.0))
+def _tree_steps(body: Mapping[str, Any]) -> int:
     steps = int(body.get("n_steps", 100))
     if not 1 <= steps <= 5000:
         raise ValueError("n_steps must be between 1 and 5000")
+    return steps
+
+
+def _binomial(body: Mapping[str, Any], *, american: bool) -> Dict[str, float]:
+    spot, strike, rate, volatility, time, kind = _option_inputs(body)
+    dividend = float(body.get("dividend_yield", 0.0))
+    steps = _tree_steps(body)
     dt = time / steps
     up = math.exp(volatility * math.sqrt(dt))
     down = 1 / up
@@ -120,7 +125,7 @@ def _binomial(body: Mapping[str, Any], *, american: bool) -> Dict[str, float]:
 def _bermudan(body: Mapping[str, Any]) -> Dict[str, float]:
     spot, strike, rate, volatility, time, kind = _option_inputs(body)
     dividend = float(body.get("dividend_yield", 0.0))
-    steps = int(body.get("n_steps", 100))
+    steps = _tree_steps(body)
     dates = [float(value) for value in body.get("exercise_dates", [])]
     if not dates or any(value <= 0 or value > time for value in dates):
         raise ValueError("exercise_dates must be in (0, time_to_maturity]")
@@ -148,7 +153,7 @@ def _bermudan(body: Mapping[str, Any]) -> Dict[str, float]:
 
 def _barrier_option(body: Mapping[str, Any]) -> Dict[str, float]:
     spot, strike, rate, volatility, time, kind = _option_inputs(body)
-    dividend = float(body.get("dividend_yield", 0.0)); steps = int(body.get("n_steps", 100))
+    dividend = float(body.get("dividend_yield", 0.0)); steps = _tree_steps(body)
     barrier = _positive(body, "barrier"); rebate = float(body.get("rebate", 0.0))
     down_barrier = bool(body.get("is_down", True)); knock_in = bool(body.get("is_knock_in", False))
     dt = time / steps; up = math.exp(volatility * math.sqrt(dt)); down = 1 / up

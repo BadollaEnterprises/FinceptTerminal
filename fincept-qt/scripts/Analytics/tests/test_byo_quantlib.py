@@ -192,6 +192,21 @@ class ByoQuantLibTest(unittest.TestCase):
         self.assertGreater(bermudan["data"]["price"], 0)
         self.assertEqual(bermudan["meta"]["fincept_credits"], 0)
 
+    def test_tree_pricers_reject_unbounded_or_zero_step_counts(self):
+        mod = load_module()
+        base = {
+            "spot": 100, "strike": 105, "risk_free_rate": 0.05,
+            "volatility": 0.2, "time_to_maturity": 1, "option_type": "put",
+        }
+        bermudan = mod.execute("pricing/binomial/bermudan", {
+            **base, "n_steps": 0, "exercise_dates": [0.5, 1],
+        })
+        barrier = mod.execute("pricing/binomial/barrier", {
+            **base, "n_steps": 5001, "barrier": 80,
+        })
+        self.assertIn("n_steps must be between 1 and 5000", bermudan["error"])
+        self.assertIn("n_steps must be between 1 and 5000", barrier["error"])
+
     def test_remaining_volatility_routes_are_local_and_zero_credit(self):
         mod = load_module()
         expected = {
