@@ -584,6 +584,42 @@ class AgentProviderPolicyTest(unittest.TestCase):
         self.assertIn('model_kwargs["max_retries"] = 0', create)
         self.assertIn('"max_retries": 0', create)
 
+    def test_agent_registries_disable_native_sdk_retries(self):
+        models = load_path("finagent_models_registry_retries", MODEL_REGISTRY).ModelsRegistry
+        embedders = load_path(
+            "finagent_embedder_registry_retries", EMBEDDER_REGISTRY
+        ).EmbedderRegistry
+
+        anthropic = {"client_params": {"timeout": 12}}
+        models.apply_client_retry_policy("anthropic", anthropic)
+        self.assertEqual(anthropic["client_params"], {"timeout": 12, "max_retries": 0})
+
+        google = {"client_params": {"http_options": {"timeout": 8000}}}
+        models.apply_client_retry_policy("google", google)
+        self.assertEqual(
+            google["client_params"]["http_options"]["retry_options"]["attempts"], 1
+        )
+        self.assertEqual(google["client_params"]["http_options"]["timeout"], 8000)
+
+        explicit = {"client_params": {"http_options": {
+            "retry_options": {"attempts": 3, "initial_delay": 0.2}
+        }}}
+        models.apply_client_retry_policy("vertexai", explicit)
+        self.assertEqual(
+            explicit["client_params"]["http_options"]["retry_options"]["attempts"], 3
+        )
+
+        openai_embedding = {}
+        embedders.apply_client_retry_policy("openai", openai_embedding)
+        self.assertEqual(openai_embedding["client_params"]["max_retries"], 0)
+
+        google_embedding = {}
+        embedders.apply_client_retry_policy("google", google_embedding)
+        self.assertEqual(
+            google_embedding["client_params"]["http_options"]["retry_options"]["attempts"],
+            1,
+        )
+
     def test_agent_model_registry_rejects_insecure_or_blocked_key_endpoints(self):
         models = load_path("finagent_models_registry_endpoints", MODEL_REGISTRY).ModelsRegistry
         self.assertTrue(models.endpoint_allowed("deepseek", "https://proxy.example/v1"))

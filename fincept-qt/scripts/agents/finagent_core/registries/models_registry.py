@@ -281,6 +281,24 @@ class ModelsRegistry:
         return min(parsed, cls._MAX_OUTPUT_TOKENS)
 
     @staticmethod
+    def apply_client_retry_policy(provider: str, model_kwargs: Dict[str, Any]) -> None:
+        """Disable native SDK retries unless the caller explicitly configured them."""
+        provider = (provider or "").lower()
+        if provider == "anthropic":
+            client_params = dict(model_kwargs.get("client_params") or {})
+            client_params.setdefault("max_retries", 0)
+            model_kwargs["client_params"] = client_params
+        elif provider in {"google", "vertexai"}:
+            client_params = dict(model_kwargs.get("client_params") or {})
+            http_options = dict(client_params.get("http_options") or {})
+            retry_options = dict(http_options.get("retry_options") or {})
+            # google-genai defaults to five attempts when this is omitted.
+            retry_options.setdefault("attempts", 1)
+            http_options["retry_options"] = retry_options
+            client_params["http_options"] = http_options
+            model_kwargs["client_params"] = client_params
+
+    @staticmethod
     def endpoint_allowed(provider: str, endpoint: Any) -> bool:
         """Allow remote API keys only over TLS; plaintext is loopback-only."""
         raw = str(endpoint or "").strip()
@@ -481,6 +499,8 @@ class ModelsRegistry:
             for k, v in kwargs.items():
                 if v is not None:
                     model_kwargs[k] = v
+
+            cls.apply_client_retry_policy(provider_lower, model_kwargs)
 
             # Provider SDKs commonly retry a failed HTTP request two or more
             # times by default. Agent loops already surface failures and let the

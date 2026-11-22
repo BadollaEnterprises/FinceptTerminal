@@ -151,6 +151,24 @@ class EmbedderRegistry:
 
     _loaded_embedders: Dict[str, Any] = {}
 
+    @staticmethod
+    def apply_client_retry_policy(provider: str, embedder_kwargs: Dict[str, Any]) -> None:
+        """Keep one embedding operation to one native SDK request by default."""
+        provider = (provider or "").lower()
+        if provider in {"openai", "azure_openai"}:
+            client_params = dict(embedder_kwargs.get("client_params") or {})
+            client_params.setdefault("max_retries", 0)
+            embedder_kwargs["client_params"] = client_params
+        elif provider == "google":
+            client_params = dict(embedder_kwargs.get("client_params") or {})
+            http_options = dict(client_params.get("http_options") or {})
+            retry_options = dict(http_options.get("retry_options") or {})
+            # google-genai defaults to five attempts when this is omitted.
+            retry_options.setdefault("attempts", 1)
+            http_options["retry_options"] = retry_options
+            client_params["http_options"] = http_options
+            embedder_kwargs["client_params"] = client_params
+
     @classmethod
     def create_embedder(
         cls,
@@ -210,6 +228,7 @@ class EmbedderRegistry:
                     embedder_kwargs["dimensions"] = dims
 
             embedder_kwargs.update(kwargs)
+            cls.apply_client_retry_policy(provider_lower, embedder_kwargs)
 
             embedder_instance = embedder_class(**embedder_kwargs)
             logger.debug(f"Created embedder: {provider}/{final_model}")
