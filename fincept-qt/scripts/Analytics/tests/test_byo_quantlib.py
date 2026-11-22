@@ -940,6 +940,16 @@ class ByoQuantLibTest(unittest.TestCase):
                 self.assertIn("outside local safety limits", answer.get("error", ""))
                 self.assertEqual(answer["meta"]["fincept_credits"], 0)
 
+    def test_logistic_iterations_are_bounded(self):
+        mod = load_module()
+        body = {"X": [[0], [1]], "y": [0, 1]}
+        for iterations in (0, 10001):
+            with self.subTest(iterations=iterations):
+                answer = mod.execute("ml/credit/logistic-regression",
+                                     {**body, "iterations": iterations})
+                self.assertIn("iterations are outside local limits", answer.get("error", ""))
+                self.assertEqual(answer["meta"]["fincept_credits"], 0)
+
     def test_sabr_and_flat_surface_routes_return_volatility(self):
         mod = load_module()
         sabr = mod.execute(

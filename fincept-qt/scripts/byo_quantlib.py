@@ -4149,7 +4149,10 @@ def _logistic_fit(body: Mapping[str, Any]) -> Dict[str, Any]:
         raise ValueError("logistic target must contain both 0 and 1")
     width = len(features[0]); coefficients = [0.0] * (width + 1)
     learning_rate = float(body.get("learning_rate", 0.05))
-    iterations = int(body.get("iterations", 2000))
+    raw_iterations = float(body.get("iterations", 2000))
+    iterations = int(raw_iterations)
+    if raw_iterations != iterations or not 1 <= iterations <= 10000:
+        raise ValueError("iterations are outside local limits")
     regularization = float(body.get("regularization", 1e-4))
     for _ in range(iterations):
         gradients = [0.0] * len(coefficients)
