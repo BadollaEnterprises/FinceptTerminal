@@ -10,6 +10,7 @@
 #include "auth/AuthManager.h"
 #include "core/config/AppConfig.h"
 #include "core/logging/Logger.h"
+#include "core/privacy/LogRedact.h"
 #include "datahub/DataHub.h"
 #include "datahub/TopicPolicy.h"
 #include "mcp/GeminiSchema.h"
@@ -80,7 +81,7 @@ static void llm_svc_log_request_finished(const LlmResponse& resp, const QString&
                            {"tokens_out", resp.completion_tokens},
                            {"result", resp.success ? "ok" : (resp.cancelled ? "cancelled" : "error")}};
     if (!resp.success && !resp.cancelled)
-        fields.append(LogField("error", resp.error));
+        fields.append(LogField("error", privacy::redact_text(resp.error)));
     LOG_INFO(kLlmSvcTag, logf("LLM request finished", fields));
 }
 
@@ -825,7 +826,7 @@ LlmResponse LlmService::do_request(const QString& user_message, const std::vecto
             LOG_ERROR(kLlmSvcTag, logf("Chat request failed", {{"provider", provider_},
                                                                {"model", model_},
                                                                {"status", http.status},
-                                                               {"error", http.error}}));
+                                                               {"error", privacy::redact_text(http.error)}}));
         return resp;
     }
 
@@ -1752,7 +1753,7 @@ LlmResponse LlmService::do_streaming_request(const QString& user_message,
         // The watchdog fired before any response headers arrived (hung connect / TLS).
         resp.error = QStringLiteral("No response from the provider (timed out after %1 s)").arg(kStreamIdleTimeoutMs / 1000);
         resp.retryable = true;
-        LOG_WARN(kLlmSvcTag, resp.error);
+        LOG_WARN(kLlmSvcTag, privacy::redact_text(resp.error));
     } else if (reply->error() != QNetworkReply::NoError) {
         // A non-2xx (e.g. 400 from AIHubMix routing to a model that rejects a
         // param) carries a JSON error body that explains why. The SSE reader
@@ -1770,21 +1771,21 @@ LlmResponse LlmService::do_streaming_request(const QString& user_message,
         resp.content = strip_think_blocks(accumulated);
         resp.retryable = accumulated.isEmpty() &&
                          (transient_status(status) || reply->error() == QNetworkReply::RemoteHostClosedError);
-        LOG_ERROR(kLlmSvcTag, "Stream request failed: " + resp.error);
+        LOG_ERROR(kLlmSvcTag, "Stream request failed: " + privacy::redact_text(resp.error));
     } else if (status >= 200 && status < 300) {
         if (!stream_error.isEmpty()) {
             // The 200 was followed by an error event: report it, keep any partial text.
             resp.error = stream_error;
             resp.content = strip_think_blocks(accumulated);
             resp.retryable = accumulated.isEmpty();
-            LOG_ERROR(kLlmSvcTag, "Stream failed mid-flight: " + resp.error);
+            LOG_ERROR(kLlmSvcTag, "Stream failed mid-flight: " + privacy::redact_text(resp.error));
         } else if (timed_out && !done && !saw_finish) {
             // No bytes for the whole idle window and no terminal marker: the stream
             // died. Say so instead of presenting the partial text as a finished reply.
             resp.error = QStringLiteral("The response stalled — no data received for %1 s").arg(kStreamIdleTimeoutMs / 1000);
             resp.content = strip_think_blocks(accumulated);
             resp.retryable = accumulated.isEmpty();
-            LOG_WARN(kLlmSvcTag, resp.error);
+            LOG_WARN(kLlmSvcTag, privacy::redact_text(resp.error));
         } else {
             // `accumulated` holds only answer deltas (reasoning_content was routed to
             // the Thinking channel and never added here). Strip any inline <think>…

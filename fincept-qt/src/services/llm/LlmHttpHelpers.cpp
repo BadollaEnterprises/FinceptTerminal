@@ -3,6 +3,7 @@
 // in this TU so the main file stays smaller.
 
 #include "auth/AuthManager.h"
+#include "core/privacy/LogRedact.h"
 #include "network/http/HttpClient.h"
 #include "services/llm/LlmContentExtractors.h"
 #include "services/llm/LlmUsage.h"
@@ -238,13 +239,13 @@ LlmService::HttpResult LlmService::eventloop_request(const QString& method, cons
             LOG_DEBUG("LlmService", logf("LLM request refused", {{"method", method},
                                                                  {"url", log_url(url)},
                                                                  {"status", result.status},
-                                                                 {"error", result.error}}));
+                                                                 {"error", privacy::redact_text(result.error)}}));
         else
             LOG_WARN_RL("LlmService", QUrl(url).host() + QLatin1Char('|') + QString::number(result.status), 60000,
                         logf("LLM request failed", {{"method", method},
                                                     {"url", log_url(url)},
                                                     {"status", result.status},
-                                                    {"error", result.error}}));
+                                                    {"error", privacy::redact_text(result.error)}}));
     }
     drain();
     return result;

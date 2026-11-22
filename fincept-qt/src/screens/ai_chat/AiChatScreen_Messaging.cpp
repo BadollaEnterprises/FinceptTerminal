@@ -12,6 +12,7 @@
 #include "core/events/EventBus.h"
 #include "core/logging/Logger.h"
 #include "core/policy/CommunityPolicy.h"
+#include "core/privacy/LogRedact.h"
 #include "core/session/ScreenStateManager.h"
 #include "screens/ai_chat/AiChatComposer.h"
 #include "screens/ai_chat/AiChatContextRail.h"
@@ -466,7 +467,7 @@ void AiChatScreen::finish_turn(const ai_chat::LlmResponse& response) {
                 transcript_->set_live_turn(turn_id); // REGENERATE
             }
         } else {
-            LOG_WARN(kAicMsgTag, QString("LLM request failed: %1").arg(response.error));
+            LOG_WARN(kAicMsgTag, QString("LLM request failed: %1").arg(privacy::redact_text(response.error)));
             last_failed_ = true;
             const auto kind = ai_chat::classify_llm_error(response.error);
             if (kind != ai_chat::LlmErrorKind::Other) {
