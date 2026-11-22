@@ -371,6 +371,31 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertIn("privacy::redact_text", handler)
         self.assertIn("setProperty(kSavedOnCloseProp", reload_path)
 
+    def test_language_switches_only_after_persistence_succeeds(self):
+        header = (ROOT / "src/core/i18n/LanguageManager.h").read_text(encoding="utf-8")
+        manager = (ROOT / "src/core/i18n/LanguageManager.cpp").read_text(encoding="utf-8")
+        general = (ROOT / "src/screens/settings/GeneralSection.cpp").read_text(encoding="utf-8")
+        switcher = (ROOT / "src/ui/widgets/LanguageSwitcher.cpp").read_text(encoding="utf-8")
+
+        self.assertIn("Result<void> set_language", header)
+        setter = manager[manager.index("Result<void> LanguageManager::set_language"):]
+        self.assertLess(setter.index("SettingsRepository::instance().set"), setter.index("removeTranslator"))
+        self.assertIn("if (saved.is_err())", setter)
+        self.assertIn("return Result<void>::err", setter)
+        self.assertIn("return Result<void>::ok()", setter)
+
+        language_handler = general[general.index("connect(language_combo_"):general.index("// ── CURRENCY")]
+        self.assertIn("const auto changed", language_handler)
+        self.assertIn("if (changed.is_err())", language_handler)
+        self.assertIn("QSignalBlocker", language_handler)
+        self.assertIn("Could not save the interface language", language_handler)
+        self.assertIn("privacy::redact_text", language_handler)
+
+        self.assertIn("const auto changed", switcher)
+        self.assertIn("if (changed.is_err())", switcher)
+        self.assertIn("Could not save the interface language", switcher)
+        self.assertIn("privacy::redact_text", switcher)
+
     def test_llm_settings_diagnostics_scrub_storage_errors_and_profile_identity(self):
         providers = (ROOT / "src/screens/settings/LlmConfigSection_Providers.cpp").read_text(encoding="utf-8")
         profiles = (ROOT / "src/screens/settings/LlmConfigSection_Profiles.cpp").read_text(encoding="utf-8")

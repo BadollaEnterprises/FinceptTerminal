@@ -136,10 +136,23 @@ void GeneralSection::build_ui() {
         const QString code = language_combo_->itemData(idx).toString();
         if (code.isEmpty())
             return;
-        LOG_INFO("Settings", logf("Setting changed", {{"key", "general.language"}, {"value", code}}));
         // LanguageManager handles persistence + translator swap + the
         // QEvent::LanguageChange that retranslates every screen.
-        i18n::LanguageManager::instance().set_language(code);
+        auto& manager = i18n::LanguageManager::instance();
+        const QString previous = manager.current_language();
+        const auto changed = manager.set_language(code);
+        if (changed.is_err()) {
+            const int previous_idx = language_combo_->findData(previous);
+            const QSignalBlocker block(language_combo_);
+            if (previous_idx >= 0)
+                language_combo_->setCurrentIndex(previous_idx);
+            const QString detail = privacy::redact_text(QString::fromStdString(changed.error()));
+            LOG_ERROR("Settings", QStringLiteral("Could not save the interface language: %1").arg(detail));
+            QMessageBox::warning(this, tr("Interface Language"),
+                                 tr("Could not save the interface language: %1").arg(detail));
+            return;
+        }
+        LOG_INFO("Settings", logf("Setting changed", {{"key", "general.language"}, {"value", code}}));
     });
 
     vl->addSpacing(20);

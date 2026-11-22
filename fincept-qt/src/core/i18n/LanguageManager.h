@@ -11,6 +11,8 @@
 // calling their own retranslateUi() helper. Non-widget code can react via
 // the language_changed signal.
 
+#include "core/result/Result.h"
+
 #include <QObject>
 #include <QString>
 #include <QStringList>
@@ -43,10 +45,10 @@ class LanguageManager : public QObject {
     /// returns an empty string if nothing matches.
     static QString detect_system_language();
 
-    /// Switch language. Persists the choice, swaps the QTranslator, and emits
-    /// language_changed. Qt itself posts QEvent::LanguageChange to every
-    /// top-level widget as a side effect of install/removeTranslator.
-    void set_language(const QString& code);
+    /// Switch language. Persists the choice before swapping the QTranslator,
+    /// then emits language_changed. A persistence failure leaves the active
+    /// language untouched and is returned to the caller.
+    Result<void> set_language(const QString& code);
 
     QString current_language() const { return current_code_; }
 

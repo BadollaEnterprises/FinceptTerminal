@@ -1,6 +1,7 @@
 #include "core/i18n/LanguageManager.h"
 
 #include "core/logging/Logger.h"
+#include "core/privacy/LogRedact.h"
 #include "storage/repositories/SettingsRepository.h"
 
 #include <QCoreApplication>
@@ -90,8 +91,17 @@ void LanguageManager::initialize() {
         code = QString::fromLatin1(kDefaultCode);
 
     g_suppress_language_persist = read_failed;
-    set_language(code);
+    const auto applied = set_language(code);
     g_suppress_language_persist = false;
+    if (applied.is_err()) {
+        const QString detail = privacy::redact_text(QString::fromStdString(applied.error()));
+        LOG_ERROR("i18n", QStringLiteral("Could not persist the startup language; applying it for this session "
+                                          "only: %1")
+                              .arg(detail));
+        g_suppress_language_persist = true;
+        (void)set_language(code);
+        g_suppress_language_persist = false;
+    }
 }
 
 QString LanguageManager::detect_system_language() {
@@ -136,12 +146,22 @@ QString LanguageManager::detect_system_language() {
     return QString();
 }
 
-void LanguageManager::set_language(const QString& code) {
-    // No-op if already active. We still flow through the rest of the function
-    // on a "different translator load" path (e.g. retry after a missing .qm).
-    if (code == current_code_ && translator_) {
-        return;
+Result<void> LanguageManager::set_language(const QString& code) {
+    // An explicit language change must be durable before it changes the live
+    // translator. Otherwise the UI appears to accept a choice that silently
+    // reverts after restart. Startup-only fallbacks deliberately suppress this
+    // write so a transient read error cannot overwrite an existing preference.
+    if (!g_suppress_language_persist) {
+        const auto saved = SettingsRepository::instance().set(QString::fromLatin1(kSettingsKey), code,
+                                                              QStringLiteral("general"));
+        if (saved.is_err())
+            return Result<void>::err(saved.error());
     }
+
+    // Persist even when this language is already active. It may have been
+    // applied session-only after a transient startup storage failure.
+    if (code == current_code_ && translator_)
+        return Result<void>::ok();
 
     if (translator_) {
         QCoreApplication::removeTranslator(translator_);
@@ -168,15 +188,8 @@ void LanguageManager::set_language(const QString& code) {
     current_code_ = code;
     QLocale::setDefault(QLocale(code));
 
-    // Persist the choice. The repository call is cheap; we accept the small
-    // overhead on startup so the value is always in sync with what's running.
-    // Suppressed only when initialize() is falling back after a failed read —
-    // set() is an INSERT OR REPLACE, so writing a guess there would destroy the
-    // language the user actually chose.
-    if (!g_suppress_language_persist)
-        SettingsRepository::instance().set(QString::fromLatin1(kSettingsKey), code, QStringLiteral("general"));
-
     emit language_changed(code);
+    return Result<void>::ok();
 }
 
 } // namespace fincept::i18n

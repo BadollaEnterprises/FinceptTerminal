@@ -1,11 +1,13 @@
 #include "ui/widgets/LanguageSwitcher.h"
 
 #include "core/i18n/LanguageManager.h"
+#include "core/privacy/LogRedact.h"
 #include "ui/theme/Theme.h"
 
 #include <QActionGroup>
 #include <QEvent>
 #include <QMenu>
+#include <QMessageBox>
 
 namespace fincept::ui {
 
@@ -88,7 +90,14 @@ void LanguageSwitcher::show_menu() {
         action->setChecked(code == current_code);
         group->addAction(action);
         // Capture by value — the action outlives this loop iteration.
-        connect(action, &QAction::triggered, this, [code]() { i18n::LanguageManager::instance().set_language(code); });
+        connect(action, &QAction::triggered, this, [this, code]() {
+            const auto changed = i18n::LanguageManager::instance().set_language(code);
+            if (changed.is_err()) {
+                const QString detail = privacy::redact_text(QString::fromStdString(changed.error()));
+                QMessageBox::warning(this, tr("Interface Language"),
+                                     tr("Could not save the interface language: %1").arg(detail));
+            }
+        });
     }
 
     // Right-align the menu under the button so it doesn't overflow off-screen
