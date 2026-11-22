@@ -249,6 +249,17 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertNotIn(".arg(bid, acct_id, result.error)", source)
         self.assertNotIn('QString("WS error: %1").arg(e)', source)
 
+    def test_exchange_process_diagnostics_redact_external_errors(self):
+        pool = (ROOT / "src/trading/ExchangeDaemonPool.cpp").read_text(encoding="utf-8")
+        session = (ROOT / "src/trading/ExchangeSession.cpp").read_text(encoding="utf-8")
+        for source in (pool, session):
+            self.assertIn('#include "core/privacy/LogRedact.h"', source)
+        self.assertGreaterEqual(pool.count("privacy::redact_text"), 2)
+        self.assertGreaterEqual(session.count("privacy::redact_text"), 5)
+        self.assertNotIn('"Daemon stderr: " + err', pool)
+        self.assertNotIn('QString("[%1] WS stderr: %2").arg(exchange_id_, err)', session)
+        self.assertNotIn('QString("[%1] WS error: %2").arg(exchange_id_, ws_last_error_)', session)
+
     def test_macro_and_geopolitics_services_check_firewall(self):
         geopolitics = (ROOT / "src/services/geopolitics/GeopoliticsService.cpp").read_text(encoding="utf-8")
         macro = (ROOT / "src/services/economics/FinceptMacroService.cpp").read_text(encoding="utf-8")

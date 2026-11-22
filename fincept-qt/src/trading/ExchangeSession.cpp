@@ -1,6 +1,7 @@
 ﻿#include "trading/ExchangeSession.h"
 
 #include "core/logging/Logger.h"
+#include "core/privacy/LogRedact.h"
 #include "core/process/ProcessTree.h"
 #include "python/PythonRunner.h"
 #include "storage/secure/SecureStorage.h"
@@ -395,7 +396,7 @@ bool ExchangeSession::start_ws(const QString& primary_symbol, const QStringList&
             return;
         const QString err = QString::fromUtf8(ws_process_->readAllStandardError()).trimmed();
         if (!err.isEmpty()) {
-            LOG_DEBUG(kSessionTag, QString("[%1] WS stderr: %2").arg(exchange_id_, err));
+            LOG_DEBUG(kSessionTag, QString("[%1] WS stderr: %2").arg(exchange_id_, privacy::redact_text(err)));
             // The last line is reported with the process exit (handle_ws_finished).
             ws_process_->setProperty("fincept_last_stderr", err.section(QLatin1Char('\n'), -1).trimmed().left(200));
         }
@@ -471,7 +472,7 @@ void ExchangeSession::handle_ws_finished(int exit_code, QProcess::ExitStatus sta
                                                                   {"status", status == QProcess::CrashExit ? "crash"
                                                                                                            : "normal"},
                                                                   {"restarts", ws_restart_attempts_},
-                                                                  {"last_stderr", log_scrub(last_stderr)}}));
+                                                                  {"last_stderr", privacy::redact_text(last_stderr)}}));
 
     // Reap the finished process object. stop_ws() disconnects `this` before a
     // deliberate terminate, so reaching here means an *unexpected* exit.
@@ -500,7 +501,8 @@ void ExchangeSession::handle_ws_finished(int exit_code, QProcess::ExitStatus sta
     // installed.
     if (ws_error_fatal_) {
         ws_should_run_ = false;
-        LOG_ERROR(kSessionTag, QString("[%1] WS not restarting — %2").arg(exchange_id_, ws_last_error_));
+        LOG_ERROR(kSessionTag,
+                  QString("[%1] WS not restarting — %2").arg(exchange_id_, privacy::redact_text(ws_last_error_)));
         emit ws_failed(exchange_id_, ws_failure_text());
         return;
     }
@@ -640,7 +642,8 @@ void ExchangeSession::handle_ws_line(const QString& line) {
         ws_last_error_ = msg.value("message").toString();
         const QString code = msg.value("code").toString();
         ws_error_fatal_ = code == QLatin1String("missing_dependency") || code == QLatin1String("unknown_exchange");
-        LOG_WARN(kSessionTag, QString("[%1] WS error: %2").arg(exchange_id_, ws_last_error_));
+        LOG_WARN(kSessionTag,
+                 QString("[%1] WS error: %2").arg(exchange_id_, privacy::redact_text(ws_last_error_)));
         return;
     }
 
@@ -916,13 +919,13 @@ QVector<Candle> ExchangeSession::fetch_ohlcv(const QString& symbol, const QStrin
             LOG_DEBUG(kSessionTag, logf("Candles could not be fetched", {{"exchange", exchange_id_},
                                                                         {"symbol", symbol},
                                                                         {"timeframe", timeframe},
-                                                                        {"error", error}}));
+                                                                        {"error", privacy::redact_text(error)}}));
         else
             LOG_WARN_RL(kSessionTag, QStringLiteral("ohlcv|") + exchange_id_, 60000,
                         logf("Candles could not be fetched", {{"exchange", exchange_id_},
                                                              {"symbol", symbol},
                                                              {"timeframe", timeframe},
-                                                             {"error", error}}));
+                                                             {"error", privacy::redact_text(error)}}));
         return result;
     }
     const auto arr = j.value("candles").toArray();

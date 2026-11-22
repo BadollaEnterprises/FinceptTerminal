@@ -1,6 +1,7 @@
 #include "trading/ExchangeDaemonPool.h"
 
 #include "core/logging/Logger.h"
+#include "core/privacy/LogRedact.h"
 #include "core/process/ProcessTree.h"
 #include "python/PythonRunner.h"
 
@@ -181,7 +182,7 @@ void ExchangeDaemonPool::launch() {
             return;
         const QString err = QString::fromUtf8(process_->readAllStandardError()).trimmed();
         if (!err.isEmpty()) {
-            LOG_DEBUG(kPoolTag, "Daemon stderr: " + err);
+            LOG_DEBUG(kPoolTag, "Daemon stderr: " + privacy::redact_text(err));
             // Kept as the reason if this daemon dies at start ("No module named 'ccxt'").
             last_stderr_ = err.section(QLatin1Char('\n'), -1).trimmed().left(300);
         }
@@ -194,7 +195,8 @@ void ExchangeDaemonPool::launch() {
         if (err != QProcess::FailedToStart)
             return; // Crashed et al. are followed by finished(); the rest are transient I/O
         // The reason goes into note_daemon_lost()'s back-off line.
-        LOG_DEBUG(kPoolTag, logf("Exchange daemon failed to start", {{"error", spawned->errorString()}}));
+        LOG_DEBUG(kPoolTag,
+                  logf("Exchange daemon failed to start", {{"error", privacy::redact_text(spawned->errorString())}}));
         if (process_ == spawned) {
             ready_ = false;
             process_ = nullptr; // next call()/wait_for_ready() retries start() after the back-off
