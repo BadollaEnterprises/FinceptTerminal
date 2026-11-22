@@ -4,6 +4,7 @@
 
 #include "core/logging/Logger.h"
 #include "core/policy/CommunityPolicy.h"
+#include "core/privacy/LogRedact.h"
 #include "network/http/HttpClient.h"
 #include "screens/chat_mode/ChatModeService.h"
 
@@ -249,7 +250,10 @@ void CloudAgentClient::close_with(bool clean, int status, const QString& code, c
     stall_timer_->stop();
     release_reply(/*abort=*/!clean);
     if (!clean)
-        LOG_WARN(kCloudClientTag, QStringLiteral("%1 closed (HTTP %2, %3): %4").arg(path_).arg(status).arg(code, message));
+        LOG_WARN(kCloudClientTag, QStringLiteral("%1 closed (HTTP %2, %3): %4")
+                                      .arg(path_)
+                                      .arg(status)
+                                      .arg(code, privacy::redact_text(message)));
     emit closed(clean, status, code, message);
 }
 

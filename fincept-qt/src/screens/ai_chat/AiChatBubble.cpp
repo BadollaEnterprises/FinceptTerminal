@@ -16,6 +16,7 @@
 
 #include "core/events/EventBus.h"
 #include "core/logging/Logger.h"
+#include "core/privacy/LogRedact.h"
 #include "screens/ai_chat/AiChatStyle.h"
 #include "screens/ai_chat/AiChatTranscript.h"
 #include "services/llm/LlmErrors.h"
@@ -109,7 +110,7 @@ AiChatBubble::AiChatBubble(QWidget* parent) : QWidget(parent) {
             QTimer::singleShot(400, this, &AiChatBubble::start_listening);
     });
     connect(&tts, &services::TtsService::error_occurred, this, [this](const QString& msg) {
-        LOG_WARN("AiChatBubble", QString("TTS error: %1").arg(msg));
+        LOG_WARN("AiChatBubble", QString("TTS error: %1").arg(privacy::redact_text(msg)));
         is_speaking_ = false;
         error_msg_ = msg;
         render_status();
@@ -129,7 +130,7 @@ AiChatBubble::AiChatBubble(QWidget* parent) : QWidget(parent) {
     });
     // The detector's failures are shown in the status strip, not only the log.
     connect(&clap, &services::ClapDetectorService::error_occurred, this, [this](const QString& msg) {
-        LOG_WARN("AiChatBubble", QString("Clap-to-start error: %1").arg(msg));
+        LOG_WARN("AiChatBubble", QString("Clap-to-start error: %1").arg(privacy::redact_text(msg)));
         error_msg_ = tr("Clap-to-start: %1").arg(msg);
         render_status();
     });
@@ -1066,7 +1067,7 @@ void AiChatBubble::on_transcription(const QString& text) {
 }
 
 void AiChatBubble::on_stt_error(const QString& message) {
-    LOG_WARN("AiChatBubble", QString("STT error: %1").arg(message));
+    LOG_WARN("AiChatBubble", QString("STT error: %1").arg(privacy::redact_text(message)));
     error_msg_ = message;
     render_status();
 }
