@@ -88,9 +88,15 @@ Result<void> LlmConfigRepository::save_provider(const LlmConfig& c) {
         {c.provider, c.api_key, c.base_url, c.model, c.is_active ? 1 : 0, c.tools_enabled ? 1 : 0});
     if (saved.is_err())
         return saved;
-    if (!c.api_key.isEmpty() &&
-        SecureStorage::instance().store_verified(provider_secret_key(c.provider), c.api_key).is_ok())
-        (void)exec_write("UPDATE llm_configs SET api_key = '' WHERE provider = ?", {c.provider});
+    if (c.api_key.isEmpty())
+        return saved;
+    const auto stored = SecureStorage::instance().store_verified(provider_secret_key(c.provider), c.api_key);
+    if (stored.is_err())
+        return Result<void>::err("Provider was saved, but its API key could not be secured: " + stored.error());
+    auto scrubbed = exec_write("UPDATE llm_configs SET api_key = '' WHERE provider = ?", {c.provider});
+    if (scrubbed.is_err())
+        return Result<void>::err("Provider was saved, but its plaintext API key could not be removed: " +
+                                 scrubbed.error());
     return saved;
 }
 
@@ -189,8 +195,15 @@ Result<void> LlmConfigRepository::save_model(const LlmModelConfig& m) {
          m.is_default ? 1 : 0});
     if (saved.is_err())
         return saved;
-    if (!m.api_key.isEmpty() && SecureStorage::instance().store_verified(model_secret_key(m.id), m.api_key).is_ok())
-        (void)exec_write("UPDATE llm_model_configs SET api_key = '' WHERE id = ?", {m.id});
+    if (m.api_key.isEmpty())
+        return saved;
+    const auto stored = SecureStorage::instance().store_verified(model_secret_key(m.id), m.api_key);
+    if (stored.is_err())
+        return Result<void>::err("Model was saved, but its API key could not be secured: " + stored.error());
+    auto scrubbed = exec_write("UPDATE llm_model_configs SET api_key = '' WHERE id = ?", {m.id});
+    if (scrubbed.is_err())
+        return Result<void>::err("Model was saved, but its plaintext API key could not be removed: " +
+                                 scrubbed.error());
     return saved;
 }
 

@@ -62,8 +62,15 @@ Result<void> McpServerRepository::save(const McpServer& s) {
          s.auto_start ? 1 : 0, s.status});
     if (saved.is_err())
         return saved;
-    if (!s.env.isEmpty() && SecureStorage::instance().store_verified(mcp_env_secret_key(s.id), s.env).is_ok())
-        (void)exec_write("UPDATE mcp_servers SET env = '' WHERE id = ?", {s.id});
+    if (s.env.isEmpty())
+        return saved;
+    const auto stored = SecureStorage::instance().store_verified(mcp_env_secret_key(s.id), s.env);
+    if (stored.is_err())
+        return Result<void>::err("MCP server was saved, but its environment could not be secured: " + stored.error());
+    auto scrubbed = exec_write("UPDATE mcp_servers SET env = '' WHERE id = ?", {s.id});
+    if (scrubbed.is_err())
+        return Result<void>::err("MCP server was saved, but its plaintext environment could not be removed: " +
+                                 scrubbed.error());
     return saved;
 }
 

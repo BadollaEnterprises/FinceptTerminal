@@ -149,8 +149,15 @@ Result<void> LlmProfileRepository::save_profile(const LlmProfile& p) {
         (void)SecureStorage::instance().remove(profile_secret_key(id));
         return saved;
     }
-    if (!api_key.isEmpty() && SecureStorage::instance().store_verified(profile_secret_key(id), api_key).is_ok())
-        (void)exec_write("UPDATE llm_profiles SET api_key = '' WHERE id = ?", {id});
+    if (api_key.isEmpty())
+        return saved;
+    const auto stored = SecureStorage::instance().store_verified(profile_secret_key(id), api_key);
+    if (stored.is_err())
+        return Result<void>::err("Profile was saved, but its API key could not be secured: " + stored.error());
+    auto scrubbed = exec_write("UPDATE llm_profiles SET api_key = '' WHERE id = ?", {id});
+    if (scrubbed.is_err())
+        return Result<void>::err("Profile was saved, but its plaintext API key could not be removed: " +
+                                 scrubbed.error());
     return saved;
 }
 

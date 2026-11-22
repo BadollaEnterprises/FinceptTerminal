@@ -391,6 +391,29 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertIn("db().commit()", body)
         self.assertIn("ON CONFLICT(context_type, context_id) DO UPDATE SET", body)
 
+    def test_llm_and_mcp_saves_surface_secure_store_and_scrub_failures(self):
+        cases = {
+            "src/storage/repositories/LlmConfigRepository.cpp": (
+                ("Result<void> LlmConfigRepository::save_provider", "Result<void> LlmConfigRepository::set_active"),
+                ("Result<void> LlmConfigRepository::save_model", "Result<void> LlmConfigRepository::delete_model"),
+            ),
+            "src/storage/repositories/LlmProfileRepository.cpp": (
+                ("Result<void> LlmProfileRepository::save_profile", "Result<void> LlmProfileRepository::delete_profile"),
+            ),
+            "src/storage/repositories/McpServerRepository.cpp": (
+                ("Result<void> McpServerRepository::save", "Result<void> McpServerRepository::remove"),
+            ),
+        }
+        for relative, spans in cases.items():
+            source = (ROOT / relative).read_text(encoding="utf-8")
+            for start, end in spans:
+                with self.subTest(source=relative, method=start):
+                    body = source[source.index(start):source.index(end)]
+                    self.assertIn("const auto stored =", body)
+                    self.assertIn("if (stored.is_err())", body)
+                    self.assertIn("auto scrubbed = exec_write", body)
+                    self.assertIn("if (scrubbed.is_err())", body)
+
     def test_local_chat_mode_diagnostics_scrub_conversation_storage_errors(self):
         source = (ROOT / "src/screens/chat_mode/ChatModeScreen.cpp").read_text(encoding="utf-8")
         self.assertIn('#include "core/privacy/LogRedact.h"', source)
