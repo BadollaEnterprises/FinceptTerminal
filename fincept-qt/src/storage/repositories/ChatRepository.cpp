@@ -127,8 +127,10 @@ Result<bool> ChatRepository::add_message_once(const QString& message_id, const Q
         }
     }
     auto committed = db().commit();
-    if (committed.is_err())
+    if (committed.is_err()) {
+        db().rollback();
         return Result<bool>::err(committed.error());
+    }
     return Result<bool>::ok(added);
 }
 

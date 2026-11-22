@@ -17,6 +17,7 @@ class TestChatRepository : public QObject {
     void initTestCase();
     void stable_message_id_is_inserted_once();
     void add_message_rolls_back_when_session_update_fails();
+    void add_message_once_releases_failed_commit();
     void cleanupTestCase();
 
   private:
@@ -77,6 +78,35 @@ void TestChatRepository::add_message_rolls_back_when_session_update_fails() {
 
     const auto dropped = Database::instance().execute("DROP TRIGGER fail_chat_session_update");
     QVERIFY(dropped.is_ok());
+}
+
+void TestChatRepository::add_message_once_releases_failed_commit() {
+    auto& database = Database::instance();
+    auto& repo = ChatRepository::instance();
+    const auto created = repo.create_session(QStringLiteral("Commit recovery"));
+    QVERIFY(created.is_ok());
+
+    QVERIFY(database.execute("CREATE TABLE deferred_parent (id TEXT PRIMARY KEY)").is_ok());
+    QVERIFY(database.execute(
+                         "CREATE TABLE deferred_child (parent_id TEXT, "
+                         "FOREIGN KEY(parent_id) REFERENCES deferred_parent(id) DEFERRABLE INITIALLY DEFERRED)")
+                .is_ok());
+    QVERIFY(database.execute(
+                         "CREATE TRIGGER fail_chat_message_commit AFTER INSERT ON chat_messages "
+                         "BEGIN INSERT INTO deferred_child(parent_id) VALUES ('missing'); END")
+                .is_ok());
+
+    const auto saved = repo.add_message_once(QStringLiteral("commit-failure"), created.value().id,
+                                             QStringLiteral("assistant"), QStringLiteral("Not committed"));
+    QVERIFY(saved.is_err());
+
+    const auto next = database.begin_transaction();
+    database.rollback();
+    QVERIFY2(next.is_ok(), next.is_ok() ? "" : next.error().c_str());
+
+    QVERIFY(database.execute("DROP TRIGGER fail_chat_message_commit").is_ok());
+    QVERIFY(database.execute("DROP TABLE deferred_child").is_ok());
+    QVERIFY(database.execute("DROP TABLE deferred_parent").is_ok());
 }
 
 void TestChatRepository::cleanupTestCase() {
