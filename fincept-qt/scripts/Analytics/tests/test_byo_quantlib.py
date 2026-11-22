@@ -572,6 +572,14 @@ class ByoQuantLibTest(unittest.TestCase):
         self.assertEqual(answer["meta"]["fincept_credits"], 0)
         self.assertIn("No paid Fincept request", answer["message"])
 
+    def test_execute_converts_arithmetic_failures_to_structured_errors(self):
+        mod = load_module()
+        mod.ROUTES["test/arithmetic-error"] = lambda _body: 1 / 0
+        answer = mod.execute("test/arithmetic-error", {})
+        self.assertTrue(answer["supported"])
+        self.assertIn("division by zero", answer.get("error", ""))
+        self.assertEqual(answer["meta"]["fincept_credits"], 0)
+
     def test_curve_routes_interpolate_rates_and_discount_factors(self):
         mod = load_module()
         body = {"tenors": [1, 2, 5], "values": [0.04, 0.047, 0.05], "query_tenor": 3}

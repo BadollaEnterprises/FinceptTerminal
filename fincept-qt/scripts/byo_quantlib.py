@@ -7312,7 +7312,7 @@ def execute(endpoint: str, body: Mapping[str, Any]) -> Dict[str, Any]:
                 "meta": _meta()}
     try:
         return {"supported": True, "data": route(body), "meta": _meta()}
-    except (KeyError, TypeError, ValueError, OverflowError, statistics.StatisticsError) as exc:
+    except (KeyError, TypeError, ValueError, ArithmeticError, statistics.StatisticsError) as exc:
         return {"supported": True, "error": str(exc), "meta": _meta()}
 
 
