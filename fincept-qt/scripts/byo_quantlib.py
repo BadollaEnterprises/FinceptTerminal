@@ -942,6 +942,8 @@ def _calendar_step(body: Mapping[str, Any], direction: int) -> Dict[str, Any]:
 def _calendar_add_business_days(body: Mapping[str, Any]) -> Dict[str, Any]:
     value = _iso_date(body)
     days = int(body.get("days", 0))
+    if abs(days) > 100000:
+        raise ValueError("business-day range is outside local limits")
     direction = 1 if days >= 0 else -1
     remaining = abs(days)
     while remaining:
@@ -953,6 +955,8 @@ def _calendar_add_business_days(body: Mapping[str, Any]) -> Dict[str, Any]:
 
 def _calendar_business_days_between(body: Mapping[str, Any]) -> Dict[str, Any]:
     start, end = _iso_date(body, "start_date"), _iso_date(body, "end_date")
+    if abs((end - start).days) > 100000:
+        raise ValueError("business-day range is outside local limits")
     direction = 1 if end >= start else -1
     count, cursor = 0, start
     while cursor != end:

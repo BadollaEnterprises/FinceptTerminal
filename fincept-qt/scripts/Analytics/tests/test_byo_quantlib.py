@@ -57,6 +57,19 @@ class ByoQuantLibTest(unittest.TestCase):
         ])
         self.assertEqual(schedule["meta"]["fincept_credits"], 0)
 
+    def test_business_day_walks_are_bounded(self):
+        mod = load_module()
+        add = mod.execute("scheduling/calendar/add-business-days", {
+            "date": "2024-01-01", "days": 100001,
+        })
+        between = mod.execute("scheduling/calendar/business-days-between", {
+            "start_date": "1700-01-01", "end_date": "2024-01-01",
+        })
+        self.assertIn("business-day range is outside local limits", add.get("error", ""))
+        self.assertIn("business-day range is outside local limits", between.get("error", ""))
+        self.assertEqual(add["meta"]["fincept_credits"], 0)
+        self.assertEqual(between["meta"]["fincept_credits"], 0)
+
     def test_numerical_module_is_available_without_cloud_entitlements(self):
         mod = load_module()
         expected = {
