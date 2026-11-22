@@ -1068,12 +1068,11 @@ bool AIQuantLabService::rd_spawn(const QString& task_id, const QJsonObject& llm_
     });
     connect(proc, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this,
             [self, proc, task_id, stdout_buf, stderr_tail](int exit_code, QProcess::ExitStatus status) {
-                // Ended by itself: what it started on purpose (the RD-Agent log viewer) keeps
-                // running. A stop or a crash leaves the rest of the tree to the job's
-                // kill-on-close, which reaps it when `proc` is deleted.
-                const bool stopped = self && self->rd_tasks_.value(task_id).stop_requested;
-                if (status == QProcess::NormalExit && !stopped)
-                    process::release_tree(proc);
+                Q_UNUSED(status);
+                // Every descendant inherited this run's BYO provider key. Reap
+                // auxiliary viewers and workers even after a successful loop;
+                // none may outlive the task with that credential environment.
+                process::kill_tree(proc);
                 proc->deleteLater();
                 if (!self)
                     return;

@@ -143,6 +143,8 @@ class AgentProviderPolicyTest(unittest.TestCase):
                            service.index("void AIQuantLabService::rd_handle_line")]
         self.assertIn('payload["input_max_chars"]', deep_run)
         self.assertIn('payload["input_max_chars"]', rd_spawn)
+        self.assertIn("process::kill_tree(proc);", rd_spawn)
+        self.assertNotIn("process::release_tree(proc);", rd_spawn)
 
     def test_agentic_tasks_have_cost_conscious_implicit_budgets(self):
         budget = load_path("finagent_budget_defaults", AGENT_BUDGET)
