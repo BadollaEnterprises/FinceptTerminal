@@ -260,6 +260,13 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertNotIn('QString("[%1] WS stderr: %2").arg(exchange_id_, err)', session)
         self.assertNotIn('QString("[%1] WS error: %2").arg(exchange_id_, ws_last_error_)', session)
 
+    def test_ma_analytics_diagnostics_redact_python_errors(self):
+        source = (ROOT / "src/services/ma_analytics/MAAnalyticsService.cpp").read_text(encoding="utf-8")
+        self.assertIn('#include "core/privacy/LogRedact.h"', source)
+        self.assertGreaterEqual(source.count("privacy::redact_text(result.error)"), 3)
+        self.assertNotIn('.arg(context, result.error)', source)
+        self.assertNotIn('.arg(id).arg(result.error)', source)
+
     def test_macro_and_geopolitics_services_check_firewall(self):
         geopolitics = (ROOT / "src/services/geopolitics/GeopoliticsService.cpp").read_text(encoding="utf-8")
         macro = (ROOT / "src/services/economics/FinceptMacroService.cpp").read_text(encoding="utf-8")

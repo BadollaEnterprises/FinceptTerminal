@@ -2,6 +2,7 @@
 #include "services/ma_analytics/MAAnalyticsService.h"
 
 #include "core/logging/Logger.h"
+#include "core/privacy/LogRedact.h"
 #include "datahub/DataHub.h"
 #include "datahub/DataHubMetaTypes.h"
 #include "python/PythonRunner.h"
@@ -120,7 +121,8 @@ void MAAnalyticsService::run_python_json(const QString& script, const QString& c
                 emit self->input_required(context, result.error, missing);
                 return;
             }
-            LOG_ERROR("MAAnalytics", QString("Python call failed [%1]: %2").arg(context, result.error));
+            LOG_ERROR("MAAnalytics",
+                      QString("Python call failed [%1]: %2").arg(context, privacy::redact_text(result.error)));
             emit self->error_occurred(context, result.error);
             return;
         }
@@ -247,7 +249,9 @@ quint64 MAAnalyticsService::run_deal_db(const QString& script, const QStringList
             if (!self)
                 return;
             if (!result.success) {
-                LOG_WARN("MAAnalytics", QString("Deal database call %1 failed: %2").arg(id).arg(result.error));
+                LOG_WARN("MAAnalytics", QString("Deal database call %1 failed: %2")
+                                            .arg(id)
+                                            .arg(privacy::redact_text(result.error)));
                 emit self->deal_op_failed(id, result.error, ma_missing_inputs(result.output));
                 return;
             }
@@ -312,7 +316,9 @@ quint64 MAAnalyticsService::start_deal_scan(int days, int max_filings, const QSt
                 QString message = result.error;
                 if (*throttled)
                     message = tr("SEC did not answer - try again in a minute.");
-                LOG_INFO("MAAnalytics", QString("Deal scan %1 ended: %2").arg(id).arg(result.error));
+                LOG_INFO("MAAnalytics", QString("Deal scan %1 ended: %2")
+                                            .arg(id)
+                                            .arg(privacy::redact_text(result.error)));
                 emit self->deal_scan_failed(id, message, cancelled, *last_filings);
                 return;
             }
