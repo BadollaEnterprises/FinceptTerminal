@@ -30,7 +30,9 @@ AGENT_NODES = MODULE.parents[3] / "src" / "services" / "workflow" / "nodes" / "A
 CREATE_AGENT = MODULE.parents[3] / "src" / "screens" / "agent_config" / "CreateAgentPanel.cpp"
 CREATE_AGENT_DATA = CREATE_AGENT.with_name("CreateAgentPanel_DataOps.cpp")
 WORKFLOWS_PANEL = CREATE_AGENT.with_name("WorkflowsViewPanel.cpp")
+PLANNER_PANEL = CREATE_AGENT.with_name("PlannerViewPanel.cpp")
 AGENT_CHAT_PANEL = CREATE_AGENT.with_name("AgentChatPanel.cpp")
+AGENT_PROFILE_ROWS = CREATE_AGENT.with_name("AgentProfileRows.h")
 LLM_PROFILE_HEADER = MODULE.parents[3] / "src" / "storage" / "repositories" / "LlmProfileRepository.h"
 RDAGENT_CLI = MODULE.parent.parent / "rdagents" / "cli.py"
 RDAGENT_LOOPS = RDAGENT_CLI.with_name("loops.py")
@@ -241,6 +243,53 @@ class AgentProviderPolicyTest(unittest.TestCase):
         self.assertGreaterEqual(model.count("read_assignment"), 2)
         self.assertGreaterEqual(model.count("is_err()"), 2)
         self.assertNotIn("get_assignment", model)
+
+    def test_agent_profile_pickers_filter_retired_rows_and_surface_read_errors(self):
+        rows = AGENT_PROFILE_ROWS.read_text(encoding="utf-8")
+        add = rows[rows.index("inline ", rows.index("/// Appends")):
+                   rows.index("inline bool is_selectable_row")]
+        self.assertIn("inline QString add_profile_rows", add)
+        self.assertIn("list_profiles()", add)
+        self.assertIn("list_harness_profiles()", add)
+        self.assertIn("usable_result.is_err()", add)
+        self.assertIn("harness_result.is_err()", add)
+        self.assertIn("combo->setEnabled(false)", add)
+        self.assertIn("combo->setCurrentIndex(-1)", add)
+        self.assertIn("profile_rows_unavailable", add)
+        self.assertNotIn("(p.is_harness() ? harness : usable).append(p)", add)
+
+        for path, loader in (
+            (AGENTS_PANEL, "void AgentsViewPanel::load_profile_combo"),
+            (CREATE_AGENT, "void CreateAgentPanel::load_profile_combo"),
+            (TEAMS_PANEL, "void TeamsViewPanel::load_team_profile_combo"),
+        ):
+            with self.subTest(source=path.name):
+                source = path.read_text(encoding="utf-8")
+                start = source.index(loader)
+                body = source[start:source.index("\nvoid ", start + len(loader))]
+                self.assertIn("const QString profile_error", body)
+                self.assertIn("agent_profiles::add_profile_rows", body)
+                self.assertIn("profile_error.isEmpty() ? 0 : -1", body)
+
+        teams = TEAMS_PANEL.read_text(encoding="utf-8")
+        for method, end in (("void TeamsViewPanel::run_team", "void TeamsViewPanel::save_team"),
+                            ("void TeamsViewPanel::save_team", "void TeamsViewPanel::load_team")):
+            start = teams.index(method)
+            body = teams[start:teams.index(end, start + len(method))]
+            self.assertIn("team_profile_combo_->currentIndex() < 0", body)
+
+        workflows = WORKFLOWS_PANEL.read_text(encoding="utf-8")
+        run = workflows[workflows.index("void WorkflowsViewPanel::run_current_workflow"):
+                        workflows.index("void WorkflowsViewPanel::showEvent")]
+        self.assertIn("llm_profile_combo_->currentIndex() < 0", run)
+
+        planner = PLANNER_PANEL.read_text(encoding="utf-8")
+        generate = planner[planner.index("void PlannerViewPanel::generate_plan"):
+                           planner.index("void PlannerViewPanel::execute_plan")]
+        execute = planner[planner.index("void PlannerViewPanel::execute_plan"):
+                          planner.index("void PlannerViewPanel::populate_plan")]
+        self.assertIn("llm_profile_combo_->currentIndex() < 0", generate)
+        self.assertIn("llm_profile_combo_->currentIndex() < 0", execute)
 
     def test_super_agent_normalizes_saved_legacy_model_before_llm_routing(self):
         source = SUPER_AGENT.read_text(encoding="utf-8")

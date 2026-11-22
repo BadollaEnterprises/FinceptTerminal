@@ -599,6 +599,11 @@ void WorkflowsViewPanel::on_workflow_selected(int row) {
 void WorkflowsViewPanel::run_current_workflow() {
     if (executing_ || current_workflow_type_.isEmpty() || symbol_resolve_id_ != 0)
         return;
+    if (llm_profile_combo_->currentIndex() < 0) {
+        set_params_status(params_status_, tr("LLM profiles are unavailable; reload the configuration before running."),
+                          ui::colors::DANGER());
+        return;
+    }
 
     // Typed, not picked: resolve the symbol first (asynchronously), then run with the
     // instrument's market-data symbol — "RELIANCE" quotes nothing without ".NS", "TCS" is

@@ -1355,11 +1355,12 @@ void AgentsViewPanel::load_profile_combo() {
     llm_profile_combo_->addItem(tr("Default (Global)"), QString{});
 
     // Usable profiles, then harness profiles as disabled rows (no id: never restored below).
-    agent_profiles::add_profile_rows(llm_profile_combo_, tr(" [default]"), QStringLiteral("agent"));
+    const QString profile_error =
+        agent_profiles::add_profile_rows(llm_profile_combo_, tr(" [default]"), QStringLiteral("agent"));
 
     // Restore previous selection if still present
-    int restore = 0;
-    if (!prev_id.isEmpty()) {
+    int restore = profile_error.isEmpty() ? 0 : -1;
+    if (profile_error.isEmpty() && !prev_id.isEmpty()) {
         for (int i = 1; i < llm_profile_combo_->count(); ++i) {
             if (llm_profile_combo_->itemData(i).toString() == prev_id) {
                 restore = i;
@@ -1367,10 +1368,15 @@ void AgentsViewPanel::load_profile_combo() {
             }
         }
     }
-    llm_profile_combo_->blockSignals(false);
     llm_profile_combo_->setCurrentIndex(restore);
+    llm_profile_combo_->blockSignals(false);
     // Trigger resolved label update
     refresh_llm_pill();
+    if (!profile_error.isEmpty()) {
+        llm_resolved_lbl_->setText(tr("LLM profiles unavailable: %1").arg(profile_error));
+        llm_resolved_lbl_->setStyleSheet(
+            QString("color:%1;font-size:" + fincept::ui::fonts::px(-4) + "px;padding:2px 0;").arg(ui::colors::DANGER()));
+    }
 }
 
 void AgentsViewPanel::refresh_llm_pill() {

@@ -595,6 +595,12 @@ void PlannerViewPanel::setup_connections() {
 void PlannerViewPanel::generate_plan() {
     if (generating_)
         return;
+    if (llm_profile_combo_ && llm_profile_combo_->currentIndex() < 0) {
+        plan_status_->setText(tr("LLM PROFILES UNAVAILABLE"));
+        plan_status_->setStyleSheet(
+            QString("color:%1;font-size:" + fincept::ui::fonts::px(-4) + "px;").arg(ui::colors::DANGER()));
+        return;
+    }
     QString q = custom_query_->toPlainText().trimmed();
     if (q.isEmpty()) {
         auto* item = template_list_->currentItem();
@@ -637,6 +643,12 @@ void PlannerViewPanel::generate_plan() {
 void PlannerViewPanel::execute_plan() {
     if (executing_ || current_plan_.steps.isEmpty())
         return;
+    if (llm_profile_combo_ && llm_profile_combo_->currentIndex() < 0) {
+        plan_status_->setText(tr("LLM PROFILES UNAVAILABLE"));
+        plan_status_->setStyleSheet(
+            QString("color:%1;font-size:" + fincept::ui::fonts::px(-4) + "px;").arg(ui::colors::DANGER()));
+        return;
+    }
     executing_ = true;
     execute_btn_->setEnabled(false);
     execute_btn_->setText(tr("EXECUTING..."));

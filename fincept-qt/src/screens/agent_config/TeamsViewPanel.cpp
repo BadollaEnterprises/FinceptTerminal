@@ -520,10 +520,11 @@ void TeamsViewPanel::load_team_profile_combo() {
     team_profile_combo_->addItem(tr("Default (Global)"), QString{});
 
     // Usable profiles, then harness profiles as disabled rows (no id: never restored below).
-    agent_profiles::add_profile_rows(team_profile_combo_, tr(" [default]"), QStringLiteral("team"));
+    const QString profile_error =
+        agent_profiles::add_profile_rows(team_profile_combo_, tr(" [default]"), QStringLiteral("team"));
 
-    int restore = 0;
-    if (!prev_id.isEmpty()) {
+    int restore = profile_error.isEmpty() ? 0 : -1;
+    if (profile_error.isEmpty() && !prev_id.isEmpty()) {
         for (int i = 1; i < team_profile_combo_->count(); ++i) {
             if (team_profile_combo_->itemData(i).toString() == prev_id) {
                 restore = i;
@@ -531,9 +532,14 @@ void TeamsViewPanel::load_team_profile_combo() {
             }
         }
     }
-    team_profile_combo_->blockSignals(false);
     team_profile_combo_->setCurrentIndex(restore);
+    team_profile_combo_->blockSignals(false);
     refresh_team_llm_label();
+    if (!profile_error.isEmpty()) {
+        team_resolved_lbl_->setText(tr("LLM profiles unavailable: %1").arg(profile_error));
+        team_resolved_lbl_->setStyleSheet(
+            QString("color:%1;font-size:" + fincept::ui::fonts::px(-4) + "px;padding:2px 0;").arg(ui::colors::DANGER()));
+    }
 }
 
 void TeamsViewPanel::refresh_team_llm_label() {
@@ -568,6 +574,11 @@ void TeamsViewPanel::run_team() {
     // While the team is running the button doubles as STOP.
     if (executing_) {
         services::AgentService::instance().cancel_run(pending_request_id_);
+        return;
+    }
+    if (team_profile_combo_->currentIndex() < 0) {
+        set_exec_status(exec_status_, tr("LLM profiles are unavailable; reload the configuration before running."),
+                        ui::colors::DANGER());
         return;
     }
     QString q = query_input_->toPlainText().trimmed();
@@ -648,6 +659,10 @@ void TeamsViewPanel::run_team() {
 }
 
 void TeamsViewPanel::save_team() {
+    if (team_profile_combo_->currentIndex() < 0) {
+        log_display_->append(tr("[!] LLM profiles are unavailable; reload the configuration before saving."));
+        return;
+    }
     if (team_members_.isEmpty()) {
         log_display_->append(tr("[!] Add at least one agent before saving the team"));
         return;

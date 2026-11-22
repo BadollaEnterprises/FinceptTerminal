@@ -106,6 +106,14 @@ Result<QVector<LlmProfile>> LlmProfileRepository::list_profiles() const {
     return Result<QVector<LlmProfile>>::ok(std::move(profiles));
 }
 
+Result<QVector<LlmProfile>> LlmProfileRepository::list_harness_profiles() const {
+    // Harness profiles never carry an API key, so no secure-storage hydration
+    // is needed. Keep this separate from list_all_profiles(): a corrupt retired
+    // API credential must not hide every usable picker row.
+    return query_list(QString(kSelectCols) + "WHERE lower(provider) LIKE 'harness:%' ORDER BY name", {},
+                      map_profile);
+}
+
 Result<QVector<LlmProfile>> LlmProfileRepository::list_all_profiles() const {
     auto result = query_list(QString(kSelectCols) + "ORDER BY name", {}, map_profile);
     if (result.is_err())

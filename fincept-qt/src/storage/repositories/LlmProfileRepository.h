@@ -82,6 +82,11 @@ class LlmProfileRepository : public BaseRepository<LlmProfile> {
     /// profiles are left out (see the header comment).
     Result<QVector<LlmProfile>> list_profiles() const;
 
+    /// Harness rows for disabled explanatory entries in agent-runtime pickers.
+    /// Retired API profiles are not read, so an unusable credential cannot
+    /// make the whole picker unavailable.
+    Result<QVector<LlmProfile>> list_harness_profiles() const;
+
     /// Every profile including harness profiles, ordered by name.
     Result<QVector<LlmProfile>> list_all_profiles() const;
 

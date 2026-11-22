@@ -13,6 +13,7 @@
 //
 // Header-only (no CMake entry needed). GUI thread (repository reads).
 
+#include "core/privacy/LogRedact.h"
 #include "services/llm/ModelRouter.h"
 #include "storage/repositories/LlmProfileRepository.h"
 #include "ui/theme/Theme.h"
@@ -55,22 +56,39 @@ inline QString harness_row_tooltip(const QString& feature_key) {
 /// row (data = profile id; `default_marker` appended to the global default),
 /// then — after a separator — every harness profile as a disabled row.
 /// `feature_key` ("agent", "team", "workflow") picks the tooltip's reason.
-/// Returns the usable profiles in row order.
-inline QVector<LlmProfile> add_profile_rows(QComboBox* combo, const QString& default_marker,
-                                            const QString& feature_key) {
-    QVector<LlmProfile> usable;
+/// Returns a redacted read error, or an empty string on success.
+inline QString add_profile_rows(QComboBox* combo, const QString& default_marker, const QString& feature_key) {
     if (!combo)
-        return usable;
-    const auto r = LlmProfileRepository::instance().list_all_profiles();
-    if (r.is_err())
-        return usable;
-    QVector<LlmProfile> harness;
-    for (const LlmProfile& p : r.value())
-        (p.is_harness() ? harness : usable).append(p);
+        return QCoreApplication::translate("AgentProfileRows", "Profile picker is unavailable");
+
+    const auto profile_rows_unavailable = [combo](const std::string& detail) {
+        const QString error = privacy::redact_text(QString::fromStdString(detail)).left(240);
+        combo->addItem(QCoreApplication::translate("AgentProfileRows", "LLM profiles unavailable"), QString{});
+        const int row = combo->count() - 1;
+        combo->setItemData(row, error, Qt::ToolTipRole);
+        if (auto* model = qobject_cast<QStandardItemModel*>(combo->model())) {
+            if (QStandardItem* item = model->item(row))
+                item->setFlags(item->flags() & ~(Qt::ItemIsEnabled | Qt::ItemIsSelectable));
+        }
+        combo->setCurrentIndex(-1);
+        combo->setEnabled(false);
+        return error;
+    };
+
+    const auto usable_result = LlmProfileRepository::instance().list_profiles();
+    if (usable_result.is_err())
+        return profile_rows_unavailable(usable_result.error());
+    const auto harness_result = LlmProfileRepository::instance().list_harness_profiles();
+    if (harness_result.is_err())
+        return profile_rows_unavailable(harness_result.error());
+
+    combo->setEnabled(true);
+    const QVector<LlmProfile>& usable = usable_result.value();
+    const QVector<LlmProfile>& harness = harness_result.value();
     for (const LlmProfile& p : usable)
         combo->addItem(p.is_default ? p.name + default_marker : p.name, p.id);
     if (harness.isEmpty())
-        return usable;
+        return {};
 
     combo->insertSeparator(combo->count());
     auto* model = qobject_cast<QStandardItemModel*>(combo->model());
@@ -85,7 +103,7 @@ inline QVector<LlmProfile> add_profile_rows(QComboBox* combo, const QString& def
                 it->setFlags(it->flags() & ~(Qt::ItemIsEnabled | Qt::ItemIsSelectable));
         }
     }
-    return usable;
+    return {};
 }
 
 /// True when `row` of `combo` can be chosen (not a separator or harness row).
