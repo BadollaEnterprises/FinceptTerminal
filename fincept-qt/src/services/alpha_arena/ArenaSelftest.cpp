@@ -652,7 +652,8 @@ int run_arena_selftest() {
         btc.mid = 50000;
         fake_md->next.coins["BTC"] = btc;
         auto* fake_llm = new FakeLlmClient(nullptr);
-        // gpt: clean open. claude: garbage then garbage again (exhausts the 1 retry).
+        // gpt: clean open. claude: garbage, with a second response left queued
+        // to prove a parse failure does not make a hidden paid repair call.
         fake_llm->scripts["gpt-test"].enqueue(
             R"({"actions":[{"action":"open","coin":"BTC","side":"long","size_usd":2000,"leverage":2,"reason":"momentum"}]})");
         fake_llm->scripts["claude-test"].enqueue("I refuse to answer in JSON.");
@@ -701,9 +702,8 @@ int run_arena_selftest() {
             if (d.status == "parse_error")
                 ++perr_count;
         }
-        check("engine: one ok decision, one parse_error (after retry)", ok_count == 1 && perr_count == 1);
-        // The parse-error agent consumed both scripted responses (retry happened).
-        check("engine: repair retry consumed second response", fake_llm->scripts["claude-test"].isEmpty());
+        check("engine: one ok decision, one parse_error without retry", ok_count == 1 && perr_count == 1);
+        check("engine: parse failure left repair response unused", fake_llm->scripts["claude-test"].size() == 1);
 
         const auto agents_now = store.agents_for(ecid).value();
         QString gpt_id, claude_id;
@@ -715,8 +715,8 @@ int run_arena_selftest() {
                                               approx(orders.value()[0].notional_usd, 2000));
         auto toks = store.token_totals(ecid);
         check("store: token totals aggregated", toks.is_ok() && toks.value().value(gpt_id) > 0);
-        check("store: repair retry tokens include both requests",
-              toks.is_ok() && toks.value().value(claude_id) == 240);
+        check("store: parse failure tokens include one request",
+              toks.is_ok() && toks.value().value(claude_id) == 120);
         auto eq = store.equity_series(ecid);
         check("engine: equity snapshots for both agents", eq.is_ok() && eq.value().size() == 2);
         check("engine: parse failure did not block round", eq.is_ok() && eq.value().size() == 2 && completed_seq == 1);

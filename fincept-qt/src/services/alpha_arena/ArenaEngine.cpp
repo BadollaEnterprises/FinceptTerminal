@@ -22,6 +22,9 @@ namespace fincept::arena {
 
 static constexpr const char* TAG = "ArenaEngine";
 static constexpr int kKillMarksTimeoutMs = 2000; // bounded wait; a kill must never hang
+// Arena rounds are user-funded BYO requests. A malformed answer fails visibly
+// instead of silently charging for a second model call.
+static constexpr int kArenaRepairRetries = 0;
 static constexpr const char* kArenaKillBusy = "a kill is in progress — wait for it to finish (about 2 seconds)";
 
 static int add_usage(int prior, int current) {
@@ -661,7 +664,7 @@ void ArenaEngine::finish_agent(int seq, const AgentRow& agent, const ArenaLlmRes
 
     auto parsed = parse_decision(llm.content, comp_.instruments, comp_.max_leverage);
     if (!parsed.ok()) {
-        if (!was_retry && !halted) { // one repair retry (spec §5); none for a halted agent
+        if (kArenaRepairRetries > 0 && !was_retry && !halted) {
             dispatch_agent(seq, agent, last_snapshot_, true, llm.content, parsed.error, d.prompt_tokens,
                            d.completion_tokens, d.latency_ms);
             return;
