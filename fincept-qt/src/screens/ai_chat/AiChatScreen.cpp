@@ -470,6 +470,7 @@ void AiChatScreen::restore_state(const QVariantMap& state) {
     }
     if (context_rail_)
         context_rail_->set_tool_policy(tools_on_, nav_on_);
+    update_status();
 
     if (state.contains("sidebar_collapsed")) {
         sidebar_collapsed_ = state.value("sidebar_collapsed").toBool();

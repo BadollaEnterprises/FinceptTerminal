@@ -905,6 +905,17 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertIn("cost-conscious 4,096-token default", settings)
         self.assertNotIn("Auto = the model's own", settings)
 
+    def test_ai_chat_tool_status_tracks_the_billed_toggle_state(self):
+        layout = (ROOT / "src/screens/ai_chat/AiChatScreen_Layout.cpp").read_text(encoding="utf-8")
+        screen = (ROOT / "src/screens/ai_chat/AiChatScreen.cpp").read_text(encoding="utf-8")
+        toggled = layout[layout.index("connect(bar_, &CB::action_toggled"):
+                         layout.index("connect(bar_, &CB::command_submitted")]
+        restored = screen[screen.index("void AiChatScreen::restore_state"):
+                          screen.index("// ── IGroupLinked")]
+
+        self.assertIn("update_status();", toggled)
+        self.assertIn("update_status();", restored)
+
     def test_selected_agent_profiles_share_runtime_provider_policy(self):
         header = (ROOT / "src/storage/repositories/LlmProfileRepository.h").read_text(encoding="utf-8")
         source = (ROOT / "src/storage/repositories/LlmProfileRepository.cpp").read_text(encoding="utf-8")

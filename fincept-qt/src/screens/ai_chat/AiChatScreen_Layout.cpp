@@ -202,6 +202,7 @@ void AiChatScreen::build_command_bar() {
             return;
         }
         context_rail_->set_tool_policy(tools_on_, nav_on_);
+        update_status();
         ScreenStateManager::instance().notify_changed(this);
     });
     connect(bar_, &CB::command_submitted, this, [this](const QString& text) {
