@@ -7,6 +7,7 @@
 
 #include "core/config/AppConfig.h"
 #include "core/logging/Logger.h"
+#include "core/privacy/LogRedact.h"
 #include "datahub/DataHub.h"
 #include "datahub/DataHubMetaTypes.h"
 #include "network/http/HttpClient.h"
@@ -134,7 +135,7 @@ void NewsService::connect_live_feed(const QString& ws_url) {
                 if (epoch != live_epoch_)
                     return;
                 const QString text = live_ws_ ? live_ws_->errorString() : QString();
-                LOG_WARN("NewsService", "WebSocket live feed error: " + text);
+                LOG_WARN("NewsService", "WebSocket live feed error: " + privacy::redact_text(text));
                 if (news_ws_handshake_refused(error, text)) {
                     LOG_WARN("NewsService", "WebSocket live feed: server refused the handshake — not retrying");
                     disconnect_live_feed(); // bumps the epoch: the trailing `disconnected` is ignored

@@ -278,6 +278,17 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertNotIn('"quote_names failed: " + result.error', data)
         self.assertNotIn('"public/local search failed: " + result.error', search)
 
+    def test_news_diagnostics_redact_feed_and_persistence_errors(self):
+        service = (ROOT / "src/services/news/NewsService.cpp").read_text(encoding="utf-8")
+        live = (ROOT / "src/services/news/NewsService_LiveFeed.cpp").read_text(encoding="utf-8")
+        for source in (service, live):
+            self.assertIn('#include "core/privacy/LogRedact.h"', source)
+        self.assertGreaterEqual(service.count("privacy::redact_text"), 7)
+        self.assertIn("privacy::redact_text(text)", live)
+        self.assertNotIn('{"error", reason}', service)
+        self.assertNotIn('"WebSocket live feed error: " + text', live)
+        self.assertNotIn('"Failed to persist BYO analysis: " + QString::fromStdString', service)
+
     def test_macro_and_geopolitics_services_check_firewall(self):
         geopolitics = (ROOT / "src/services/geopolitics/GeopoliticsService.cpp").read_text(encoding="utf-8")
         macro = (ROOT / "src/services/economics/FinceptMacroService.cpp").read_text(encoding="utf-8")

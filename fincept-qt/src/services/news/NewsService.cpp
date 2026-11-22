@@ -12,6 +12,7 @@
 
 #include "core/logging/Logger.h"
 #include "core/metrics/LocalUsageMetrics.h"
+#include "core/privacy/LogRedact.h"
 #include "datahub/DataHub.h"
 #include "datahub/DataHubMetaTypes.h"
 #include "network/http/HttpClient.h"
@@ -177,7 +178,8 @@ void NewsService::persist_articles_async(const QVector<NewsArticle>& articles) {
     (void)QtConcurrent::run([articles]() {
         auto r = fincept::NewsArticleRepository::instance().upsert_batch(articles);
         if (r.is_err())
-            LOG_WARN("NewsService", "Persisting articles failed: " + QString::fromStdString(r.error()));
+            LOG_WARN("NewsService",
+                     "Persisting articles failed: " + privacy::redact_text(QString::fromStdString(r.error())));
         record_volume_history();
     });
 }
@@ -206,7 +208,8 @@ void NewsService::record_volume_history() {
             rows.append({h, QStringLiteral("all"), QString(), 0, 0, 0.0});
     auto w = analytics.record_volume(rows);
     if (w.is_err())
-        LOG_WARN("NewsService", "Recording volume history failed: " + QString::fromStdString(w.error()));
+        LOG_WARN("NewsService",
+                 "Recording volume history failed: " + privacy::redact_text(QString::fromStdString(w.error())));
     // Keep ~5 weeks of hourly history (the baselines read 7 days, charts 30).
     if ((now / 3600) % 24 == 0)
         (void)analytics.prune_volume(now - 35LL * 86400);
@@ -237,9 +240,10 @@ QVector<NewsArticle> NewsService::parse_feed_payload(const QByteArray& data, int
                                                          {"source", feed.source},
                                                          {"status", http_code},
                                                          {"bytes", data.size()},
-                                                         {"error", reason}}));
+                                                         {"error", privacy::redact_text(reason)}}));
         else
-            LOG_DEBUG("NewsService", logf("Feed still failing", {{"feed", feed.id}, {"error", reason}}));
+            LOG_DEBUG("NewsService",
+                      logf("Feed still failing", {{"feed", feed.id}, {"error", privacy::redact_text(reason)}}));
     };
     if (ok) {
         // HTML error pages (Akamai access-denied, Cloudflare captcha) would
@@ -388,7 +392,8 @@ void NewsService::persist_feed_health() {
     (void)QtConcurrent::run([rows]() {
         auto r = fincept::NewsAnalyticsRepository::instance().save_feed_health(rows);
         if (r.is_err())
-            LOG_WARN("NewsService", "Saving feed health failed: " + QString::fromStdString(r.error()));
+            LOG_WARN("NewsService",
+                     "Saving feed health failed: " + privacy::redact_text(QString::fromStdString(r.error())));
     });
 }
 
@@ -746,7 +751,8 @@ void NewsService::load_recent_from_db(qint64 since_ts, int limit, ArticlesCallba
         if (ok)
             rows = r.value();
         else
-            LOG_WARN("NewsService", "Loading stored articles failed: " + QString::fromStdString(r.error()));
+            LOG_WARN("NewsService",
+                     "Loading stored articles failed: " + privacy::redact_text(QString::fromStdString(r.error())));
         const qint64 now = QDateTime::currentSecsSinceEpoch();
         // Rows stored by older builds may carry a future time (feeds that
         // mislabel their zone used to be clamped to the fetch time, and items
@@ -895,7 +901,8 @@ void NewsService::analyze_article(const QString& url, AnalysisCallback cb, const
                 const QString json = QString::fromUtf8(QJsonDocument(data).toJson(QJsonDocument::Compact));
                 auto wr = fincept::NewsArticleRepository::instance().save_analysis(url, json);
                 if (wr.is_err())
-                    LOG_WARN("NewsService", "Failed to persist BYO analysis: " + QString::fromStdString(wr.error()));
+                    LOG_WARN("NewsService", "Failed to persist BYO analysis: " +
+                                                privacy::redact_text(QString::fromStdString(wr.error())));
             }
         }
 
