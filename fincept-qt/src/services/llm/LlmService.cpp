@@ -21,6 +21,7 @@
 #include "services/llm/LlmErrors.h"
 #include "services/llm/LlmRequestPolicy.h"
 #include "services/llm/LlmSummaryPolicy.h"
+#include "services/llm/LlmTransportPolicy.h"
 #include "services/llm/LlmUsage.h"
 #include "services/llm/ModelCatalog.h"
 #include "services/llm/ModelRouter.h"
@@ -1451,6 +1452,20 @@ LlmResponse LlmService::do_streaming_request(const QString& user_message,
     // Gemini uses :streamGenerateContent, Fincept uses async submit/poll — neither
     // fits this OpenAI-compat SSE path. Fall back to do_request and emit as one chunk.
     if (provider_ == "gemini" || provider_ == "google" || provider_ == "fincept") {
+        detail::ProgressEmitterGuard pg([on_chunk](const QString& s) { on_chunk(s, false); });
+        auto resp = do_request(user_message, history);
+        if (resp.success && !resp.content.isEmpty())
+            on_chunk(resp.content, false);
+        on_chunk("", true);
+        return resp;
+    }
+
+    // The SSE parser can identify a structured tool call but cannot continue
+    // it with the provider's full message object. Its old fallback aborted that
+    // already-billed generation and resent the whole turn through do_request().
+    // Start tool-enabled turns in the bounded tool loop instead; tool-free chat
+    // keeps token-by-token streaming.
+    if (!should_stream_initial_request(detail::effective_tools_enabled(tools_enabled_))) {
         detail::ProgressEmitterGuard pg([on_chunk](const QString& s) { on_chunk(s, false); });
         auto resp = do_request(user_message, history);
         if (resp.success && !resp.content.isEmpty())

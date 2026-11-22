@@ -1,5 +1,6 @@
 #include "screens/ai_chat/AiChatEffortPolicy.h"
 #include "services/llm/DeepSeekRequestPolicy.h"
+#include "services/llm/LlmTransportPolicy.h"
 
 #include <QtTest>
 
@@ -13,6 +14,7 @@ class TestAiChatEffortPolicy : public QObject {
     void byo_high_effort_mentions_provider_usage_not_fincept_credits();
     void metered_fincept_high_effort_mentions_fincept_credits();
     void deepseek_effort_builds_current_thinking_fields();
+    void tool_calls_use_a_single_request_transport();
 };
 
 void TestAiChatEffortPolicy::ordinary_effort_has_no_usage_warning() {
@@ -82,6 +84,11 @@ void TestAiChatEffortPolicy::deepseek_effort_builds_current_thinking_fields() {
     QCOMPARE(request.value(QStringLiteral("reasoning_effort")).toString(), QStringLiteral("high"));
     QCOMPARE(request.value(QStringLiteral("thinking")).toObject().value(QStringLiteral("type")).toString(),
              QStringLiteral("enabled"));
+}
+
+void TestAiChatEffortPolicy::tool_calls_use_a_single_request_transport() {
+    QVERIFY(!fincept::ai_chat::should_stream_initial_request(true));
+    QVERIFY(fincept::ai_chat::should_stream_initial_request(false));
 }
 
 QTEST_GUILESS_MAIN(TestAiChatEffortPolicy)
