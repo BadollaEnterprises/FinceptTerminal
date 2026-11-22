@@ -541,13 +541,20 @@ def fixed_income(payload: Mapping[str, Any]) -> Dict[str, Any]:
     coupon_rate = _finite(payload.get("coupon_rate", 0), "coupon_rate")
     years = _finite(payload.get("years"), "years")
     yield_rate = _finite(payload.get("yield_rate"), "yield_rate")
-    frequency = int(payload.get("frequency", 2))
-    if face <= 0 or years <= 0 or frequency <= 0 or yield_rate <= -frequency:
+    frequency_value = _finite(payload.get("frequency", 2), "frequency")
+    if frequency_value <= 0 or not frequency_value.is_integer():
+        raise ValueError("frequency must be a positive integer")
+    frequency = int(frequency_value)
+    if face <= 0 or years <= 0 or yield_rate <= -frequency:
         raise ValueError("face_value, years and frequency must be positive and yield must be valid")
     periods_float = years * frequency
     periods = round(periods_float)
     if not math.isclose(periods_float, periods, rel_tol=0, abs_tol=1e-9):
         raise ValueError("years times frequency must be a whole number of periods")
+    if periods < 1:
+        raise ValueError("fixed-income schedule must contain at least one period")
+    if periods > 10_000:
+        raise ValueError("fixed-income schedule supports at most 10000 periods")
     periodic_yield = yield_rate / frequency
     coupon = face * coupon_rate / frequency
     cashflows = [coupon] * periods

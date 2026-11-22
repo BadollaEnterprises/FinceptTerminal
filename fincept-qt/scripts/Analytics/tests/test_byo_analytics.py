@@ -212,6 +212,13 @@ class ByoAnalyticsTest(unittest.TestCase):
         self.assertGreater(result["convexity"], 0)
         self.assertGreater(result["dv01"], 0)
 
+    def test_fixed_income_bounds_and_validates_cashflow_schedule(self):
+        mod = load_module()
+        with self.assertRaisesRegex(ValueError, "frequency must be a positive integer"):
+            mod.fixed_income({"years": 2, "yield_rate": 0.05, "frequency": 2.5})
+        with self.assertRaisesRegex(ValueError, "at most 10000 periods"):
+            mod.fixed_income({"years": 10001, "yield_rate": 0.05, "frequency": 1})
+
     def test_cli_capabilities_is_machine_readable_and_marks_data_limits(self):
         if not SCRIPT.exists():
             self.fail(f"BYO analytics script is missing: {SCRIPT}")
