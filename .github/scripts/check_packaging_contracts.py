@@ -195,7 +195,7 @@ def main() -> int:
     )
     require(
         release_text,
-        "'^(vcruntime|msvcp|concrt|vccorlib).*\\.dll$'",
+        "'^(vcruntime|msvcp|concrt|vccorlib|vcomp|vcamp).*\\.dll$'",
         "Windows release closure must require MSVC runtimes inside the artifact",
         failures,
     )

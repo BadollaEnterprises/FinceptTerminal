@@ -430,7 +430,7 @@ jobs:
               # VC runtimes are application redistributables, not Windows OS
               # components. Require them in the payload even when the CI host
               # happens to have an x64 copy installed in System32.
-              if ($low -match '^(vcruntime|msvcp|concrt|vccorlib).*\.dll$') {
+              if ($low -match '^(vcruntime|msvcp|concrt|vccorlib|vcomp|vcamp).*\.dll$') {
                 $missing.Add($dep); continue
               }
               if (Test-Path (Join-Path $system32 $dep)) { continue }              # Windows-provided

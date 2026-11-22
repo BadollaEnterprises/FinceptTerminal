@@ -11,7 +11,14 @@ from pathlib import Path
 
 
 DependencyReader = Callable[[Path], Iterable[str]]
-MSVC_RUNTIME_PREFIXES = ("vcruntime", "msvcp", "concrt", "vccorlib")
+MSVC_RUNTIME_PREFIXES = (
+    "vcruntime",
+    "msvcp",
+    "concrt",
+    "vccorlib",
+    "vcomp",
+    "vcamp",
+)
 
 
 def is_msvc_runtime(name: str) -> bool:

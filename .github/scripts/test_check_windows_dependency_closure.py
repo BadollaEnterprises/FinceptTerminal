@@ -51,6 +51,28 @@ class WindowsDependencyClosureTest(unittest.TestCase):
                 ["FinceptTerminal.exe imports unstaged MSVC runtime vcruntime140_1.dll"],
             )
 
+    def test_requires_visual_cpp_openmp_runtime_inside_bundle(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            bundle = root / "dist"
+            system32 = root / "System32"
+            bundle.mkdir()
+            system32.mkdir()
+            executable = bundle / "FinceptTerminal.exe"
+            executable.touch()
+            (system32 / "vcomp140.dll").touch()
+
+            failures = CLOSURE.check_dependency_closure(
+                bundle,
+                system32,
+                lambda path: ["vcomp140.dll"] if path == executable else [],
+            )
+
+            self.assertEqual(
+                failures,
+                ["FinceptTerminal.exe imports unstaged MSVC runtime vcomp140.dll"],
+            )
+
     def test_accepts_bundled_runtime_and_windows_system_dependency(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
