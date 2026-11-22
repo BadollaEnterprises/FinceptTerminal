@@ -216,28 +216,16 @@ void CreateAgentPanel::load_profile_combo() {
 void CreateAgentPanel::refresh_llm_pill() {
     const QString profile_id = llm_profile_combo_->currentData().toString();
     ResolvedLlmProfile resolved;
-    if (!profile_id.isEmpty()) {
-        const auto pr2 = LlmProfileRepository::instance().list_profiles();
-        const auto profiles2 = pr2.is_ok() ? pr2.value() : QVector<LlmProfile>{};
-        for (const auto& p : profiles2) {
-            if (p.id == profile_id) {
-                resolved.profile_id = p.id;
-                resolved.profile_name = p.name;
-                resolved.provider = p.provider;
-                resolved.model_id = p.model_id;
-                resolved.api_key = p.api_key;
-                resolved.base_url = p.base_url;
-                resolved.temperature = p.temperature;
-                resolved.max_tokens = p.max_tokens;
-                resolved.system_prompt = p.system_prompt;
-                break;
-            }
-        }
-    }
-    if (resolved.provider.isEmpty())
+    if (!profile_id.isEmpty())
+        resolved = LlmProfileRepository::instance().resolve_profile_id(profile_id);
+    if (resolved.provider.isEmpty() && resolved.config_error.isEmpty())
         resolved = ai_chat::LlmService::instance().resolve_profile("agent", editing_id_);
 
-    if (!resolved.provider.isEmpty()) {
+    if (!resolved.config_error.isEmpty()) {
+        llm_resolved_lbl_->setText(resolved.config_error.left(160));
+        llm_resolved_lbl_->setStyleSheet(
+            QString("color:%1;font-size:" + fincept::ui::fonts::px(-4) + "px;padding:1px 0 4px 0;").arg(ui::colors::DANGER()));
+    } else if (!resolved.provider.isEmpty()) {
         QString text = resolved.provider.toUpper() + " / " + resolved.model_id;
         if (text.length() > 55)
             text = text.left(53) + "..";

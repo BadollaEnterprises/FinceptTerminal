@@ -531,20 +531,19 @@ void WorkflowsViewPanel::setup_connections() {
         const QString pid = llm_profile_combo_->currentData().toString();
         if (pid.isEmpty()) {
             auto resolved = ai_chat::LlmService::instance().resolve_profile("workflow", {});
-            if (!resolved.provider.isEmpty())
+            if (!resolved.config_error.isEmpty())
+                llm_resolved_lbl_->setText(resolved.config_error.left(160));
+            else if (!resolved.provider.isEmpty())
                 llm_resolved_lbl_->setText(resolved.provider.toUpper() + " / " + resolved.model_id +
                                            tr(" (inherited)"));
             else
                 llm_resolved_lbl_->setText(tr("No provider — Settings > LLM Config"));
         } else {
-            const auto pr2 = LlmProfileRepository::instance().list_profiles();
-            const auto profs = pr2.is_ok() ? pr2.value() : QVector<LlmProfile>{};
-            for (const auto& p : profs) {
-                if (p.id == pid) {
-                    llm_resolved_lbl_->setText(p.provider.toUpper() + " / " + p.model_id);
-                    break;
-                }
-            }
+            const auto resolved = LlmProfileRepository::instance().resolve_profile_id(pid);
+            if (!resolved.config_error.isEmpty())
+                llm_resolved_lbl_->setText(resolved.config_error.left(160));
+            else
+                llm_resolved_lbl_->setText(resolved.provider.toUpper() + " / " + resolved.model_id);
         }
     });
     // Trigger once to populate resolved label

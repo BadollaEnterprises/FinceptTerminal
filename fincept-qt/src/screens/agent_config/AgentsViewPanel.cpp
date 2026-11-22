@@ -1387,29 +1387,13 @@ void AgentsViewPanel::refresh_llm_pill() {
         // Resolve via assignment chain (entity → type-default → global → legacy)
         resolved = ai_chat::LlmService::instance().resolve_profile("agent", agent_id);
     } else {
-        // User explicitly chose a profile — look it up directly
-        const auto pr2 = LlmProfileRepository::instance().list_profiles();
-        const auto profiles = pr2.is_ok() ? pr2.value() : QVector<LlmProfile>{};
-        for (const auto& p : profiles) {
-            if (p.id == profile_id) {
-                resolved.profile_id = p.id;
-                resolved.profile_name = p.name;
-                resolved.provider = p.provider;
-                resolved.model_id = p.model_id;
-                resolved.api_key = p.api_key;
-                resolved.base_url = p.base_url;
-                resolved.temperature = p.temperature;
-                resolved.max_tokens = p.max_tokens;
-                resolved.system_prompt = p.system_prompt;
-                break;
-            }
-        }
-        // Fallback to resolution if not found
-        if (resolved.profile_id.isEmpty())
-            resolved = ai_chat::LlmService::instance().resolve_profile("agent", agent_id);
+        resolved = LlmProfileRepository::instance().resolve_profile_id(profile_id);
     }
 
-    if (!resolved.provider.isEmpty()) {
+    if (!resolved.config_error.isEmpty()) {
+        llm_resolved_lbl_->setText(resolved.config_error.left(160));
+        llm_resolved_lbl_->setStyleSheet(QString("color:%1;font-size:" + fincept::ui::fonts::px(-4) + "px;padding:2px 0;").arg(ui::colors::DANGER()));
+    } else if (!resolved.provider.isEmpty()) {
         QString text = resolved.provider.toUpper() + " / " + resolved.model_id;
         if (text.length() > 60)
             text = text.left(58) + "..";
@@ -1422,7 +1406,7 @@ void AgentsViewPanel::refresh_llm_pill() {
         llm_resolved_lbl_->setText(tr("No provider configured — go to Settings > LLM Config"));
         llm_resolved_lbl_->setStyleSheet(QString("color:%1;font-size:" + fincept::ui::fonts::px(-4) + "px;padding:2px 0;").arg(ui::colors::DANGER()));
     }
-    test_llm_ok_ = !resolved.provider.isEmpty();
+    test_llm_ok_ = resolved.config_error.isEmpty() && !resolved.provider.isEmpty();
     refresh_test_preview();
 }
 

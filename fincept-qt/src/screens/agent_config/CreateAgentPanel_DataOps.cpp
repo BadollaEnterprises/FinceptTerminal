@@ -264,25 +264,9 @@ QJsonObject CreateAgentPanel::build_config_json() const {
 
     const QString profile_id = llm_profile_combo_->currentData().toString();
     ResolvedLlmProfile resolved;
-    if (!profile_id.isEmpty()) {
-        const auto pr3 = LlmProfileRepository::instance().list_profiles();
-        const auto profiles3 = pr3.is_ok() ? pr3.value() : QVector<LlmProfile>{};
-        for (const auto& p : profiles3) {
-            if (p.id == profile_id) {
-                resolved.profile_id = p.id;
-                resolved.profile_name = p.name;
-                resolved.provider = p.provider;
-                resolved.model_id = p.model_id;
-                resolved.api_key = p.api_key;
-                resolved.base_url = p.base_url;
-                resolved.temperature = p.temperature;
-                resolved.max_tokens = p.max_tokens;
-                resolved.system_prompt = p.system_prompt;
-                break;
-            }
-        }
-    }
-    if (resolved.provider.isEmpty())
+    if (!profile_id.isEmpty())
+        resolved = LlmProfileRepository::instance().resolve_profile_id(profile_id);
+    if (resolved.provider.isEmpty() && resolved.config_error.isEmpty())
         resolved = ai_chat::LlmService::instance().resolve_profile("agent", editing_id_);
     config["model"] = ai_chat::LlmService::profile_to_json(resolved);
 

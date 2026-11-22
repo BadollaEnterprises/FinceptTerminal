@@ -539,28 +539,16 @@ void TeamsViewPanel::load_team_profile_combo() {
 void TeamsViewPanel::refresh_team_llm_label() {
     const QString profile_id = team_profile_combo_->currentData().toString();
     ResolvedLlmProfile resolved;
-    if (!profile_id.isEmpty()) {
-        const auto pr2 = LlmProfileRepository::instance().list_profiles();
-        const auto profiles2 = pr2.is_ok() ? pr2.value() : QVector<LlmProfile>{};
-        for (const auto& p : profiles2) {
-            if (p.id == profile_id) {
-                resolved.profile_id = p.id;
-                resolved.profile_name = p.name;
-                resolved.provider = p.provider;
-                resolved.model_id = p.model_id;
-                resolved.api_key = p.api_key;
-                resolved.base_url = p.base_url;
-                resolved.temperature = p.temperature;
-                resolved.max_tokens = p.max_tokens;
-                resolved.system_prompt = p.system_prompt;
-                break;
-            }
-        }
-    }
-    if (resolved.provider.isEmpty())
+    if (!profile_id.isEmpty())
+        resolved = LlmProfileRepository::instance().resolve_profile_id(profile_id);
+    if (resolved.provider.isEmpty() && resolved.config_error.isEmpty())
         resolved = ai_chat::LlmService::instance().resolve_profile("team_coordinator", {});
 
-    if (!resolved.provider.isEmpty()) {
+    if (!resolved.config_error.isEmpty()) {
+        team_resolved_lbl_->setText(resolved.config_error.left(160));
+        team_resolved_lbl_->setStyleSheet(
+            QString("color:%1;font-size:" + fincept::ui::fonts::px(-4) + "px;padding:2px 0;").arg(ui::colors::DANGER()));
+    } else if (!resolved.provider.isEmpty()) {
         QString text = resolved.provider.toUpper() + " / " + resolved.model_id;
         if (text.length() > 60)
             text = text.left(58) + "..";

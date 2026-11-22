@@ -25,6 +25,9 @@ LOCAL_AGENT_ENGINE = MODULE.parents[3] / "src" / "services" / "agent_tasks" / "L
 AGENTS_PANEL = MODULE.parents[3] / "src" / "screens" / "agent_config" / "AgentsViewPanel.cpp"
 TEAMS_PANEL = MODULE.parents[3] / "src" / "screens" / "agent_config" / "TeamsViewPanel.cpp"
 AGENT_NODES = MODULE.parents[3] / "src" / "services" / "workflow" / "nodes" / "AgentNodes.cpp"
+CREATE_AGENT = MODULE.parents[3] / "src" / "screens" / "agent_config" / "CreateAgentPanel.cpp"
+CREATE_AGENT_DATA = CREATE_AGENT.with_name("CreateAgentPanel_DataOps.cpp")
+WORKFLOWS_PANEL = CREATE_AGENT.with_name("WorkflowsViewPanel.cpp")
 RDAGENT_CLI = MODULE.parent.parent / "rdagents" / "cli.py"
 RDAGENT_LOOPS = RDAGENT_CLI.with_name("loops.py")
 
@@ -149,6 +152,22 @@ class AgentProviderPolicyTest(unittest.TestCase):
         self.assertIn("resolve_profile_id(coord_profile_id)", run)
         self.assertIn("coord.config_error.isEmpty()", run)
         self.assertIn("member_profile.config_error.isEmpty()", run)
+
+    def test_agent_profile_labels_and_editor_use_checked_profile_resolution(self):
+        for path, profile_var in (
+            (AGENTS_PANEL, "profile_id"),
+            (TEAMS_PANEL, "profile_id"),
+            (CREATE_AGENT, "profile_id"),
+            (CREATE_AGENT_DATA, "profile_id"),
+            (WORKFLOWS_PANEL, "pid"),
+        ):
+            with self.subTest(source=path.name):
+                source = path.read_text(encoding="utf-8")
+                self.assertIn(f"resolve_profile_id({profile_var})", source)
+                self.assertIn("config_error", source)
+
+        data = CREATE_AGENT_DATA.read_text(encoding="utf-8")
+        self.assertIn("resolved.provider.isEmpty() && resolved.config_error.isEmpty()", data)
 
     def test_super_agent_normalizes_saved_legacy_model_before_llm_routing(self):
         source = SUPER_AGENT.read_text(encoding="utf-8")
