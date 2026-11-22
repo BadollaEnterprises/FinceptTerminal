@@ -40,7 +40,8 @@ import warnings
 
 from .base_calculator import BaseCalculator, validate_inputs, timing_decorator
 from .exceptions import handle_calculation_error, DataValidationError, CalculationError
-from .runtime_limits import bounded_positive_int, bounded_workload, finite_nonnegative, open_unit_interval
+from .runtime_limits import (bounded_name_list, bounded_positive_int, bounded_workload,
+                             finite_nonnegative, open_unit_interval)
 
 # Forecasting methods offered by generate_forecasts (the CFA Quant panel offers the first six).
 FORECAST_METHODS = ('simple_exponential', 'holt', 'holt_winters', 'arima', 'naive', 'drift',
@@ -524,6 +525,11 @@ class AdvancedQuantAnalyzer(BaseCalculator):
                                      problem_type: str = 'regression',
                                      algorithms: List[str] = ['ridge', 'random_forest']) -> Dict[str, Any]:
         """Comprehensive supervised learning analysis."""
+        try:
+            algorithms = bounded_name_list(algorithms, "algorithms", MAX_METHOD_COUNT)
+        except ValueError as exc:
+            raise DataValidationError(str(exc), "algorithms") from exc
+
         # Validate inputs
         if isinstance(X, pd.DataFrame):
             X = X.values
@@ -704,6 +710,11 @@ class AdvancedQuantAnalyzer(BaseCalculator):
                                        X: Union[np.ndarray, pd.DataFrame],
                                        methods: List[str] = ['pca', 'kmeans']) -> Dict[str, Any]:
         """Unsupervised learning analysis including PCA and clustering."""
+        try:
+            methods = bounded_name_list(methods, "methods", MAX_METHOD_COUNT)
+        except ValueError as exc:
+            raise DataValidationError(str(exc), "methods") from exc
+
         if isinstance(X, pd.DataFrame):
             X = X.values
 
@@ -1046,6 +1057,11 @@ class AdvancedQuantAnalyzer(BaseCalculator):
                                     sampling_methods: List[str] = ['simple', 'stratified', 'systematic']) -> Dict[
         str, Any]:
         """Demonstrate various sampling techniques."""
+        try:
+            sampling_methods = bounded_name_list(sampling_methods, "sampling_methods", MAX_METHOD_COUNT)
+        except ValueError as exc:
+            raise DataValidationError(str(exc), "sampling_methods") from exc
+
         if isinstance(population, pd.DataFrame):
             population_data = population
         else:
@@ -1270,10 +1286,10 @@ class AdvancedQuantAnalyzer(BaseCalculator):
         data = self._validate_returns(data, "data")
         self._check_data_length(data, min_length=5)
 
-        if not isinstance(methods, (list, tuple)) or not methods:
-            raise DataValidationError("methods must be a non-empty list", "methods")
-        if len(methods) > MAX_METHOD_COUNT:
-            raise DataValidationError(f"methods exceeds local limit of {MAX_METHOD_COUNT} entries", "methods")
+        try:
+            methods = bounded_name_list(methods, "methods", MAX_METHOD_COUNT)
+        except ValueError as exc:
+            raise DataValidationError(str(exc), "methods") from exc
 
         try:
             n_resamples = bounded_positive_int(n_resamples, "n_resamples", MAX_SIMULATION_COUNT)

@@ -53,6 +53,21 @@ class QuantRuntimeLimitsTest(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "finite non-negative number"):
                     limits.finite_nonnegative(invalid, "threshold")
 
+    def test_named_operation_lists_are_nonempty_bounded_and_unique(self):
+        limits = load_limits_module()
+        self.assertEqual(
+            limits.bounded_name_list(["ridge", "random_forest"], "algorithms", 10),
+            ["ridge", "random_forest"],
+        )
+        for invalid in (None, [], "ridge", [""], [1]):
+            with self.subTest(invalid=invalid):
+                with self.assertRaises(ValueError):
+                    limits.bounded_name_list(invalid, "algorithms", 10)
+        with self.assertRaisesRegex(ValueError, "algorithms exceeds local limit"):
+            limits.bounded_name_list([f"model-{i}" for i in range(11)], "algorithms", 10)
+        with self.assertRaisesRegex(ValueError, "algorithms contains duplicates"):
+            limits.bounded_name_list(["Ridge", " ridge "], "algorithms", 10)
+
     def test_quant_engine_wires_limits_before_expensive_loops(self):
         source = QUANT_MODULES.read_text(encoding="utf-8")
         self.assertIn('bounded_positive_int(horizon, "horizon", MAX_FORECAST_HORIZON)', source)
@@ -64,6 +79,9 @@ class QuantRuntimeLimitsTest(unittest.TestCase):
         self.assertIn('bounded_positive_int(cv_folds, "cv_folds", MAX_CV_FOLDS)', source)
         self.assertIn('open_unit_interval(holdout_fraction, "holdout_fraction")', source)
         self.assertIn('finite_nonnegative(overfitting_threshold, "overfitting_threshold")', source)
+        self.assertIn('bounded_name_list(algorithms, "algorithms", MAX_METHOD_COUNT)', source)
+        self.assertIn('bounded_name_list(methods, "methods", MAX_METHOD_COUNT)', source)
+        self.assertIn('bounded_name_list(sampling_methods, "sampling_methods", MAX_METHOD_COUNT)', source)
 
 
 if __name__ == "__main__":

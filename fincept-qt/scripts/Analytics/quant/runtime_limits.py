@@ -54,3 +54,25 @@ def finite_nonnegative(value, name: str) -> float:
     if not math.isfinite(parsed) or parsed < 0.0:
         raise ValueError(f"{name} must be a finite non-negative number")
     return parsed
+
+
+def bounded_name_list(value, name: str, limit: int) -> list[str]:
+    """Return a small, normalized list of unique operation names."""
+    if not isinstance(value, (list, tuple)) or not value:
+        raise ValueError(f"{name} must be a non-empty list of names")
+    if len(value) > limit:
+        raise ValueError(f"{name} exceeds local limit of {limit} entries")
+
+    normalized = []
+    seen = set()
+    for item in value:
+        if not isinstance(item, str):
+            raise ValueError(f"{name} must contain only names")
+        item = item.strip().lower()
+        if not item or len(item) > 128:
+            raise ValueError(f"{name} contains an invalid name")
+        if item in seen:
+            raise ValueError(f"{name} contains duplicates")
+        seen.add(item)
+        normalized.append(item)
+    return normalized
