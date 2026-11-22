@@ -1,6 +1,7 @@
 #include "trading/AccountManager.h"
 
 #include "core/logging/Logger.h"
+#include "core/privacy/LogRedact.h"
 #include "storage/repositories/AccountRepository.h"
 #include "storage/repositories/SettingsRepository.h"
 #include "storage/secure/SecretMigration.h"
@@ -147,6 +148,13 @@ void AccountManager::reload_from_db() {
 
 void AccountManager::migrate_legacy_credentials() {
     auto flag = SettingsRepository::instance().get("migration.accounts_v1");
+    if (flag.is_err()) {
+        const QString detail = privacy::redact_text(QString::fromStdString(flag.error()));
+        LOG_WARN("AccountManager",
+                 QStringLiteral("Legacy credential migration deferred because its marker could not be read: %1")
+                     .arg(detail));
+        return;
+    }
     if (flag.is_ok() && flag.value() == "done")
         return;
 
@@ -306,7 +314,15 @@ void AccountManager::migrate_legacy_credentials() {
                                        .arg(deferred));
         return; // the flag stays unset: retried at the next start
     }
-    SettingsRepository::instance().set("migration.accounts_v1", "done", "system");
+    const auto marked = SettingsRepository::instance().set("migration.accounts_v1", "done", "system");
+    if (marked.is_err()) {
+        const QString detail = privacy::redact_text(QString::fromStdString(marked.error()));
+        LOG_WARN("AccountManager",
+                 QStringLiteral("Legacy credential migration completed but its marker could not be saved; the "
+                                "verified migration will be retried next start: %1")
+                     .arg(detail));
+        return;
+    }
     if (migrated > 0)
         LOG_INFO("AccountManager", QString("Legacy credential migration complete: %1 accounts created").arg(migrated));
 }

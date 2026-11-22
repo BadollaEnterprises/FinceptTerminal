@@ -423,6 +423,15 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertIn("return;", failure)
         self.assertIn("privacy::redact_text", source)
 
+    def test_account_migration_aborts_on_unknown_or_unwritable_marker(self):
+        source = (ROOT / "src/trading/AccountManager.cpp").read_text(encoding="utf-8")
+        migration = source[source.index("void AccountManager::migrate_legacy_credentials()"):source.index("// ── Account CRUD")]
+        self.assertIn("if (flag.is_err())", migration)
+        self.assertIn("const auto marked", migration)
+        self.assertIn("if (marked.is_err())", migration)
+        self.assertIn("privacy::redact_text", migration)
+        self.assertLess(migration.index("if (marked.is_err())"), migration.index("Legacy credential migration complete"))
+
     def test_llm_settings_diagnostics_scrub_storage_errors_and_profile_identity(self):
         providers = (ROOT / "src/screens/settings/LlmConfigSection_Providers.cpp").read_text(encoding="utf-8")
         profiles = (ROOT / "src/screens/settings/LlmConfigSection_Profiles.cpp").read_text(encoding="utf-8")
