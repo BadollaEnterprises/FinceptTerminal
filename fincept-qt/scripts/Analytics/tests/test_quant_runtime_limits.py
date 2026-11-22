@@ -39,6 +39,20 @@ class QuantRuntimeLimitsTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "simulation workload exceeds local limit"):
             limits.bounded_workload("simulation", [100_001, 100_001], 5_000_000)
 
+    def test_probability_and_threshold_guards_reject_nonfinite_boundaries(self):
+        limits = load_limits_module()
+        self.assertEqual(limits.open_unit_interval(0.2, "holdout_fraction"), 0.2)
+        for invalid in (0, 1, -0.1, 1.1, float("nan"), float("inf"), "bad"):
+            with self.subTest(invalid=invalid):
+                with self.assertRaisesRegex(ValueError, "strictly between 0 and 1"):
+                    limits.open_unit_interval(invalid, "holdout_fraction")
+
+        self.assertEqual(limits.finite_nonnegative(0.0, "threshold"), 0.0)
+        for invalid in (-0.1, float("nan"), float("inf"), "bad"):
+            with self.subTest(invalid=invalid):
+                with self.assertRaisesRegex(ValueError, "finite non-negative number"):
+                    limits.finite_nonnegative(invalid, "threshold")
+
     def test_quant_engine_wires_limits_before_expensive_loops(self):
         source = QUANT_MODULES.read_text(encoding="utf-8")
         self.assertIn('bounded_positive_int(horizon, "horizon", MAX_FORECAST_HORIZON)', source)
@@ -47,6 +61,9 @@ class QuantRuntimeLimitsTest(unittest.TestCase):
         self.assertIn('bounded_positive_int(n_simulations, "n_simulations", MAX_SIMULATION_COUNT)', source)
         self.assertGreaterEqual(source.count('bounded_workload("simulation"'), 2)
         self.assertIn('bounded_workload("resampling"', source)
+        self.assertIn('bounded_positive_int(cv_folds, "cv_folds", MAX_CV_FOLDS)', source)
+        self.assertIn('open_unit_interval(holdout_fraction, "holdout_fraction")', source)
+        self.assertIn('finite_nonnegative(overfitting_threshold, "overfitting_threshold")', source)
 
 
 if __name__ == "__main__":

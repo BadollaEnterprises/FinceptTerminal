@@ -32,3 +32,25 @@ def bounded_workload(name: str, factors: Iterable[int], limit: int) -> int:
             raise ValueError(f"{name} workload exceeds local limit of {limit}")
         total *= factor
     return total
+
+
+def open_unit_interval(value, name: str) -> float:
+    """Return a finite number strictly between zero and one."""
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError(f"{name} must be strictly between 0 and 1") from None
+    if not math.isfinite(parsed) or not 0.0 < parsed < 1.0:
+        raise ValueError(f"{name} must be strictly between 0 and 1")
+    return parsed
+
+
+def finite_nonnegative(value, name: str) -> float:
+    """Return a finite number greater than or equal to zero."""
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError(f"{name} must be a finite non-negative number") from None
+    if not math.isfinite(parsed) or parsed < 0.0:
+        raise ValueError(f"{name} must be a finite non-negative number")
+    return parsed

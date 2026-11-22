@@ -40,7 +40,7 @@ import warnings
 
 from .base_calculator import BaseCalculator, validate_inputs, timing_decorator
 from .exceptions import handle_calculation_error, DataValidationError, CalculationError
-from .runtime_limits import bounded_positive_int, bounded_workload
+from .runtime_limits import bounded_positive_int, bounded_workload, finite_nonnegative, open_unit_interval
 
 # Forecasting methods offered by generate_forecasts (the CFA Quant panel offers the first six).
 FORECAST_METHODS = ('simple_exponential', 'holt', 'holt_winters', 'arima', 'naive', 'drift',
@@ -53,6 +53,7 @@ CLASSIFICATION_MODELS = ('logistic', 'ridge', 'svc', 'knn', 'decision_tree', 'ra
 # useful for research while preventing a malformed request from allocating an
 # enormous forecast or running billions of random draws on the user's machine.
 MAX_FORECAST_HORIZON = 10_000
+MAX_CV_FOLDS = 100
 MAX_SIMULATION_COUNT = 100_000
 MAX_SAMPLE_SIZE = 1_000_000
 MAX_SAMPLE_SIZE_COUNT = 100
@@ -853,7 +854,12 @@ class AdvancedQuantAnalyzer(BaseCalculator):
         elif problem_type not in ('regression', 'classification'):
             raise DataValidationError(f"Invalid problem_type: {problem_type}", "problem_type")
 
-        cv_folds = int(cv_folds)
+        try:
+            cv_folds = bounded_positive_int(cv_folds, "cv_folds", MAX_CV_FOLDS)
+            holdout_fraction = open_unit_interval(holdout_fraction, "holdout_fraction")
+            overfitting_threshold = finite_nonnegative(overfitting_threshold, "overfitting_threshold")
+        except ValueError as exc:
+            raise DataValidationError(str(exc), "model_evaluation") from exc
         if cv_folds < 2:
             raise DataValidationError(f"cv_folds must be at least 2, got {cv_folds}", "cv_folds")
 
