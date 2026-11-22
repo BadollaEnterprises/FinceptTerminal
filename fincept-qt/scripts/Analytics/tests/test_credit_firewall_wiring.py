@@ -460,6 +460,28 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertGreaterEqual(source.count("hydrate_profile_key("), 5)
         self.assertGreaterEqual(source.count("if (hydrated.is_err())"), 4)
 
+    def test_mcp_reads_propagate_environment_failures(self):
+        source = (ROOT / "src/storage/repositories/McpServerRepository.cpp").read_text(encoding="utf-8")
+        self.assertIn("Result<void> hydrate_mcp_env", source)
+        self.assertIn("Could not read secure storage for MCP server", source)
+        mapper = source[source.index("McpServer McpServerRepository::map_row"):
+                        source.index("static const char* kCols")]
+        self.assertNotIn("SecureStorage::instance().read", mapper)
+        self.assertGreaterEqual(source.count("hydrate_mcp_env("), 3)
+        self.assertGreaterEqual(source.count("if (hydrated.is_err())"), 2)
+
+    def test_mcp_reload_preserves_live_configuration_on_read_failure(self):
+        source = (ROOT / "src/mcp/McpManager.cpp").read_text(encoding="utf-8")
+        initialize = source[source.index("void McpManager::initialize()"):
+                            source.index("std::vector<McpServerConfig> McpManager::get_servers")]
+        self.assertLess(initialize.index("list_all()"), initialize.index("configs_ = std::move(loaded)"))
+        self.assertIn("QHash<QString, McpServerConfig> loaded", initialize)
+        self.assertIn("loaded.insert(cfg.id, cfg)", initialize)
+        self.assertNotIn("configs_.clear()", initialize)
+        swapped = initialize.index("configs_ = std::move(loaded)")
+        emitted = initialize.index("emit servers_changed()")
+        self.assertIn("}\n    LOG_DEBUG", initialize[swapped:emitted])
+
     def test_deleting_active_provider_selects_deterministic_byo_fallback(self):
         source = (ROOT / "src/screens/settings/LlmConfigSection_Providers.cpp").read_text(encoding="utf-8")
         body = source[source.index("void LlmConfigSection::on_delete_provider()"):

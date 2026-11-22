@@ -11,6 +11,19 @@ namespace {
 QString mcp_env_secret_key(const QString& id) {
     return QStringLiteral("mcp:env:") + id;
 }
+
+Result<void> hydrate_mcp_env(McpServer& server) {
+    if (!server.env.isEmpty() || server.id.isEmpty())
+        return Result<void>::ok();
+    const SecretRead sr = SecureStorage::instance().read(mcp_env_secret_key(server.id));
+    if (sr.failed())
+        return Result<void>::err(QString("Could not read secure storage for MCP server '%1': %2")
+                                     .arg(server.name, sr.reason())
+                                     .toStdString());
+    if (sr.found())
+        server.env = sr.value;
+    return Result<void>::ok();
+}
 } // namespace
 
 McpServerRepository& McpServerRepository::instance() {
@@ -19,29 +32,37 @@ McpServerRepository& McpServerRepository::instance() {
 }
 
 McpServer McpServerRepository::map_row(QSqlQuery& q) {
-    McpServer s{q.value(0).toString(), q.value(1).toString(), q.value(2).toString(),  q.value(3).toString(),
-                q.value(4).toString(), q.value(5).toString(), q.value(6).toString(),  q.value(7).toString(),
-                q.value(8).toBool(),   q.value(9).toBool(),   q.value(10).toString(), q.value(11).toString(),
-                q.value(12).toString()};
-    if (s.env.isEmpty() && !s.id.isEmpty()) {
-        // Error ≠ "nothing stored": env stays empty for this load only; save() stores
-        // the env only when one is given, so an unread env is never overwritten.
-        const SecretRead sr = SecureStorage::instance().read(mcp_env_secret_key(s.id));
-        if (sr.found())
-            s.env = sr.value;
-    }
-    return s;
+    return {q.value(0).toString(), q.value(1).toString(), q.value(2).toString(),  q.value(3).toString(),
+            q.value(4).toString(), q.value(5).toString(), q.value(6).toString(),  q.value(7).toString(),
+            q.value(8).toBool(),   q.value(9).toBool(),   q.value(10).toString(), q.value(11).toString(),
+            q.value(12).toString()};
 }
 
 static const char* kCols = "id, name, description, command, args, env, category, icon, enabled, "
                            "auto_start, status, created_at, updated_at";
 
 Result<QVector<McpServer>> McpServerRepository::list_all() {
-    return query_list(QString("SELECT %1 FROM mcp_servers ORDER BY name").arg(kCols), {}, map_row);
+    auto result = query_list(QString("SELECT %1 FROM mcp_servers ORDER BY name").arg(kCols), {}, map_row);
+    if (result.is_err())
+        return result;
+    auto servers = result.value();
+    for (auto& server : servers) {
+        const auto hydrated = hydrate_mcp_env(server);
+        if (hydrated.is_err())
+            return Result<QVector<McpServer>>::err(hydrated.error());
+    }
+    return Result<QVector<McpServer>>::ok(std::move(servers));
 }
 
 Result<McpServer> McpServerRepository::get(const QString& id) {
-    return query_one(QString("SELECT %1 FROM mcp_servers WHERE id = ?").arg(kCols), {id}, map_row);
+    auto result = query_one(QString("SELECT %1 FROM mcp_servers WHERE id = ?").arg(kCols), {id}, map_row);
+    if (result.is_err())
+        return result;
+    auto server = result.value();
+    const auto hydrated = hydrate_mcp_env(server);
+    if (hydrated.is_err())
+        return Result<McpServer>::err(hydrated.error());
+    return Result<McpServer>::ok(std::move(server));
 }
 
 Result<void> McpServerRepository::save(const McpServer& s) {

@@ -33,9 +33,6 @@ McpManager& McpManager::instance() {
 // ============================================================================
 
 void McpManager::initialize() {
-    QMutexLocker lock(&mutex_);
-    configs_.clear();
-
     auto result = McpServerRepository::instance().list_all();
     if (result.is_err()) {
         LOG_WARN(TAG, "Failed to load MCP server configs: " +
@@ -43,6 +40,7 @@ void McpManager::initialize() {
         return;
     }
 
+    QHash<QString, McpServerConfig> loaded;
     for (const auto& srv : result.value()) {
         McpServerConfig cfg;
         cfg.id = srv.id;
@@ -97,10 +95,15 @@ void McpManager::initialize() {
             }
         }
 
-        configs_.insert(cfg.id, cfg);
+        loaded.insert(cfg.id, cfg);
     }
 
-    LOG_DEBUG(TAG, logf("MCP server configs loaded", {{"count", static_cast<qint64>(configs_.size())}}));
+    const qint64 count = static_cast<qint64>(loaded.size());
+    {
+        QMutexLocker lock(&mutex_);
+        configs_ = std::move(loaded);
+    }
+    LOG_DEBUG(TAG, logf("MCP server configs loaded", {{"count", count}}));
     emit servers_changed();
 }
 
