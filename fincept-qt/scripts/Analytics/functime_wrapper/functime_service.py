@@ -60,6 +60,9 @@ except ImportError:
     SCIPY_OK = False
 
 
+MAX_FORECAST_HORIZON = 365
+
+
 # ============================================================================
 # INPUT COERCION + VALIDATION
 # ============================================================================
@@ -242,7 +245,7 @@ def op_forecast(data):
     _require_min_length(values, 30, "values")
 
     model_type = str(data.get("model", "linear")).lower()
-    horizon = max(1, _safe_int(data.get("horizon", 14)))
+    horizon = max(1, min(MAX_FORECAST_HORIZON, _safe_int(data.get("horizon", 14))))
     lags = max(1, _safe_int(data.get("lags", 7)))
     alpha = _safe_float(data.get("alpha"), 1.0)
     l1_ratio = _safe_float(data.get("l1_ratio"), 0.5)
@@ -618,7 +621,7 @@ def op_confidence_intervals(data):
         raise ValidationError("sklearn not installed — cannot build intervals")
     values = _coerce_floats(data.get("values"), "values")
     _require_min_length(values, 30, "values")
-    horizon = max(1, _safe_int(data.get("horizon", 14)))
+    horizon = max(1, min(MAX_FORECAST_HORIZON, _safe_int(data.get("horizon", 14))))
     lags = max(1, _safe_int(data.get("lags", 7)))
     n_boot = max(50, min(1000, _safe_int(data.get("n_boot", 200))))
     confidence = _safe_float(data.get("confidence"), 0.95)

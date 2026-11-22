@@ -12,6 +12,7 @@ LIMITS = ANALYTICS / "quant" / "runtime_limits.py"
 QUANT_MODULES = ANALYTICS / "quant" / "quant_modules_3042.py"
 ECONOMICS_ENGINE = ANALYTICS / "economics" / "analytics_engine.py"
 PORTFOLIO_RISK = ANALYTICS / "portfolioManagement" / "risk_management.py"
+FUNCTIME_SERVICE = ANALYTICS / "functime_wrapper" / "functime_service.py"
 
 
 def load_limits_module():
@@ -111,6 +112,16 @@ class QuantRuntimeLimitsTest(unittest.TestCase):
         self.assertLess(
             method.index("_bounded_monte_carlo_shape("), method.index("rng.normal(")
         )
+
+    def test_functime_forecasts_bound_user_controlled_horizons(self):
+        source = FUNCTIME_SERVICE.read_text(encoding="utf-8")
+        forecast = source[source.index("def op_forecast("):
+                          source.index("def op_anomaly_detection(")]
+        intervals = source[source.index("def op_confidence_intervals("):
+                           source.index("def op_stationarity(")]
+        expected = 'min(MAX_FORECAST_HORIZON, _safe_int(data.get("horizon", 14)))'
+        self.assertIn(expected, forecast)
+        self.assertIn(expected, intervals)
 
 
 if __name__ == "__main__":
