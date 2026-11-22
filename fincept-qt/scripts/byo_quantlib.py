@@ -2710,12 +2710,18 @@ def _correlated_bm(body: Mapping[str, Any]) -> Dict[str, Any]:
             "seed": int(body.get("seed", 42))}
 
 
+def _bounded_sample_count(body: Mapping[str, Any], key: str, default: int) -> int:
+    count = int(body.get(key, default))
+    if not 1 <= count <= 100000:
+        raise ValueError(f"{key} is outside local safety limits")
+    return count
+
+
 def _exact_terminal_gbm(body: Mapping[str, Any]) -> Dict[str, Any]:
     start, drift, volatility, horizon = (_positive(body, "S0"), _number(body, "mu"),
                                          _positive(body, "sigma"), _positive(body, "T"))
-    count, generator = int(body.get("n_paths", 100)), random.Random(int(body.get("seed", 42)))
-    if not 1 <= count <= 100000:
-        raise ValueError("n_paths is outside local safety limits")
+    count = _bounded_sample_count(body, "n_paths", 100)
+    generator = random.Random(int(body.get("seed", 42)))
     samples = [start * math.exp((drift - 0.5 * volatility * volatility) * horizon +
                                 volatility * math.sqrt(horizon) * generator.gauss(0, 1))
                for _ in range(count)]
@@ -2726,7 +2732,8 @@ def _exact_terminal_ou(body: Mapping[str, Any]) -> Dict[str, Any]:
     start, kappa, theta, volatility, horizon = (_number(body, "X0"), _positive(body, "kappa"),
                                                 _number(body, "theta"), _positive(body, "sigma"),
                                                 _positive(body, "T"))
-    count, generator = int(body.get("n_paths", 100)), random.Random(int(body.get("seed", 42)))
+    count = _bounded_sample_count(body, "n_paths", 100)
+    generator = random.Random(int(body.get("seed", 42)))
     mean = theta + (start - theta) * math.exp(-kappa * horizon)
     deviation = volatility * math.sqrt((1 - math.exp(-2 * kappa * horizon)) / (2 * kappa))
     samples = [generator.gauss(mean, deviation) for _ in range(count)]
@@ -2738,7 +2745,8 @@ def _exact_terminal_cir(body: Mapping[str, Any]) -> Dict[str, Any]:
     initial, kappa, theta, volatility, horizon = (max(0.0, _number(body, "r0")), _positive(body, "kappa"),
                                                   _positive(body, "theta"), _positive(body, "sigma"),
                                                   _positive(body, "T"))
-    count, generator = int(body.get("n_paths", 100)), random.Random(int(body.get("seed", 42)))
+    count = _bounded_sample_count(body, "n_paths", 100)
+    generator = random.Random(int(body.get("seed", 42)))
     decay = math.exp(-kappa * horizon)
     scale = volatility * volatility * (1 - decay) / (4 * kappa)
     degrees = 4 * kappa * theta / (volatility * volatility)
@@ -2839,7 +2847,7 @@ def _sobol_samples(body: Mapping[str, Any]) -> Dict[str, Any]:
 
 
 def _antithetic_samples(body: Mapping[str, Any]) -> Dict[str, Any]:
-    count = int(body.get("n", 50))
+    count = _bounded_sample_count(body, "n", 50)
     generator = random.Random(int(body.get("seed", 42)))
     originals = [generator.gauss(0, 1) for _ in range(count)]
     return {"samples": originals + [-value for value in originals], "pairs": count,
@@ -2891,7 +2899,7 @@ def _distribution_samples(body: Mapping[str, Any]) -> Dict[str, Any]:
 
 
 def _jump_samples(body: Mapping[str, Any]) -> Dict[str, Any]:
-    count, deviation = int(body.get("n", 100)), _positive(body, "jump_std")
+    count, deviation = _bounded_sample_count(body, "n", 100), _positive(body, "jump_std")
     mean, name = _number(body, "jump_mean"), str(body.get("distribution", "normal")).lower()
     generator = random.Random(int(body.get("seed", 42)))
     if name == "normal":

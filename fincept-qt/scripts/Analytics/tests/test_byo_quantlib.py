@@ -729,6 +729,19 @@ class ByoQuantLibTest(unittest.TestCase):
             self.assertEqual(answer["meta"]["fincept_credits"], 0)
             self.assertFalse(answer["meta"]["llm_used"])
 
+    def test_stochastic_sample_generators_enforce_local_size_limits(self):
+        mod = load_module()
+        cases = [
+            ("stochastic/exact/ou", {"X0": 0, "kappa": 2, "theta": 0.05, "sigma": 0.1, "T": 1}),
+            ("stochastic/exact/cir", {"r0": 0.05, "kappa": 2, "theta": 0.05, "sigma": 0.1, "T": 1}),
+            ("stochastic/sampling/antithetic", {}),
+            ("stochastic/sampling/jump", {"jump_mean": 0, "jump_std": 0.1}),
+        ]
+        for route, body in cases:
+            with self.subTest(route=route):
+                answer = mod.execute(route, {**body, "n_paths": 0, "n": 0})
+                self.assertIn("outside local safety limits", answer["error"])
+
     def test_all_economics_routes_are_local_and_zero_credit(self):
         mod = load_module()
         routes = {
