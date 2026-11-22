@@ -967,6 +967,19 @@ class ByoQuantLibTest(unittest.TestCase):
                 self.assertIn("forecast steps are outside local limits", answer.get("error", ""))
                 self.assertEqual(answer["meta"]["fincept_credits"], 0)
 
+    def test_credit_metric_bins_are_bounded(self):
+        mod = load_module()
+        cases = (
+            ("ml/credit/woe-binning", {"feature": [1, 2, 3, 4], "target": [0, 1, 0, 1]}),
+            ("ml/credit/calibration", {"y_true": [0, 1, 0, 1], "y_score": [0.1, 0.9, 0.2, 0.8]}),
+        )
+        for route, body in cases:
+            for bins in (0, 101):
+                with self.subTest(route=route, bins=bins):
+                    answer = mod.execute(route, {**body, "n_bins": bins})
+                    self.assertIn("n_bins is outside local limits", answer.get("error", ""))
+                    self.assertEqual(answer["meta"]["fincept_credits"], 0)
+
     def test_sabr_and_flat_surface_routes_return_volatility(self):
         mod = load_module()
         sabr = mod.execute(

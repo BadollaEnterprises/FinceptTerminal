@@ -4201,7 +4201,10 @@ def _woe_binning(body: Mapping[str, Any]) -> Dict[str, Any]:
     feature, target = _vector(body, "feature"), _vector(body, "target")
     if len(feature) != len(target) or any(value not in {0, 1} for value in target):
         raise ValueError("feature and binary target must align")
-    bins = int(body.get("n_bins", 5)); edges = sorted(set(_quantile_value(feature, index / bins) for index in range(bins + 1)))
+    bins = int(body.get("n_bins", 5))
+    if not 2 <= bins <= 100:
+        raise ValueError("n_bins is outside local limits")
+    edges = sorted(set(_quantile_value(feature, index / bins) for index in range(bins + 1)))
     total_good, total_bad = target.count(0.0), target.count(1.0)
     output, information_value = [], 0.0
     for index in range(len(edges) - 1):
@@ -4237,6 +4240,8 @@ def _auc_score(actual: Sequence[int], scores: Sequence[float]) -> float:
 
 def _calibration_metrics(body: Mapping[str, Any]) -> Dict[str, Any]:
     actual, scores = _binary_scores(body); bins = int(body.get("n_bins", 10))
+    if not 2 <= bins <= 100:
+        raise ValueError("n_bins is outside local limits")
     epsilon = 1e-15
     brier = statistics.mean((label - score) ** 2 for label, score in zip(actual, scores))
     log_loss = -statistics.mean(label * math.log(max(epsilon, score)) +
