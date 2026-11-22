@@ -534,7 +534,7 @@ class ToolLoopBudget {
     bool provider_token_budget_exhausted() const {
         return prompt_tokens_exhausted() || completion_tokens_exhausted();
     }
-    bool allows_summary_tool_calls() const { return !provider_token_budget_exhausted(); }
+    bool allows_summary_tool_calls() const { return !exhausted(); }
     qint64 elapsed_ms() const { return timer_.elapsed(); }
 
     /// One line naming which budget ran out and what it cost, for the log and

@@ -267,6 +267,11 @@ int run_tool_selftest() {
             errs << QStringLiteral("a completion-token stop still allowed a summary tool-call follow-up");
         if (token_budget.allows_summary_tool_calls())
             errs << QStringLiteral("a prompt-token stop still allowed a summary tool-call follow-up");
+        ai_chat::detail::ToolLoopBudget round_budget(/*max_rounds=*/1, /*prompt_token_limit=*/32000,
+                                                     /*completion_token_limit=*/12000);
+        round_budget.note_round();
+        if (!round_budget.exhausted() || round_budget.allows_summary_tool_calls())
+            errs << QStringLiteral("a round-limit stop still allowed tools in its final summary");
         if (!output_budget.exhaustion_note().contains(QStringLiteral("12,500")) ||
             !output_budget.exhaustion_note().contains(QStringLiteral("12,000")))
             errs << QStringLiteral("the completion-budget explanation omitted used/limit counts: %1")

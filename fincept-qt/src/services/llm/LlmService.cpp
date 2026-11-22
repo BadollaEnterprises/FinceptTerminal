@@ -1041,41 +1041,32 @@ LlmResponse LlmService::do_request(const QString& user_message, const std::vecto
                 loop_msgs.append(QJsonObject{{"role", "user"}, {"content", more_results}});
             }
             if (resp.content.isEmpty() && resp.error.isEmpty()) {
-                if (ant_budget.provider_token_budget_exhausted()) {
-                    const QString instruction =
-                        QStringLiteral("The provider token budget is spent (%1). Give a concise final answer from "
-                                       "the completed tool evidence. Do not call tools.")
-                            .arg(ant_budget.exhaustion_note());
-                    const QString prompt = bounded_tool_summary_prompt(
-                        loop_msgs, instruction, detail::tool_loop_summary_context_max_bytes());
-                    QJsonObject summary_body{{QStringLiteral("model"), model_},
-                                             {QStringLiteral("messages"),
-                                              QJsonArray{QJsonObject{{QStringLiteral("role"),
-                                                                     QStringLiteral("user")},
-                                                                    {QStringLiteral("content"), prompt}}}},
-                                             {QStringLiteral("max_tokens"),
-                                              std::min(resolved_max_tokens(),
-                                                       detail::tool_loop_summary_max_tokens())}};
-                    auto summary_http = blocking_post(url, summary_body, hdr);
-                    if (summary_http.success) {
-                        const QJsonDocument summary_doc = QJsonDocument::fromJson(summary_http.body);
-                        if (!summary_doc.isNull()) {
-                            const QJsonObject summary_json = summary_doc.object();
-                            resp.content = extract_anthropic_content_text(summary_json["content"].toArray());
-                            LlmResponse summary_usage;
-                            parse_usage(summary_usage, summary_json, provider_);
-                            add_provider_usage(ant_usage, summary_usage);
-                        }
+                const QString instruction =
+                    QStringLiteral("The tool budget is spent (%1). Give a concise final answer from the completed "
+                                   "tool evidence. Do not call tools.")
+                        .arg(ant_budget.exhaustion_note());
+                const QString prompt = bounded_tool_summary_prompt(
+                    loop_msgs, instruction, detail::tool_loop_summary_context_max_bytes());
+                QJsonObject summary_body{{QStringLiteral("model"), model_},
+                                         {QStringLiteral("messages"),
+                                          QJsonArray{QJsonObject{{QStringLiteral("role"), QStringLiteral("user")},
+                                                                {QStringLiteral("content"), prompt}}}},
+                                         {QStringLiteral("max_tokens"),
+                                          std::min(resolved_max_tokens(),
+                                                   detail::tool_loop_summary_max_tokens())}};
+                auto summary_http = blocking_post(url, summary_body, hdr);
+                if (summary_http.success) {
+                    const QJsonDocument summary_doc = QJsonDocument::fromJson(summary_http.body);
+                    if (!summary_doc.isNull()) {
+                        const QJsonObject summary_json = summary_doc.object();
+                        resp.content = extract_anthropic_content_text(summary_json["content"].toArray());
+                        LlmResponse summary_usage;
+                        parse_usage(summary_usage, summary_json, provider_);
+                        add_provider_usage(ant_usage, summary_usage);
                     }
-                    if (resp.content.isEmpty())
-                        resp.error = "Anthropic tool loop ended without an answer — " +
-                                     ant_budget.exhaustion_note();
-                } else {
-                    // Name the budget that ran out. "exceeded maximum rounds" was
-                    // wrong the moment a second budget existed, and it told the user
-                    // nothing actionable either way.
-                    resp.error = "Anthropic tool loop ended without an answer — " + ant_budget.exhaustion_note();
                 }
+                if (resp.content.isEmpty())
+                    resp.error = "Anthropic tool loop ended without an answer — " + ant_budget.exhaustion_note();
             }
         } else {
             resp.content = extract_anthropic_content_text(content);
@@ -1245,40 +1236,38 @@ LlmResponse LlmService::do_request(const QString& user_message, const std::vecto
                 }
 
                 if (resp.content.isEmpty()) {
-                    if (gem_budget.provider_token_budget_exhausted()) {
-                        const QString instruction =
-                            QStringLiteral("The provider token budget is spent (%1). Give a concise final answer "
-                                           "from the completed tool evidence. Do not call tools.")
-                                .arg(gem_budget.exhaustion_note());
-                        const QString prompt = bounded_tool_summary_prompt(
-                            fu_contents, instruction, detail::tool_loop_summary_context_max_bytes());
-                        QJsonObject summary_body{
-                            {QStringLiteral("contents"),
-                             QJsonArray{QJsonObject{
-                                 {QStringLiteral("role"), QStringLiteral("user")},
-                                 {QStringLiteral("parts"),
-                                  QJsonArray{QJsonObject{{QStringLiteral("text"), prompt}}}}}}},
-                            {QStringLiteral("generationConfig"),
-                             QJsonObject{{QStringLiteral("maxOutputTokens"),
-                                          std::min(resolved_max_tokens(),
-                                                   detail::tool_loop_summary_max_tokens())}}}};
-                        auto summary_http = blocking_post(url, summary_body, hdr);
-                        if (summary_http.success) {
-                            const QJsonDocument summary_doc = QJsonDocument::fromJson(summary_http.body);
-                            if (!summary_doc.isNull()) {
-                                const QJsonObject summary_json = summary_doc.object();
-                                const QJsonArray summary_candidates = summary_json["candidates"].toArray();
-                                if (!summary_candidates.isEmpty()) {
-                                    resp.content = extract_gemini_parts_text(
-                                        summary_candidates[0]
-                                            .toObject()["content"]
-                                            .toObject()["parts"]
-                                            .toArray());
-                                }
-                                LlmResponse summary_usage;
-                                parse_usage(summary_usage, summary_json, provider_);
-                                add_provider_usage(gem_usage, summary_usage);
+                    const QString instruction =
+                        QStringLiteral("The tool budget is spent (%1). Give a concise final answer from the "
+                                       "completed tool evidence. Do not call tools.")
+                            .arg(gem_budget.exhaustion_note());
+                    const QString prompt = bounded_tool_summary_prompt(
+                        fu_contents, instruction, detail::tool_loop_summary_context_max_bytes());
+                    QJsonObject summary_body{
+                        {QStringLiteral("contents"),
+                         QJsonArray{QJsonObject{
+                             {QStringLiteral("role"), QStringLiteral("user")},
+                             {QStringLiteral("parts"),
+                              QJsonArray{QJsonObject{{QStringLiteral("text"), prompt}}}}}}},
+                        {QStringLiteral("generationConfig"),
+                         QJsonObject{{QStringLiteral("maxOutputTokens"),
+                                      std::min(resolved_max_tokens(),
+                                               detail::tool_loop_summary_max_tokens())}}}};
+                    auto summary_http = blocking_post(url, summary_body, hdr);
+                    if (summary_http.success) {
+                        const QJsonDocument summary_doc = QJsonDocument::fromJson(summary_http.body);
+                        if (!summary_doc.isNull()) {
+                            const QJsonObject summary_json = summary_doc.object();
+                            const QJsonArray summary_candidates = summary_json["candidates"].toArray();
+                            if (!summary_candidates.isEmpty()) {
+                                resp.content = extract_gemini_parts_text(
+                                    summary_candidates[0]
+                                        .toObject()["content"]
+                                        .toObject()["parts"]
+                                        .toArray());
                             }
+                            LlmResponse summary_usage;
+                            parse_usage(summary_usage, summary_json, provider_);
+                            add_provider_usage(gem_usage, summary_usage);
                         }
                     }
                 }
