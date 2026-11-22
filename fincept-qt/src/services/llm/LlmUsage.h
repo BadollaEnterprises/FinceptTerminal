@@ -4,6 +4,7 @@
 #include <QString>
 
 #include <algorithm>
+#include <limits>
 
 namespace fincept::ai_chat {
 
@@ -14,16 +15,35 @@ struct ProviderUsage {
     int cached_prompt_tokens = 0;
 };
 
+inline int bounded_usage_count(qint64 value) {
+    return static_cast<int>(std::clamp<qint64>(value, 0, std::numeric_limits<int>::max()));
+}
+
+inline ProviderUsage normalize_provider_usage(ProviderUsage usage) {
+    usage.prompt_tokens = bounded_usage_count(usage.prompt_tokens);
+    usage.completion_tokens = bounded_usage_count(usage.completion_tokens);
+    const int measured_total = bounded_usage_count(qint64(usage.prompt_tokens) + usage.completion_tokens);
+    usage.total_tokens = std::max(bounded_usage_count(usage.total_tokens), measured_total);
+    usage.cached_prompt_tokens = std::clamp(usage.cached_prompt_tokens, 0, usage.prompt_tokens);
+    return usage;
+}
+
 /// Sum provider-reported usage over every request in a multi-round turn.
 /// Works for ProviderUsage and LlmResponse (the latter intentionally exposes
 /// the same four accounting fields).
 template <typename Usage>
 inline void add_provider_usage(Usage& total, const Usage& round) {
-    total.prompt_tokens += round.prompt_tokens;
-    total.completion_tokens += round.completion_tokens;
-    total.total_tokens +=
-        round.total_tokens > 0 ? round.total_tokens : round.prompt_tokens + round.completion_tokens;
-    total.cached_prompt_tokens += round.cached_prompt_tokens;
+    const int round_prompt = bounded_usage_count(round.prompt_tokens);
+    const int round_completion = bounded_usage_count(round.completion_tokens);
+    const int round_total = std::max(bounded_usage_count(round.total_tokens),
+                                     bounded_usage_count(qint64(round_prompt) + round_completion));
+    const int round_cached = std::clamp(round.cached_prompt_tokens, 0, round_prompt);
+    total.prompt_tokens = bounded_usage_count(qint64(bounded_usage_count(total.prompt_tokens)) + round_prompt);
+    total.completion_tokens =
+        bounded_usage_count(qint64(bounded_usage_count(total.completion_tokens)) + round_completion);
+    total.total_tokens = bounded_usage_count(qint64(bounded_usage_count(total.total_tokens)) + round_total);
+    total.cached_prompt_tokens =
+        bounded_usage_count(qint64(bounded_usage_count(total.cached_prompt_tokens)) + round_cached);
 }
 
 /// Preserve usage accrued by a multi-request operation on every exit path.
@@ -63,7 +83,7 @@ inline ProviderUsage parse_provider_usage(const QJsonObject& response, const QSt
                                ? usage.value(QStringLiteral("totalTokenCount")).toInt()
                                : out.prompt_tokens + out.completion_tokens;
         out.cached_prompt_tokens = usage.value(QStringLiteral("cachedContentTokenCount")).toInt();
-        return out;
+        return normalize_provider_usage(out);
     }
 
     const QJsonObject usage = response.value(QStringLiteral("usage")).toObject();
@@ -88,7 +108,7 @@ inline ProviderUsage parse_provider_usage(const QJsonObject& response, const QSt
     out.total_tokens = usage.contains(QStringLiteral("total_tokens"))
                            ? usage.value(QStringLiteral("total_tokens")).toInt()
                            : out.prompt_tokens + out.completion_tokens;
-    return out;
+    return normalize_provider_usage(out);
 }
 
 } // namespace fincept::ai_chat

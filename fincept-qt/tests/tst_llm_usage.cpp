@@ -12,6 +12,7 @@ class TestLlmUsage : public QObject {
     void gemini_cached_content_is_preserved();
     void multi_round_usage_includes_every_cache_hit();
     void scoped_usage_survives_early_return();
+    void malformed_usage_cannot_reduce_accounting();
     void cache_hit_percent_is_safe_for_display();
 };
 
@@ -79,6 +80,26 @@ void TestLlmUsage::scoped_usage_survives_early_return() {
     QCOMPARE(response.completion_tokens, 22);
     QCOMPARE(response.total_tokens, 132);
     QCOMPARE(response.cached_prompt_tokens, 84);
+}
+
+void TestLlmUsage::malformed_usage_cannot_reduce_accounting() {
+    const QJsonObject response{{QStringLiteral("usage"),
+                                QJsonObject{{QStringLiteral("prompt_tokens"), -100},
+                                            {QStringLiteral("completion_tokens"), 30},
+                                            {QStringLiteral("total_tokens"), -70},
+                                            {QStringLiteral("prompt_cache_hit_tokens"), 900}}}};
+    const ProviderUsage parsed = parse_provider_usage(response, QStringLiteral("deepseek"));
+    QCOMPARE(parsed.prompt_tokens, 0);
+    QCOMPARE(parsed.completion_tokens, 30);
+    QCOMPARE(parsed.total_tokens, 30);
+    QCOMPARE(parsed.cached_prompt_tokens, 0);
+
+    ProviderUsage total{100, 20, 120, 80};
+    add_provider_usage(total, ProviderUsage{-50, -10, -60, 500});
+    QCOMPARE(total.prompt_tokens, 100);
+    QCOMPARE(total.completion_tokens, 20);
+    QCOMPARE(total.total_tokens, 120);
+    QCOMPARE(total.cached_prompt_tokens, 80);
 }
 
 void TestLlmUsage::cache_hit_percent_is_safe_for_display() {
