@@ -429,7 +429,11 @@ def _public_portfolio(payload: Mapping[str, Any]) -> Dict[str, Any]:
     symbols = [str(value).strip().upper() for value in payload.get("symbols", []) if str(value).strip()]
     if not symbols:
         raise ValueError("symbols are required")
+    if len(set(symbols)) != len(symbols):
+        raise ValueError("portfolio risk does not accept duplicate symbols")
     weights = [float(value) for value in payload.get("weights", [])]
+    if weights and len(weights) != len(symbols):
+        raise ValueError("portfolio risk needs exactly one weight per symbol, or no weights for equal weighting")
     price_series = {symbol: dict(_history(symbol)) for symbol in symbols}
     benchmark_series = price_series.get("SPY") or dict(_history("SPY"))
     common = set(price_series[symbols[0]])

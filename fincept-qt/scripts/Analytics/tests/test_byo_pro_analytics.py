@@ -246,6 +246,17 @@ class ByoProAnalyticsTest(unittest.TestCase):
                 {"ALPHA": [0.01, -0.02, 0.015]},
             )
 
+    def test_public_portfolio_validates_holdings_before_fetching_history(self):
+        mod = load_module()
+        calls = []
+        mod._history = lambda symbol, period="1y": calls.append((symbol, period))
+
+        with self.assertRaisesRegex(ValueError, "duplicate symbols"):
+            mod._public_portfolio({"symbols": ["AAPL", "aapl"], "weights": [0.5, 0.5]})
+        with self.assertRaisesRegex(ValueError, "one weight per symbol"):
+            mod._public_portfolio({"symbols": ["AAPL", "MSFT"], "weights": [1.0]})
+        self.assertEqual(calls, [])
+
     def test_options_and_market_reports_are_zero_credit(self):
         mod = load_module()
         options = mod.options_report(
