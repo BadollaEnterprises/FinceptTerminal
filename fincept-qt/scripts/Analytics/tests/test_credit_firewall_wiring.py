@@ -441,6 +441,15 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertIn("ON CONFLICT(id) DO UPDATE SET", save)
         self.assertIn("is_default = excluded.is_default", save)
 
+    def test_llm_config_reads_propagate_secure_storage_failures(self):
+        source = (ROOT / "src/storage/repositories/LlmConfigRepository.cpp").read_text(encoding="utf-8")
+        self.assertIn("Result<void> hydrate_provider_key", source)
+        self.assertIn("Result<void> hydrate_model_key", source)
+        self.assertGreaterEqual(source.count("if (sr.failed())"), 2)
+        self.assertIn("Could not read secure storage for LLM provider", source)
+        self.assertIn("Could not read secure storage for LLM model", source)
+        self.assertGreaterEqual(source.count("if (hydrated.is_err())"), 4)
+
     def test_deleting_active_provider_selects_deterministic_byo_fallback(self):
         source = (ROOT / "src/screens/settings/LlmConfigSection_Providers.cpp").read_text(encoding="utf-8")
         body = source[source.index("void LlmConfigSection::on_delete_provider()"):

@@ -20,22 +20,30 @@ QString model_secret_key(const QString& id) {
     return QStringLiteral("llm:apikey:model:") + id;
 }
 
-void hydrate_provider_key(LlmConfig& c) {
+Result<void> hydrate_provider_key(LlmConfig& c) {
     if (!c.api_key.isEmpty())
-        return; // legacy plaintext already present in the column
-    // Error ≠ "nothing stored": the key stays empty for this load only; save()
-    // writes a key only when one is given, so an unread key is never overwritten.
+        return Result<void>::ok(); // legacy plaintext already present in the column
     const SecretRead sr = SecureStorage::instance().read(provider_secret_key(c.provider));
+    if (sr.failed())
+        return Result<void>::err(QString("Could not read secure storage for LLM provider '%1': %2")
+                                     .arg(c.provider, sr.reason())
+                                     .toStdString());
     if (sr.found())
         c.api_key = sr.value;
+    return Result<void>::ok();
 }
 
-void hydrate_model_key(LlmModelConfig& m) {
+Result<void> hydrate_model_key(LlmModelConfig& m) {
     if (!m.api_key.isEmpty())
-        return;
+        return Result<void>::ok();
     const SecretRead sr = SecureStorage::instance().read(model_secret_key(m.id)); // see hydrate_provider_key
+    if (sr.failed())
+        return Result<void>::err(QString("Could not read secure storage for LLM model '%1': %2")
+                                     .arg(m.id, sr.reason())
+                                     .toStdString());
     if (sr.found())
         m.api_key = sr.value;
+    return Result<void>::ok();
 }
 } // namespace
 
@@ -62,8 +70,11 @@ Result<QVector<LlmConfig>> LlmConfigRepository::list_providers() {
     if (r.is_err())
         return r;
     QVector<LlmConfig> out = r.value();
-    for (auto& c : out)
-        hydrate_provider_key(c);
+    for (auto& c : out) {
+        const auto hydrated = hydrate_provider_key(c);
+        if (hydrated.is_err())
+            return Result<QVector<LlmConfig>>::err(hydrated.error());
+    }
     return Result<QVector<LlmConfig>>::ok(std::move(out));
 }
 
@@ -73,7 +84,9 @@ Result<LlmConfig> LlmConfigRepository::get_active_provider() {
                        {}, map_config);
     if (r.is_ok()) {
         LlmConfig c = r.value();
-        hydrate_provider_key(c);
+        const auto hydrated = hydrate_provider_key(c);
+        if (hydrated.is_err())
+            return Result<LlmConfig>::err(hydrated.error());
         return Result<LlmConfig>::ok(std::move(c));
     }
     return r;
@@ -167,7 +180,9 @@ Result<QVector<LlmModelConfig>> LlmConfigRepository::list_models(const QString& 
         auto& q = r.value();
         while (q.next()) {
             LlmModelConfig m = map_model(q);
-            hydrate_model_key(m);
+            const auto hydrated = hydrate_model_key(m);
+            if (hydrated.is_err())
+                return Result<QVector<LlmModelConfig>>::err(hydrated.error());
             result.append(m);
         }
         return Result<QVector<LlmModelConfig>>::ok(std::move(result));
@@ -183,7 +198,9 @@ Result<QVector<LlmModelConfig>> LlmConfigRepository::list_models(const QString& 
     while (q.next()) {
         // Same as the unfiltered list: a key held in SecureStorage is not "no key".
         LlmModelConfig m = map_model(q);
-        hydrate_model_key(m);
+        const auto hydrated = hydrate_model_key(m);
+        if (hydrated.is_err())
+            return Result<QVector<LlmModelConfig>>::err(hydrated.error());
         result.append(m);
     }
     return Result<QVector<LlmModelConfig>>::ok(std::move(result));
