@@ -134,6 +134,9 @@ def portfolio_report(
     returns: Mapping[str, Sequence[float]],
     benchmark_returns: Sequence[float] | None = None,
 ) -> Dict[str, Any]:
+    normalized_symbols = [str(symbol).strip().upper() for symbol in symbols]
+    if len(set(normalized_symbols)) != len(normalized_symbols):
+        raise ValueError("portfolio risk does not accept duplicate symbols")
     if weights and len(weights) != len(symbols):
         raise ValueError("portfolio risk needs exactly one weight per symbol, or no weights for equal weighting")
     weight_map = dict(zip(symbols, weights)) if weights else None
