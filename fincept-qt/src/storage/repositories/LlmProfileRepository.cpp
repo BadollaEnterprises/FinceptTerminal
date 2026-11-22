@@ -124,10 +124,19 @@ Result<void> LlmProfileRepository::save_profile(const LlmProfile& p) {
     const QString api_key = harness ? QString() : p.api_key;
     // Keep the new key in the row until the configuration save succeeds and an
     // encrypted copy has been written and read back equal.
-    auto saved = exec_write("INSERT OR REPLACE INTO llm_profiles "
+    // A true UPDATE-on-conflict is essential here. SQLite REPLACE deletes the
+    // existing profile first, which activates llm_profile_assignments' ON DELETE
+    // CASCADE and silently detaches every AI Chat/agent/team assignment.
+    auto saved = exec_write("INSERT INTO llm_profiles "
                             "  (id, name, provider, model_id, api_key, base_url, "
                             "   temperature, max_tokens, system_prompt, is_default, reasoning_effort, updated_at) "
-                            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))",
+                            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now')) "
+                            "ON CONFLICT(id) DO UPDATE SET "
+                            "  name = excluded.name, provider = excluded.provider, model_id = excluded.model_id, "
+                            "  api_key = excluded.api_key, base_url = excluded.base_url, "
+                            "  temperature = excluded.temperature, max_tokens = excluded.max_tokens, "
+                            "  system_prompt = excluded.system_prompt, is_default = excluded.is_default, "
+                            "  reasoning_effort = excluded.reasoning_effort, updated_at = datetime('now')",
                             {id, p.name, p.provider, p.model_id, api_key, harness ? QString() : p.base_url,
                              p.temperature, p.max_tokens, p.system_prompt, (p.is_default && !harness) ? 1 : 0,
                              p.reasoning_effort.trimmed()});
