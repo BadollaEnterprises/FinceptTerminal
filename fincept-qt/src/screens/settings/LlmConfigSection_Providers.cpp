@@ -785,12 +785,30 @@ void LlmConfigSection::on_save_provider() {
 
     bool is_fincept = (provider == "fincept");
 
+    // Keep activation unchanged until set_active() performs the single atomic
+    // swap. If the row save or secure-key migration fails, the previously
+    // active provider must remain the only active provider.
+    bool was_active = false;
+    auto configured = LlmConfigRepository::instance().list_providers();
+    if (configured.is_err()) {
+        const QString error = QString::fromStdString(configured.error());
+        show_status(tr("Could not read current provider state: ") + error, true);
+        LOG_ERROR(TAG_PROVIDERS, "list_providers failed before save: " + privacy::redact_text(error));
+        return;
+    }
+    for (const auto& current : configured.value()) {
+        if (current.provider.compare(provider, Qt::CaseInsensitive) == 0) {
+            was_active = current.is_active;
+            break;
+        }
+    }
+
     LlmConfig cfg;
     cfg.provider = provider;
     cfg.api_key = is_fincept ? QString() : api_key_edit_->text().trimmed();
     cfg.model = policy::normalize_llm_model(cfg.provider, model_combo_->currentText());
     cfg.base_url = base_url_edit_->text().trimmed();
-    cfg.is_active = true;
+    cfg.is_active = was_active;
     cfg.tools_enabled = tools_check_->isChecked();
 
     // Fincept defaults — endpoints are hardcoded in LlmService, base_url not needed
@@ -820,7 +838,8 @@ void LlmConfigSection::on_save_provider() {
         }
     }
 
-    // Save first (INSERT OR REPLACE), THEN set active (deactivates others + activates this one)
+    // Save without changing activation, THEN atomically deactivate the old row
+    // and activate this one.
     auto r2 = LlmConfigRepository::instance().save_provider(cfg);
     if (r2.is_err()) {
         show_status(tr("Failed to save: ") + QString::fromStdString(r2.error()), true);
