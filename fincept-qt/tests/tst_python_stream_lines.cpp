@@ -71,6 +71,34 @@ class TstPythonStreamLines : public QObject {
         QVERIFY(!should_strip_unmanaged_credential(QStringLiteral("TOKENIZERS_PARALLELISM"), managed));
     }
 
+    void empty_credential_allowlist_withholds_all_managed_keys() {
+        QProcessEnvironment env;
+        env.insert(QStringLiteral("FINNHUB_API_KEY"), QStringLiteral("managed-secret"));
+        env.insert(QStringLiteral("fred_api_key"), QStringLiteral("lowercase-secret"));
+        env.insert(QStringLiteral("PATH"), QStringLiteral("/usr/bin"));
+        const QStringList managed{QStringLiteral("FINNHUB_API_KEY"), QStringLiteral("FRED_API_KEY")};
+
+        apply_credential_allowlist(env, managed, QStringList{});
+
+        QVERIFY(!env.contains(QStringLiteral("FINNHUB_API_KEY")));
+        QVERIFY(!env.contains(QStringLiteral("fred_api_key")));
+        QCOMPARE(env.value(QStringLiteral("PATH")), QStringLiteral("/usr/bin"));
+    }
+
+    void credential_allowlist_keeps_only_named_provider_keys() {
+        QProcessEnvironment env;
+        env.insert(QStringLiteral("FINNHUB_API_KEY"), QStringLiteral("keep"));
+        env.insert(QStringLiteral("FRED_API_KEY"), QStringLiteral("remove"));
+        env.insert(QStringLiteral("PATH"), QStringLiteral("/usr/bin"));
+        const QStringList managed{QStringLiteral("FINNHUB_API_KEY"), QStringLiteral("FRED_API_KEY")};
+
+        apply_credential_allowlist(env, managed, QStringList{QStringLiteral("finnhub_api_key")});
+
+        QCOMPARE(env.value(QStringLiteral("FINNHUB_API_KEY")), QStringLiteral("keep"));
+        QVERIFY(!env.contains(QStringLiteral("FRED_API_KEY")));
+        QCOMPARE(env.value(QStringLiteral("PATH")), QStringLiteral("/usr/bin"));
+    }
+
     void options_default_streams_both_channels() {
         PythonRunner::RunOptions o;
         QVERIFY(o.stream_stdout);

@@ -684,7 +684,7 @@ QString PythonRunner::scripts_dir() const {
 // (e.g., AgentService's stdin/stream paths). Anything every Python spawn needs
 // — encoding pins, FINCEPT_DATA_DIR, FINAGENT_DATA_DIR, base PYTHONPATH — lives
 // here. Script-specific path additions (parent-of-pkg) stay in run().
-QProcessEnvironment PythonRunner::build_python_env() const {
+QProcessEnvironment PythonRunner::build_python_env(const std::optional<QStringList>& credential_allowlist) const {
     QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
     // A PYTHONHOME inherited from the user's shell (another Python install) makes
     // the managed venv's interpreter load that install's standard library — or
@@ -740,6 +740,9 @@ QProcessEnvironment PythonRunner::build_python_env() const {
     // shell. The allow-list above is preserved; everything else matching the
     // sensitive suffixes is removed before the subprocess sees it.
     strip_unmanaged_credentials(env, kManagedCredentialKeys);
+
+    if (credential_allowlist.has_value())
+        environment_detail::apply_credential_allowlist(env, kManagedCredentialKeys, *credential_allowlist);
 
     return env;
 }
@@ -1177,7 +1180,7 @@ void PythonRunner::start_next() {
         // spawn below: both run on the GUI thread.
         QElapsedTimer spawn_clock;
         spawn_clock.start();
-        QProcessEnvironment env = build_python_env();
+        QProcessEnvironment env = build_python_env(req.credential_allowlist);
         const qint64 env_ms = spawn_clock.elapsed();
 
         // NOTE: do NOT prepend parent-of-pkg (e.g. <scripts>/fincept_mcp) to
@@ -1197,19 +1200,6 @@ void PythonRunner::start_next() {
         // PYTHONPATH, a top-level `scripts/mcp/` hid the `mcp` SDK from every
         // script (agno's MCP tools, rdagents' FastMCP server).
 
-        if (req.credential_allowlist.has_value()) {
-            // Agent-started run: only the credentials this script reads.
-            const QStringList allowed = req.credential_allowlist.value_or(QStringList{});
-            int withheld = 0;
-            for (const QString& key : kManagedCredentialKeys) {
-                if (!allowed.contains(key) && env.contains(key)) {
-                    env.remove(key);
-                    ++withheld;
-                }
-            }
-            if (withheld > 0)
-                LOG_DEBUG("Python", QString("Withheld %1 credentials the script does not read").arg(withheld));
-        }
         proc->setProcessEnvironment(env);
         proc->setWorkingDirectory(scripts_dir_);
 

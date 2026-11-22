@@ -139,7 +139,11 @@ class PythonRunner : public QObject {
     /// Callers that run a script inside a sub-package may still need to prepend
     /// a "parent-of-pkg" directory to PYTHONPATH themselves — this helper only
     /// sets the shared base env.
-    QProcessEnvironment build_python_env() const;
+    /// `credential_allowlist` controls which Settings-managed secrets reach the
+    /// child. Unset preserves trusted app-script and notebook behaviour; an
+    /// empty list produces a secretless environment for public-data workers.
+    QProcessEnvironment
+    build_python_env(const std::optional<QStringList>& credential_allowlist = std::nullopt) const;
 
     /// Check if python is available
     bool is_available() const;
@@ -286,6 +290,32 @@ inline bool should_strip_unmanaged_credential(const QString& key, const QStringL
             return true;
     }
     return false;
+}
+
+inline void apply_credential_allowlist(QProcessEnvironment& env, const QStringList& managed,
+                                       const QStringList& allowlist) {
+    const QStringList keys = env.keys();
+    for (const QString& key : keys) {
+        bool is_managed = false;
+        for (const QString& candidate : managed) {
+            if (key.compare(candidate, Qt::CaseInsensitive) == 0) {
+                is_managed = true;
+                break;
+            }
+        }
+        if (!is_managed)
+            continue;
+
+        bool allowed = false;
+        for (const QString& candidate : allowlist) {
+            if (key.compare(candidate, Qt::CaseInsensitive) == 0) {
+                allowed = true;
+                break;
+            }
+        }
+        if (!allowed)
+            env.remove(key);
+    }
 }
 
 } // namespace environment_detail

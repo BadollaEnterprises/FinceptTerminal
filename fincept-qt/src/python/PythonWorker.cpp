@@ -532,7 +532,10 @@ void PythonWorker::launch_process(const QString& python_exe, const QString& scri
 
     auto& runner = PythonRunner::instance();
     proc_ = new QProcess(this);
-    proc_->setProcessEnvironment(runner.build_python_env());
+    // This long-lived daemon serves public Yahoo data only. Keeping every
+    // stored provider/exchange key in its environment for the process lifetime
+    // would also bypass per-request credential allowlists in PythonRunner.
+    proc_->setProcessEnvironment(runner.build_python_env(QStringList{}));
     proc_->setWorkingDirectory(runner.scripts_dir());
     proc_->setReadChannel(QProcess::StandardOutput);
 
