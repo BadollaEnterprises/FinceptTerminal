@@ -40,6 +40,7 @@ class ArenaLlmClient : public IArenaLlmClient {
     static ArenaLlmResult parse_response(const QString& provider, const QByteArray& body);
     static bool endpoint_allowed(const QString& provider, const QString& base_url, const QString& endpoint);
     static void apply_transport_policy(QNetworkRequest& request);
+    static bool request_fits_input_budget(const ArenaLlmRequest& request, qsizetype budget_chars);
 
   private:
     QNetworkAccessManager* nam_ = nullptr; // GUI-thread QNAM (like LlmService::models_nam_)

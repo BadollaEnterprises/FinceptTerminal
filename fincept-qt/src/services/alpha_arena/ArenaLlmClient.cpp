@@ -152,8 +152,30 @@ void ArenaLlmClient::apply_transport_policy(QNetworkRequest& request) {
     request.setAttribute(QNetworkRequest::CookieSaveControlAttribute, QNetworkRequest::Manual);
 }
 
+bool ArenaLlmClient::request_fits_input_budget(const ArenaLlmRequest& request, qsizetype budget_chars) {
+    if (budget_chars <= 0)
+        return true;
+    const qsizetype system_chars = request.system_prompt.size();
+    return system_chars <= budget_chars && request.user_prompt.size() <= budget_chars - system_chars;
+}
+
 void ArenaLlmClient::complete(const ArenaLlmRequest& req, std::function<void(ArenaLlmResult)> cb) {
     const QString p = req.provider.trimmed().toLower();
+    fincept::ai_chat::LlmBudgetSettings budget_settings;
+    budget_settings.history_chars = fincept::AppConfig::instance()
+                                        .get(fincept::ai_chat::kLlmHistoryCharsKey,
+                                             QVariant(fincept::ai_chat::kDefaultLlmHistoryChars))
+                                        .toInt();
+    const qsizetype input_budget = fincept::ai_chat::validate_llm_budget_settings(budget_settings).history_chars;
+    if (!request_fits_input_budget(req, input_budget)) {
+        ArenaLlmResult r;
+        r.error = QStringLiteral("arena prompt is %1 characters, above the configured %2-character BYO AI "
+                                 "request guardrail; no provider request was sent")
+                      .arg(req.system_prompt.size() + req.user_prompt.size())
+                      .arg(input_budget);
+        cb(r);
+        return;
+    }
     if (fincept::policy::is_deprecated_llm_provider(p)) {
         ArenaLlmResult r;
         r.error = "this retired AI backend is disabled; configure DeepSeek in LLM settings";

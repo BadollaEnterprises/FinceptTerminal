@@ -539,6 +539,12 @@ int run_arena_selftest() {
                       QNetworkRequest::Manual &&
                   arena_request.attribute(QNetworkRequest::CookieSaveControlAttribute).toInt() ==
                       QNetworkRequest::Manual);
+        rq.system_prompt = QString(7, QLatin1Char('s'));
+        rq.user_prompt = QString(5, QLatin1Char('u'));
+        check("llm: arena scheduled requests obey the shared BYO input ceiling",
+              ArenaLlmClient::request_fits_input_budget(rq, 12) &&
+                  !ArenaLlmClient::request_fits_input_budget(rq, 11) &&
+                  ArenaLlmClient::request_fits_input_budget(rq, 0));
     }
 
     // ── Section 9: market data parsers ──────────────────────────────────────
