@@ -4,10 +4,10 @@ BudgetGuard — layered ceilings for an agentic task.
 Four independent caps; the first to breach aborts the task with a `budget_stop`
 event. Caps come from the task config (`budget`) with sensible defaults.
 
-  max_tokens     int   cumulative prompt + completion tokens (default 1_000_000)
-  max_cost_usd   float dollar ceiling derived from provider pricing (default 5.0)
-  max_wall_s     int   wall-clock seconds (default 3600 = 1 hr)
-  max_steps      int   total step count (default 50)
+  max_tokens     int   cumulative prompt + completion tokens (default 250_000)
+  max_cost_usd   float dollar ceiling derived from provider pricing (default 1.0)
+  max_wall_s     int   wall-clock seconds (default 900 = 15 min)
+  max_steps      int   total step count (default 20)
 
 Per-call tracking pulls token counts best-effort from Agno's RunResponse.metrics
 and falls back to char-count / 4 estimation when unavailable. The cost table is
@@ -40,6 +40,11 @@ _PRICING_PER_1K: Dict[str, Tuple[float, float]] = {
     "default": (0.001, 0.003),
 }
 
+DEFAULT_MAX_TOKENS = 250_000
+DEFAULT_MAX_COST_USD = 1.0
+DEFAULT_MAX_WALL_S = 900
+DEFAULT_MAX_STEPS = 20
+
 
 def _price_for(model_id: str) -> Tuple[float, float]:
     if not model_id:
@@ -60,10 +65,10 @@ def _estimate_tokens(text: str) -> int:
 
 @dataclass
 class BudgetGuard:
-    max_tokens: int = 1_000_000
-    max_cost_usd: float = 5.0
-    max_wall_s: int = 3600
-    max_steps: int = 50
+    max_tokens: int = DEFAULT_MAX_TOKENS
+    max_cost_usd: float = DEFAULT_MAX_COST_USD
+    max_wall_s: int = DEFAULT_MAX_WALL_S
+    max_steps: int = DEFAULT_MAX_STEPS
 
     tokens_used: int = 0
     cost_used: float = 0.0
@@ -76,10 +81,10 @@ class BudgetGuard:
         b = config.get("budget") or {}
         model = (config.get("model") or {}).get("model_id", "")
         guard = cls(
-            max_tokens=int(b.get("max_tokens", 1_000_000)),
-            max_cost_usd=float(b.get("max_cost_usd", 5.0)),
-            max_wall_s=int(b.get("max_wall_s", 3600)),
-            max_steps=int(b.get("max_steps", 50)),
+            max_tokens=int(b.get("max_tokens", DEFAULT_MAX_TOKENS)),
+            max_cost_usd=float(b.get("max_cost_usd", DEFAULT_MAX_COST_USD)),
+            max_wall_s=int(b.get("max_wall_s", DEFAULT_MAX_WALL_S)),
+            max_steps=int(b.get("max_steps", DEFAULT_MAX_STEPS)),
         )
         guard._model_id = model
         return guard

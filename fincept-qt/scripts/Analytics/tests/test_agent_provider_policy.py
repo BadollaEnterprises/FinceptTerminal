@@ -23,6 +23,7 @@ AGENT_SERVICE_DISCOVERY = AGENT_SERVICE.with_name("AgentService_Discovery.cpp")
 LLM_SERVICE_HEADER = MODULE.parents[3] / "src" / "services" / "llm" / "LlmService.h"
 LLM_SERVICE_SOURCE = LLM_SERVICE_HEADER.with_suffix(".cpp")
 AGENT_MAIN = MODULE.with_name("main.py")
+AGENT_BUDGET = MODULE.parent / "agentic" / "budget.py"
 LOCAL_AGENT_ENGINE = MODULE.parents[3] / "src" / "services" / "agent_tasks" / "LocalAgentEngine.cpp"
 AGENTS_PANEL = MODULE.parents[3] / "src" / "screens" / "agent_config" / "AgentsViewPanel.cpp"
 TEAMS_PANEL = MODULE.parents[3] / "src" / "screens" / "agent_config" / "TeamsViewPanel.cpp"
@@ -65,6 +66,14 @@ def load_path(name, path):
 
 
 class AgentProviderPolicyTest(unittest.TestCase):
+    def test_agentic_tasks_have_cost_conscious_implicit_budgets(self):
+        budget = load_path("finagent_budget_defaults", AGENT_BUDGET)
+        guard = budget.BudgetGuard.from_config({"model": {"model_id": "deepseek-chat"}})
+        self.assertEqual(guard.max_tokens, 250_000)
+        self.assertEqual(guard.max_cost_usd, 1.0)
+        self.assertEqual(guard.max_wall_s, 900)
+        self.assertEqual(guard.max_steps, 20)
+
     def test_deepseek_wins_over_legacy_and_other_keys(self):
         policy = load_module()
         keys = {"fincept": "hosted", "OLLAMA_API_KEY": "local", "ANTHROPIC_API_KEY": "claude",
