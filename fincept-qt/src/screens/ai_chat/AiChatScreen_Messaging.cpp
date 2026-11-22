@@ -171,7 +171,14 @@ void AiChatScreen::on_send() {
     total_messages_++;
     last_failed_ = false;
     auto& llm = ai_chat::LlmService::instance();
-    ChatRepository::instance().add_message(active_session_id_, "user", text, llm.active_provider(), llm.active_model());
+    const auto persisted_user =
+        ChatRepository::instance().add_message(active_session_id_, "user", text, llm.active_provider(), llm.active_model());
+    if (persisted_user.is_err()) {
+        const QString error = privacy::redact_text(QString::fromStdString(persisted_user.error()));
+        LOG_ERROR(kAicMsgTag, "Could not persist user message: " + error);
+        status_->show_notice(tr("Conversation could not be saved locally: %1").arg(error), QString(), {}, 8000,
+                             ui::ScreenStatusBar::Tone::Danger);
+    }
     snippets_[active_session_id_] = aichat::snippet_of(QStringLiteral("user"), text);
     if (sessions_)
         sessions_->set_snippet(active_session_id_, snippets_.value(active_session_id_));
@@ -461,8 +468,14 @@ void AiChatScreen::finish_turn(const ai_chat::LlmResponse& response) {
                 history_.push_back({"assistant", saved});
                 total_messages_++;
                 total_tokens_ += response.total_tokens;
-                ChatRepository::instance().add_message(session, "assistant", saved + trailer, provider, model,
-                                                       response.total_tokens);
+                const auto persisted_partial = ChatRepository::instance().add_message(
+                    session, "assistant", saved + trailer, provider, model, response.total_tokens);
+                if (persisted_partial.is_err()) {
+                    const QString error = privacy::redact_text(QString::fromStdString(persisted_partial.error()));
+                    LOG_ERROR(kAicMsgTag, "Could not persist stopped answer: " + error);
+                    status_->show_notice(tr("Conversation could not be saved locally: %1").arg(error), QString(), {},
+                                         8000, ui::ScreenStatusBar::Tone::Danger);
+                }
                 last_answer_turn_ = turn_id;
                 transcript_->set_live_turn(turn_id); // REGENERATE
             }
@@ -536,8 +549,14 @@ void AiChatScreen::finish_turn(const ai_chat::LlmResponse& response) {
     conv_provider_ = provider;
     conv_model_ = model;
     // Request-time context: the provider/model that actually produced this answer.
-    ChatRepository::instance().add_message(session, "assistant", content + trailer, provider, model,
-                                           response.total_tokens);
+    const auto persisted_answer = ChatRepository::instance().add_message(
+        session, "assistant", content + trailer, provider, model, response.total_tokens);
+    if (persisted_answer.is_err()) {
+        const QString error = privacy::redact_text(QString::fromStdString(persisted_answer.error()));
+        LOG_ERROR(kAicMsgTag, "Could not persist answer: " + error);
+        status_->show_notice(tr("Conversation could not be saved locally: %1").arg(error), QString(), {}, 8000,
+                             ui::ScreenStatusBar::Tone::Danger);
+    }
     snippets_[session] = aichat::snippet_of(QStringLiteral("assistant"), content);
     if (sessions_)
         sessions_->set_snippet(session, snippets_.value(session));

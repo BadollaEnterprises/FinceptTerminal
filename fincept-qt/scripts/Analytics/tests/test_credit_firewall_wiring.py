@@ -225,6 +225,18 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertIn('#include "core/privacy/LogRedact.h"', quant_lab)
         self.assertGreaterEqual(quant_lab.count("privacy::redact_text"), 4)
 
+    def test_ai_chat_surfaces_local_history_write_failures(self):
+        screen = (ROOT / "src/screens/ai_chat/AiChatScreen_Messaging.cpp").read_text(encoding="utf-8")
+        for result in ("persisted_user", "persisted_partial", "persisted_answer"):
+            self.assertRegex(
+                screen,
+                rf"const auto {result}\s*=\s*ChatRepository::instance\(\)\.add_message",
+            )
+            self.assertIn(f"if ({result}.is_err())", screen)
+            self.assertIn(f"privacy::redact_text(QString::fromStdString({result}.error()))", screen)
+        self.assertGreaterEqual(screen.count("Conversation could not be saved locally"), 3)
+        self.assertGreaterEqual(screen.count("status_->show_notice"), 3)
+
     def test_llm_settings_diagnostics_scrub_storage_errors_and_profile_identity(self):
         providers = (ROOT / "src/screens/settings/LlmConfigSection_Providers.cpp").read_text(encoding="utf-8")
         profiles = (ROOT / "src/screens/settings/LlmConfigSection_Profiles.cpp").read_text(encoding="utf-8")
