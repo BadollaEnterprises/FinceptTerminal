@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 from typing import Any
+from urllib.parse import urlsplit
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +85,23 @@ def provider_policy_error(config: dict[str, Any]) -> str | None:
     if provider in _DEPRECATED_PROVIDERS:
         return (f"LLM provider '{provider}' is disabled. Configure your DeepSeek API key and "
                 "select a DeepSeek profile for AI Quant Lab.")
+    base_url = str(config.get("llm_base_url") or "").strip()
+    if provider == "atlascloud" or "atlascloud" in base_url.lower():
+        return "Refusing an insecure or blocked LLM endpoint; select your user-owned DeepSeek profile."
+    if base_url:
+        try:
+            parsed = urlsplit(base_url)
+            host = (parsed.hostname or "").lower()
+            scheme = parsed.scheme.lower()
+        except ValueError:
+            host = ""
+            scheme = ""
+        loopback = host == "localhost" or host.endswith(".localhost") or host == "::1"
+        if not loopback and host.startswith("127."):
+            octets = host.split(".")
+            loopback = len(octets) == 4 and all(part.isdigit() and 0 <= int(part) <= 255 for part in octets)
+        if not host or (scheme != "https" and not (scheme == "http" and loopback)):
+            return "Refusing an insecure or blocked LLM endpoint; remote provider URLs must use HTTPS."
     return None
 
 
@@ -104,6 +122,9 @@ def create_model(config: dict[str, Any]):
         ValueError  if provider is unknown or required packages are missing.
         ImportError if the required langchain-* package is not installed.
     """
+    if error := provider_policy_error(config):
+        raise ValueError(error)
+
     provider = config.get("llm_provider", "").lower().strip()
     api_key  = config.get("llm_api_key", "")
     model    = config.get("llm_model", "")

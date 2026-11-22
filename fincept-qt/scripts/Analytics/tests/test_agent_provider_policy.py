@@ -380,6 +380,27 @@ class AgentProviderPolicyTest(unittest.TestCase):
         self.assertIn("provider_policy_error", execute)
         self.assertNotIn("_execute_with_orchestrator", execute)
 
+    def test_deep_agents_reject_insecure_or_blocked_key_endpoints(self):
+        models = load_deepagent_models()
+        self.assertIsNone(models.provider_policy_error({
+            "llm_provider": "deepseek", "llm_base_url": "https://proxy.example/v1",
+        }))
+        self.assertIsNone(models.provider_policy_error({
+            "llm_provider": "deepseek", "llm_base_url": "http://127.0.0.2:8080/v1",
+        }))
+        self.assertIsNotNone(models.provider_policy_error({
+            "llm_provider": "deepseek", "llm_base_url": "http://proxy.example/v1",
+        }))
+        self.assertIsNotNone(models.provider_policy_error({
+            "llm_provider": "deepseek", "llm_base_url": "https://api.atlascloud.ai/v1",
+        }))
+        with self.assertRaisesRegex(ValueError, "insecure or blocked"):
+            models.create_model({
+                "llm_provider": "deepseek",
+                "llm_api_key": "owned",
+                "llm_base_url": "http://proxy.example/v1",
+            })
+
     def test_deep_agents_apply_bounded_output_tokens_to_every_adapter(self):
         models = load_deepagent_models()
 
