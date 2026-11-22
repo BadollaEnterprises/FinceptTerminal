@@ -4,6 +4,7 @@
 
 #include "core/i18n/LanguageManager.h"
 #include "core/logging/Logger.h"
+#include "core/privacy/LogRedact.h"
 #include "screens/settings/SettingsRowHelpers.h"
 #include "screens/settings/SettingsStyles.h"
 #include "storage/repositories/SettingsRepository.h"
@@ -11,6 +12,7 @@
 #include "ui/widgets/Requirements.h"
 
 #include <QLabel>
+#include <QMessageBox>
 #include <QPushButton>
 #include <QScrollArea>
 #include <QShowEvent>
@@ -22,6 +24,7 @@ namespace fincept::screens {
 namespace {
 constexpr const char* kKeyOnClose = "general.on_last_window_close";
 constexpr const char* kDefaultOnClose = "quit";
+constexpr const char* kSavedOnCloseProp = "fincept_saved_on_close";
 [[maybe_unused]] constexpr const char* kKeyLanguage = "general.language";
 constexpr const char* kDefaultLanguage = "en";
 
@@ -87,7 +90,21 @@ void GeneralSection::build_ui() {
 
     connect(on_close_combo_, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int idx) {
         const QString val = on_close_combo_->itemData(idx).toString();
-        SettingsRepository::instance().set(QString::fromLatin1(kKeyOnClose), val, QStringLiteral("general"));
+        const auto saved = SettingsRepository::instance().set(QString::fromLatin1(kKeyOnClose), val,
+                                                              QStringLiteral("general"));
+        if (saved.is_err()) {
+            const QString previous = on_close_combo_->property(kSavedOnCloseProp).toString();
+            const int previous_idx = on_close_combo_->findData(previous);
+            const QSignalBlocker block(on_close_combo_);
+            if (previous_idx >= 0)
+                on_close_combo_->setCurrentIndex(previous_idx);
+            const QString detail = privacy::redact_text(QString::fromStdString(saved.error()));
+            LOG_ERROR("Settings", QStringLiteral("Could not save the window setting: %1").arg(detail));
+            QMessageBox::warning(this, tr("Window Behaviour"),
+                                 tr("Could not save the window setting: %1").arg(detail));
+            return;
+        }
+        on_close_combo_->setProperty(kSavedOnCloseProp, val);
         LOG_INFO("Settings", logf("Setting changed", {{"key", "general.on_last_window_close"}, {"value", val}}));
     });
 
@@ -171,6 +188,7 @@ void GeneralSection::reload() {
         const int idx = on_close_combo_->findData(cur);
         QSignalBlocker block(on_close_combo_);
         on_close_combo_->setCurrentIndex(idx >= 0 ? idx : 0);
+        on_close_combo_->setProperty(kSavedOnCloseProp, on_close_combo_->currentData().toString());
     }
     if (language_combo_) {
         // Trust LanguageManager over the raw DB read — they should agree, but

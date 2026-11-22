@@ -356,6 +356,21 @@ class CreditFirewallWiringTest(unittest.TestCase):
         ):
             self.assertIn(key, save_handler)
 
+    def test_general_close_setting_rolls_back_when_storage_fails(self):
+        section = (ROOT / "src/screens/settings/GeneralSection.cpp").read_text(encoding="utf-8")
+        handler = section[
+            section.index("connect(on_close_combo_"):
+            section.index("// ── LANGUAGE")
+        ]
+        reload_path = section[section.index("void GeneralSection::reload"):]
+        self.assertIn("const auto saved = SettingsRepository::instance().set", handler)
+        self.assertIn("if (saved.is_err())", handler)
+        self.assertIn("kSavedOnCloseProp", handler)
+        self.assertIn("QSignalBlocker", handler)
+        self.assertIn("Could not save the window setting", handler)
+        self.assertIn("privacy::redact_text", handler)
+        self.assertIn("setProperty(kSavedOnCloseProp", reload_path)
+
     def test_llm_settings_diagnostics_scrub_storage_errors_and_profile_identity(self):
         providers = (ROOT / "src/screens/settings/LlmConfigSection_Providers.cpp").read_text(encoding="utf-8")
         profiles = (ROOT / "src/screens/settings/LlmConfigSection_Profiles.cpp").read_text(encoding="utf-8")
