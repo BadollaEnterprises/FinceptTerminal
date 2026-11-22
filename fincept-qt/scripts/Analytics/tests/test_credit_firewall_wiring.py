@@ -289,6 +289,21 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertNotIn('"WebSocket live feed error: " + text', live)
         self.assertNotIn('"Failed to persist BYO analysis: " + QString::fromStdString', service)
 
+    def test_report_persistence_diagnostics_redact_paths_and_database_errors(self):
+        inbox = (ROOT / "src/services/report_builder/ReportInbox.cpp").read_text(encoding="utf-8")
+        builder = (ROOT / "src/services/report_builder/ReportBuilderService.cpp").read_text(encoding="utf-8")
+        library = (ROOT / "src/services/report_builder/ReportLibrary.cpp").read_text(encoding="utf-8")
+        for source in (inbox, builder, library):
+            self.assertIn('#include "core/privacy/LogRedact.h"', source)
+        self.assertIn("privacy::redact_text(r.error)", inbox)
+        self.assertIn("privacy::redact_text(f.errorString())", builder)
+        self.assertIn("privacy::redact_text(out.error)", builder)
+        self.assertIn("privacy::redact_text(rl_error(r.error()))", library)
+        self.assertNotIn('QStringLiteral("append failed: %1").arg(r.error)', inbox)
+        self.assertNotIn('"Autosave could not be written: " + f.errorString()', builder)
+        self.assertNotIn('"Library save failed: " + out.error', builder)
+        self.assertNotIn('.arg(id).arg(rl_error(r.error()))', library)
+
     def test_macro_and_geopolitics_services_check_firewall(self):
         geopolitics = (ROOT / "src/services/geopolitics/GeopoliticsService.cpp").read_text(encoding="utf-8")
         macro = (ROOT / "src/services/economics/FinceptMacroService.cpp").read_text(encoding="utf-8")

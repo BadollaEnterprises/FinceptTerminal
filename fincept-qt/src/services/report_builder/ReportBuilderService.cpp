@@ -6,6 +6,7 @@
 #include "core/config/AppSettings.h"
 #include "core/events/EventBus.h"
 #include "core/logging/Logger.h"
+#include "core/privacy/LogRedact.h"
 #include "core/report/ReportVariables.h"
 #include "services/report_builder/ReportBuilderTemplates.h"
 #include "services/report_builder/ReportLibrary.h"
@@ -1042,7 +1043,7 @@ void ReportBuilderService::write_autosave(const QString& json) {
         if (f.commit())
             autosave_hash_ = digest;
         else
-            LOG_WARN(RB_SVC_TAG, "Autosave could not be written: " + f.errorString());
+            LOG_WARN(RB_SVC_TAG, "Autosave could not be written: " + privacy::redact_text(f.errorString()));
     }
 }
 
@@ -1204,7 +1205,7 @@ void ReportBuilderService::start_library_write(quint64 generation) {
                     emit library_saved(out.id);
                 }
             } else {
-                LOG_WARN(RB_SVC_TAG, "Library save failed: " + out.error);
+                LOG_WARN(RB_SVC_TAG, "Library save failed: " + privacy::redact_text(out.error));
                 if (generation == library_generation_)
                     emit library_save_failed(out.error);
             }

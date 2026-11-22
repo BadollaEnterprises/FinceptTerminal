@@ -4,6 +4,7 @@
 
 #include "core/config/AppSettings.h"
 #include "core/logging/Logger.h"
+#include "core/privacy/LogRedact.h"
 #include "core/report/ReportBinding.h"
 #include "services/cloud/CloudSyncEngine.h"
 #include "services/report_builder/ReportAssets.h"
@@ -485,7 +486,9 @@ void ReportLibrary::commit_removal(qint64 id) {
     on_worker([this, id]() {
         auto r = ReportRepository::instance().remove(static_cast<int>(id));
         if (r.is_err())
-            LOG_WARN(kRlTag, QStringLiteral("Could not delete report %1: %2").arg(id).arg(rl_error(r.error())));
+            LOG_WARN(kRlTag, QStringLiteral("Could not delete report %1: %2")
+                                 .arg(id)
+                                 .arg(privacy::redact_text(rl_error(r.error()))));
         rl_post(this, QPointer<QObject>(), false, [this, id]() {
             emit report_removed(id);
             emit library_changed();

@@ -4,6 +4,7 @@
 
 #include "core/config/AppPaths.h"
 #include "core/events/EventBus.h"
+#include "core/privacy/LogRedact.h"
 #include "core/report/ReportVariables.h"
 #include "core/logging/Logger.h"
 #include "services/report_builder/ReportBuilderService.h"
@@ -87,7 +88,7 @@ void ri_finish(ReportInbox* inbox, const QPointer<QObject>& ctx, bool has_ctx, c
     if (r.ok)
         emit inbox->blocks_appended(r);
     else
-        LOG_WARN(kRiTag, QStringLiteral("append failed: %1").arg(r.error));
+        LOG_WARN(kRiTag, QStringLiteral("append failed: %1").arg(privacy::redact_text(r.error)));
     if (done && (!has_ctx || ctx))
         done(r);
 }
