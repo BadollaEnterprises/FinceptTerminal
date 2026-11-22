@@ -6,6 +6,7 @@
 
 #include "core/logging/Logger.h"
 #include "core/market/InstrumentCurrency.h"
+#include "core/privacy/LogRedact.h"
 #include "python/PythonRunner.h"
 #include "services/portfolio/PortfolioService.h"
 #include "services/sectors/SectorResolver.h"
@@ -42,15 +43,16 @@ void PortfolioService::export_csv(const QString& portfolio_id, const QString& fi
     if (assets_r.is_err() || portfolio_r.is_err()) {
         LOG_ERROR("PortfolioSvc",
                   logf("Export CSV failed: cannot load data",
-                       {{"portfolio", portfolio_id}, {"path", log_path(file_path)},
-                        {"error", QString::fromStdString(assets_r.is_err() ? assets_r.error() : portfolio_r.error())}}));
+                       {{"portfolio", privacy::mask_id(portfolio_id)}, {"path", log_path(file_path)},
+                        {"error", privacy::redact_text(QString::fromStdString(
+                                      assets_r.is_err() ? assets_r.error() : portfolio_r.error()))}}));
         emit export_failed(file_path, tr("Could not read the portfolio from the database."));
         return;
     }
 
     QFile file(file_path);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        LOG_ERROR("PortfolioSvc", "Cannot open file for writing: " + file_path);
+        LOG_ERROR("PortfolioSvc", QStringLiteral("Cannot open file for writing: ") + log_path(file_path));
         emit export_failed(file_path, file.errorString());
         return;
     }
@@ -92,7 +94,7 @@ void PortfolioService::export_csv(const QString& portfolio_id, const QString& fi
     }
 
     file.close();
-    LOG_INFO("PortfolioSvc", "Exported CSV to " + file_path);
+    LOG_INFO("PortfolioSvc", QStringLiteral("Exported CSV to ") + log_path(file_path));
     emit export_complete(file_path);
 }
 
@@ -102,8 +104,9 @@ void PortfolioService::export_json(const QString& portfolio_id, const QString& f
 
     if (portfolio_r.is_err()) {
         LOG_ERROR("PortfolioSvc", logf("Export JSON failed: cannot load portfolio",
-                                       {{"portfolio", portfolio_id}, {"path", log_path(file_path)},
-                                        {"error", QString::fromStdString(portfolio_r.error())}}));
+                                       {{"portfolio", privacy::mask_id(portfolio_id)},
+                                        {"path", log_path(file_path)},
+                                        {"error", privacy::redact_text(QString::fromStdString(portfolio_r.error()))}}));
         emit export_failed(file_path, tr("Could not read the portfolio from the database."));
         return;
     }
@@ -140,18 +143,19 @@ void PortfolioService::export_json(const QString& portfolio_id, const QString& f
 
     QFile file(file_path);
     if (!file.open(QIODevice::WriteOnly)) {
-        LOG_ERROR("PortfolioSvc", "Cannot open file for writing: " + file_path);
+        LOG_ERROR("PortfolioSvc", QStringLiteral("Cannot open file for writing: ") + log_path(file_path));
         emit export_failed(file_path, file.errorString());
         return;
     }
     if (file.write(QJsonDocument(root).toJson(QJsonDocument::Indented)) < 0) {
-        LOG_ERROR("PortfolioSvc", "Write failed for " + file_path + ": " + file.errorString());
+        LOG_ERROR("PortfolioSvc", QStringLiteral("Write failed for %1: %2")
+                                      .arg(log_path(file_path), privacy::redact_text(file.errorString())));
         emit export_failed(file_path, file.errorString());
         return;
     }
     file.close();
 
-    LOG_INFO("PortfolioSvc", "Exported JSON to " + file_path);
+    LOG_INFO("PortfolioSvc", QStringLiteral("Exported JSON to ") + log_path(file_path));
     emit export_complete(file_path);
 }
 
@@ -433,8 +437,7 @@ void PortfolioService::import_json(const QString& file_path, portfolio::ImportMo
         if (problems.size() > kMaxShown)
             shown << tr("… and %1 more problem(s).").arg(problems.size() - kMaxShown);
         shown.prepend(tr("Nothing was imported — %n problem(s) found:", "", static_cast<int>(problems.size())));
-        LOG_ERROR("PortfolioSvc",
-                  QString("Import rejected: %1 problem(s), first: %2").arg(problems.size()).arg(problems.first()));
+        LOG_ERROR("PortfolioSvc", QString("Import rejected: %1 problem(s)").arg(problems.size()));
         emit import_complete({"", name, 0, shown, {}});
         return;
     }
@@ -443,7 +446,7 @@ void PortfolioService::import_json(const QString& file_path, portfolio::ImportMo
         auto r = repo.create_portfolio(name, owner, currency);
         if (r.is_err()) {
             const QString raw = QString::fromStdString(r.error());
-            LOG_ERROR("PortfolioSvc", "Import: create_portfolio failed: " + raw);
+            LOG_ERROR("PortfolioSvc", "Import: create_portfolio failed: " + privacy::redact_text(raw));
             emit import_complete(
                 {"", name, 0, {storage_failure_text(tr("Could not create the portfolio \"%1\".").arg(name), raw)}, raw});
             return;
@@ -523,7 +526,9 @@ void PortfolioService::import_json(const QString& file_path, portfolio::ImportMo
             ++replayed;
     }
     if (!raw_errors.isEmpty()) {
-        LOG_ERROR("PortfolioSvc", "Import: " + raw_errors.join(QStringLiteral("; ")));
+        LOG_ERROR("PortfolioSvc", QString("Import: %1 database row error(s), schema failure: %2")
+                                      .arg(raw_errors.size())
+                                      .arg(schema_failure ? QStringLiteral("yes") : QStringLiteral("no")));
         if (schema_failure)
             errors.prepend(storage_failure_text({}, raw_errors.first()));
     }
@@ -548,7 +553,7 @@ void PortfolioService::import_json(const QString& file_path, portfolio::ImportMo
     LOG_INFO("PortfolioSvc", QString("Imported %1 rows (%2) into %3, %4 note(s)")
                                  .arg(replayed)
                                  .arg(has_txns ? "transactions" : "holdings")
-                                 .arg(target_id)
+                                 .arg(privacy::mask_id(target_id))
                                  .arg(errors.size()));
 
     // Reconstruct NAV history from the imported ledger so the realised

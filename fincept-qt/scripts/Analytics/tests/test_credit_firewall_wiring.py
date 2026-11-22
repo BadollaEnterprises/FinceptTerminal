@@ -230,6 +230,15 @@ class CreditFirewallWiringTest(unittest.TestCase):
                 self.assertIn('#include "core/privacy/LogRedact.h"', source)
                 self.assertGreaterEqual(source.count("privacy::redact_text"), minimum)
 
+    def test_portfolio_import_logs_do_not_persist_rejected_rows(self):
+        source = (ROOT / "src/services/portfolio/PortfolioService_ImportExport.cpp").read_text(encoding="utf-8")
+        self.assertIn('#include "core/privacy/LogRedact.h"', source)
+        self.assertIn("privacy::redact_text(raw)", source)
+        self.assertIn("privacy::mask_id(target_id)", source)
+        self.assertNotIn("arg(problems.first())", source)
+        self.assertNotIn('"Import: " + raw_errors.join', source)
+        self.assertNotIn('" + file_path', source)
+
     def test_macro_and_geopolitics_services_check_firewall(self):
         geopolitics = (ROOT / "src/services/geopolitics/GeopoliticsService.cpp").read_text(encoding="utf-8")
         macro = (ROOT / "src/services/economics/FinceptMacroService.cpp").read_text(encoding="utf-8")
