@@ -529,6 +529,15 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertIn("SameOriginRedirectPolicy", models)
         self.assertIn("SameOriginRedirectPolicy", http)
 
+    def test_router_does_not_save_profiles_after_provider_key_read_failure(self):
+        source = (ROOT / "src/services/llm/ModelRouter_Live.cpp").read_text(encoding="utf-8")
+        body = source[source.index("QString mrl_profile_for"):source.index("} // namespace model_router_live_detail")]
+        self.assertIn("const auto rows = LlmConfigRepository::instance().list_providers()", body)
+        self.assertIn("if (rows.is_err())", body)
+        error_guard = body[body.index("if (rows.is_err())"):body.index("for (const LlmConfig& c", body.index("if (rows.is_err())"))]
+        self.assertIn("*error = QString::fromStdString(rows.error())", error_guard)
+        self.assertIn("return {}", error_guard)
+
     def test_deleting_active_provider_selects_deterministic_byo_fallback(self):
         source = (ROOT / "src/screens/settings/LlmConfigSection_Providers.cpp").read_text(encoding="utf-8")
         body = source[source.index("void LlmConfigSection::on_delete_provider()"):

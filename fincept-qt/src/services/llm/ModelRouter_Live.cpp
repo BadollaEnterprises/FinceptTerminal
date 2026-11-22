@@ -188,13 +188,17 @@ QString mrl_profile_for(const ModelChoice& choice, QString* error) {
     p.name = choice.label.isEmpty() ? provider : choice.label;
     if (choice.kind == ModelChoice::Kind::Api) {
         // The active provider row's key and endpoint (the profile editor does the same).
-        if (auto rows = LlmConfigRepository::instance().list_providers(); rows.is_ok()) {
-            for (const LlmConfig& c : rows.value()) {
-                if (c.provider.toLower() == provider) {
-                    p.api_key = c.api_key;
-                    p.base_url = c.base_url;
-                    break;
-                }
+        const auto rows = LlmConfigRepository::instance().list_providers();
+        if (rows.is_err()) {
+            if (error)
+                *error = QString::fromStdString(rows.error());
+            return {};
+        }
+        for (const LlmConfig& c : rows.value()) {
+            if (c.provider.toLower() == provider) {
+                p.api_key = c.api_key;
+                p.base_url = c.base_url;
+                break;
             }
         }
     }
