@@ -80,6 +80,10 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertIn("econ_svc_credentials_for_script", economics)
         self.assertIn("opts.credential_allowlist = econ_svc_credentials_for_script(script)", economics)
 
+    def test_corporate_finance_analytics_are_secretless(self):
+        source = (ROOT / "src/services/ma_analytics/MAAnalyticsService.cpp").read_text(encoding="utf-8")
+        self.assertGreaterEqual(source.count("credential_allowlist = QStringList{}"), 3)
+
     def test_macro_and_geopolitics_services_check_firewall(self):
         geopolitics = (ROOT / "src/services/geopolitics/GeopoliticsService.cpp").read_text(encoding="utf-8")
         macro = (ROOT / "src/services/economics/FinceptMacroService.cpp").read_text(encoding="utf-8")

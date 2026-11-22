@@ -92,6 +92,8 @@ void MAAnalyticsService::run_python_json(const QString& script, const QString& c
     cancel_tokens_.insert(context, token);
     python::PythonRunner::RunOptions opts;
     opts.cancel_token = token;
+    // These bundled valuation/model scripts consume only the explicit JSON payload.
+    opts.credential_allowlist = QStringList{};
 
     QPointer<MAAnalyticsService> self = this;
     python::PythonRunner::instance().run_with_options(script, args, opts, [self, context, cache_key, cacheable, token,
@@ -237,6 +239,8 @@ quint64 MAAnalyticsService::run_deal_db(const QString& script, const QStringList
     const quint64 id = ++next_request_id_;
     python::PythonRunner::RunOptions opts;
     opts.timeout_ms = timeout_ms;
+    // Deal database helpers use public SEC endpoints and the app-local database.
+    opts.credential_allowlist = QStringList{};
     QPointer<MAAnalyticsService> self = this;
     python::PythonRunner::instance().run_with_options(
         script, args, opts, [self, id, on_ok = std::move(on_ok)](python::PythonResult result) {
@@ -270,6 +274,8 @@ quint64 MAAnalyticsService::start_deal_scan(int days, int max_filings, const QSt
     python::PythonRunner::RunOptions opts;
     opts.timeout_ms = kDealScanTimeoutMs;
     opts.cancel_token = scan_cancel_;
+    // The SEC scan is public and must not inherit unrelated provider or LLM keys.
+    opts.credential_allowlist = QStringList{};
     QStringList args = {QStringLiteral("scan"), QString::number(std::clamp(days, 1, 90)),
                         QString::number(std::clamp(max_filings, 0, 200))};
     if (!forms.isEmpty())
