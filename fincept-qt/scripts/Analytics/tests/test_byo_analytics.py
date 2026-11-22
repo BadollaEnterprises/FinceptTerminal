@@ -176,6 +176,17 @@ class ByoAnalyticsTest(unittest.TestCase):
         self.assertIsNotNone(implied)
         self.assertAlmostEqual(implied, volatility, places=6)
 
+    def test_options_positioning_rejects_invalid_market_domains(self):
+        mod = load_module()
+        with self.assertRaisesRegex(ValueError, "spot must be positive"):
+            mod.options_positioning({"spot": 0, "chain": [{"strike": 100}]})
+        with self.assertRaisesRegex(ValueError, "strike must be positive"):
+            mod.options_positioning({"spot": 100, "chain": [{"strike": 0}]})
+        with self.assertRaisesRegex(ValueError, "call_oi must be non-negative"):
+            mod.options_positioning({"spot": 100, "chain": [{"strike": 100, "call_oi": -1}]})
+        with self.assertRaisesRegex(ValueError, "time_to_expiry must be positive"):
+            mod.options_positioning({"spot": 100, "time_to_expiry": -0.1, "chain": [{"strike": 100}]})
+
     def test_fixed_income_matches_zero_coupon_price_and_duration(self):
         mod = load_module()
         result = mod.fixed_income(

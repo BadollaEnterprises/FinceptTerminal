@@ -424,7 +424,11 @@ def _option_gamma(spot: float, strike: float, years: float, rate: float, volatil
 
 def options_positioning(payload: Mapping[str, Any]) -> Dict[str, Any]:
     spot = _finite(payload.get("spot"), "spot")
-    years = max(1.0 / 365.0, _finite(payload.get("time_to_expiry", 30 / 365), "time_to_expiry"))
+    if spot <= 0:
+        raise ValueError("spot must be positive")
+    years = _finite(payload.get("time_to_expiry", 30 / 365), "time_to_expiry")
+    if years <= 0:
+        raise ValueError("time_to_expiry must be positive")
     rate = _finite(payload.get("risk_free_rate", 0.04), "risk_free_rate")
     raw_chain = payload.get("chain")
     if not isinstance(raw_chain, Sequence) or not raw_chain:
@@ -433,21 +437,25 @@ def options_positioning(payload: Mapping[str, Any]) -> Dict[str, Any]:
     for raw in raw_chain:
         if not isinstance(raw, Mapping):
             raise ValueError("each chain row must be an object")
-        chain.append(
-            {
-                "strike": _finite(raw.get("strike"), "strike"),
-                "call_oi": _row_value(raw, "call_oi", "ce_oi"),
-                "put_oi": _row_value(raw, "put_oi", "pe_oi"),
-                "call_volume": _row_value(raw, "call_volume", "ce_volume"),
-                "put_volume": _row_value(raw, "put_volume", "pe_volume"),
-                "call_gamma": _row_value(raw, "call_gamma", "ce_gamma"),
-                "put_gamma": _row_value(raw, "put_gamma", "pe_gamma"),
-                "call_bid": _row_value(raw, "call_bid", "ce_bid"),
-                "call_ask": _row_value(raw, "call_ask", "ce_ask"),
-                "put_bid": _row_value(raw, "put_bid", "pe_bid"),
-                "put_ask": _row_value(raw, "put_ask", "pe_ask"),
-            }
-        )
+        row = {
+            "strike": _finite(raw.get("strike"), "strike"),
+            "call_oi": _row_value(raw, "call_oi", "ce_oi"),
+            "put_oi": _row_value(raw, "put_oi", "pe_oi"),
+            "call_volume": _row_value(raw, "call_volume", "ce_volume"),
+            "put_volume": _row_value(raw, "put_volume", "pe_volume"),
+            "call_gamma": _row_value(raw, "call_gamma", "ce_gamma"),
+            "put_gamma": _row_value(raw, "put_gamma", "pe_gamma"),
+            "call_bid": _row_value(raw, "call_bid", "ce_bid"),
+            "call_ask": _row_value(raw, "call_ask", "ce_ask"),
+            "put_bid": _row_value(raw, "put_bid", "pe_bid"),
+            "put_ask": _row_value(raw, "put_ask", "pe_ask"),
+        }
+        if row["strike"] <= 0:
+            raise ValueError("strike must be positive")
+        for field, value in row.items():
+            if field != "strike" and value < 0:
+                raise ValueError(f"{field} must be non-negative")
+        chain.append(row)
     call_oi = sum(row["call_oi"] for row in chain)
     put_oi = sum(row["put_oi"] for row in chain)
     call_volume = sum(row["call_volume"] for row in chain)
