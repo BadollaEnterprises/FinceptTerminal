@@ -689,6 +689,8 @@ int run_arena_selftest() {
                                               approx(orders.value()[0].notional_usd, 2000));
         auto toks = store.token_totals(ecid);
         check("store: token totals aggregated", toks.is_ok() && toks.value().value(gpt_id) > 0);
+        check("store: repair retry tokens include both requests",
+              toks.is_ok() && toks.value().value(claude_id) == 240);
         auto eq = store.equity_series(ecid);
         check("engine: equity snapshots for both agents", eq.is_ok() && eq.value().size() == 2);
         check("engine: parse failure did not block round", eq.is_ok() && eq.value().size() == 2 && completed_seq == 1);

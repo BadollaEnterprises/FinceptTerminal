@@ -15,6 +15,7 @@
 #include <QPointer>
 #include <QUuid>
 
+#include <limits>
 #include <memory>
 
 namespace fincept::arena {
@@ -22,6 +23,11 @@ namespace fincept::arena {
 static constexpr const char* TAG = "ArenaEngine";
 static constexpr int kKillMarksTimeoutMs = 2000; // bounded wait; a kill must never hang
 static constexpr const char* kArenaKillBusy = "a kill is in progress — wait for it to finish (about 2 seconds)";
+
+static int add_usage(int prior, int current) {
+    return static_cast<int>(qBound<qint64>(qint64(0), qint64(qMax(0, prior)) + qMax(0, current),
+                                          qint64(std::numeric_limits<int>::max())));
+}
 
 static QString approval_summary(const AgentAction& act) {
     return QStringLiteral("%1 %2 %3 $%4 @%5x")
@@ -562,7 +568,8 @@ void ArenaEngine::on_snapshot(quint64 epoch, int seq, Result<MarketSnapshot> r) 
 }
 
 void ArenaEngine::dispatch_agent(int seq, const AgentRow& agent, const MarketSnapshot& snap, bool is_retry,
-                                 const QString& prior_raw, const QString& prior_error) {
+                                 const QString& prior_raw, const QString& prior_error, int prior_prompt_tokens,
+                                 int prior_completion_tokens, int prior_latency_ms) {
     auto cred = ArenaModelRegistry::instance().resolve_credentials(agent.source_kind, agent.source_ref, agent.provider);
     if (cred.is_err()) {
         DecisionRow d;
@@ -571,6 +578,9 @@ void ArenaEngine::dispatch_agent(int seq, const AgentRow& agent, const MarketSna
         d.round_seq = seq;
         d.status = "skipped_no_key";
         d.parse_error = QString::fromStdString(cred.error());
+        d.prompt_tokens = qMax(0, prior_prompt_tokens);
+        d.completion_tokens = qMax(0, prior_completion_tokens);
+        d.latency_ms = qMax(0, prior_latency_ms);
         auto id_r = ArenaStore::instance().insert_decision(d);
         emit decision_received(id_r.is_ok() ? id_r.value() : QString(), agent.id, d.status);
         agent_done(seq);
@@ -595,15 +605,18 @@ void ArenaEngine::dispatch_agent(int seq, const AgentRow& agent, const MarketSna
 
     const AgentRow agent_copy = agent;
     const quint64 epoch = epoch_;
-    llm_->complete(req, [this, epoch, seq, agent_copy, sys, user, is_retry](ArenaLlmResult r) {
+    llm_->complete(req, [this, epoch, seq, agent_copy, sys, user, is_retry, prior_prompt_tokens,
+                         prior_completion_tokens, prior_latency_ms](ArenaLlmResult r) {
         if (epoch != epoch_ || active_id_.isEmpty())
             return; // stopped/replaced mid-call
-        finish_agent(seq, agent_copy, r, sys, user, is_retry);
+        finish_agent(seq, agent_copy, r, sys, user, is_retry, prior_prompt_tokens, prior_completion_tokens,
+                     prior_latency_ms);
     });
 }
 
 void ArenaEngine::finish_agent(int seq, const AgentRow& agent, const ArenaLlmResult& llm, const QString& sys,
-                               const QString& user, bool was_retry) {
+                               const QString& user, bool was_retry, int prior_prompt_tokens,
+                               int prior_completion_tokens, int prior_latency_ms) {
     // Halt is immediate (user-reported bug): the user may have halted/killed this
     // agent while its LLM call was in flight (up to 60s). `agent` is the row as
     // of dispatch — re-check the CURRENT status and, if no longer active, persist
@@ -628,9 +641,9 @@ void ArenaEngine::finish_agent(int seq, const AgentRow& agent, const ArenaLlmRes
     d.system_prompt = sys;
     d.user_prompt = user;
     d.raw_response = llm.content;
-    d.latency_ms = llm.latency_ms;
-    d.prompt_tokens = llm.prompt_tokens;
-    d.completion_tokens = llm.completion_tokens;
+    d.latency_ms = add_usage(prior_latency_ms, llm.latency_ms);
+    d.prompt_tokens = add_usage(prior_prompt_tokens, llm.prompt_tokens);
+    d.completion_tokens = add_usage(prior_completion_tokens, llm.completion_tokens);
 
     if (!llm.success) {
         d.status = llm.error == QLatin1String("timeout") ? "timeout" : "llm_error";
@@ -649,7 +662,8 @@ void ArenaEngine::finish_agent(int seq, const AgentRow& agent, const ArenaLlmRes
     auto parsed = parse_decision(llm.content, comp_.instruments, comp_.max_leverage);
     if (!parsed.ok()) {
         if (!was_retry && !halted) { // one repair retry (spec §5); none for a halted agent
-            dispatch_agent(seq, agent, last_snapshot_, true, llm.content, parsed.error);
+            dispatch_agent(seq, agent, last_snapshot_, true, llm.content, parsed.error, d.prompt_tokens,
+                           d.completion_tokens, d.latency_ms);
             return;
         }
         d.status = "parse_error";

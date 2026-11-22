@@ -102,9 +102,11 @@ class ArenaEngine : public QObject {
     void run_round();
     void on_snapshot(quint64 epoch, int seq, Result<MarketSnapshot> r);
     void dispatch_agent(int seq, const AgentRow& agent, const MarketSnapshot& snap, bool is_retry,
-                        const QString& prior_raw, const QString& prior_error);
+                        const QString& prior_raw, const QString& prior_error, int prior_prompt_tokens = 0,
+                        int prior_completion_tokens = 0, int prior_latency_ms = 0);
     void finish_agent(int seq, const AgentRow& agent, const ArenaLlmResult& llm, const QString& sys,
-                      const QString& user, bool was_retry);
+                      const QString& user, bool was_retry, int prior_prompt_tokens, int prior_completion_tokens,
+                      int prior_latency_ms);
     void agent_done(int seq);
     void settle_round(int seq);
     void record_failure(const AgentRow& agent, const QString& kind);
