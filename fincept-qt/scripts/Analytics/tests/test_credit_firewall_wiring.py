@@ -442,6 +442,19 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertLess(streaming.index("llm_svc_input_budget_error"), streaming.index("request.do_streaming_request"))
         self.assertIn("No provider request was sent", source)
 
+    def test_llm_budget_settings_are_synced_before_success_is_shown(self):
+        header = (ROOT / "src/core/config/AppConfig.h").read_text(encoding="utf-8")
+        config = (ROOT / "src/core/config/AppConfig.cpp").read_text(encoding="utf-8")
+        providers = (ROOT / "src/screens/settings/LlmConfigSection_Providers.cpp").read_text(encoding="utf-8")
+        save = providers[providers.index("void LlmConfigSection::on_save_global()"):providers.index("void LlmConfigSection::on_test_connection")]
+        self.assertIn("Result<void> sync()", header)
+        self.assertIn("settings_.sync()", config)
+        self.assertIn("QSettings::NoError", config)
+        self.assertIn("const auto budgets_saved = app_config.sync()", save)
+        self.assertIn("if (budgets_saved.is_err())", save)
+        self.assertLess(save.index("if (budgets_saved.is_err())"), save.index("Global settings saved"))
+        self.assertIn("privacy::redact_text", save)
+
     def test_llm_settings_diagnostics_scrub_storage_errors_and_profile_identity(self):
         providers = (ROOT / "src/screens/settings/LlmConfigSection_Providers.cpp").read_text(encoding="utf-8")
         profiles = (ROOT / "src/screens/settings/LlmConfigSection_Profiles.cpp").read_text(encoding="utf-8")

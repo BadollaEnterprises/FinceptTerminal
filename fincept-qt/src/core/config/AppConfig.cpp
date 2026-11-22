@@ -54,6 +54,19 @@ void AppConfig::remove(const QString& key) {
         LOG_INFO("Settings", logf("Setting removed", {{"key", key}}));
 }
 
+Result<void> AppConfig::sync() {
+    settings_.sync();
+    switch (settings_.status()) {
+        case QSettings::NoError:
+            return Result<void>::ok();
+        case QSettings::AccessError:
+            return Result<void>::err("Application settings storage is not writable");
+        case QSettings::FormatError:
+            return Result<void>::err("Application settings storage has an invalid format");
+    }
+    return Result<void>::err("Application settings storage returned an unknown error");
+}
+
 QString AppConfig::api_base_url() const {
     return settings_.value("api/base_url", "https://api.fincept.in").toString();
 }

@@ -1009,6 +1009,15 @@ void LlmConfigSection::on_save_global() {
     auto& app_config = AppConfig::instance();
     for (auto it = budget_values.cbegin(); it != budget_values.cend(); ++it)
         app_config.set(it.key(), it.value());
+    const auto budgets_saved = app_config.sync();
+    if (budgets_saved.is_err()) {
+        const QString detail = privacy::redact_text(QString::fromStdString(budgets_saved.error()));
+        show_status(tr("AI settings changed for this session, but the cost guardrails could not be saved: ") +
+                        detail,
+                    true);
+        LOG_ERROR(TAG_PROVIDERS, "cost guardrail sync failed: " + detail);
+        return;
+    }
 
     show_status(tr("Global settings saved"), false);
     emit config_changed();

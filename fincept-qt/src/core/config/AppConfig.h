@@ -1,4 +1,6 @@
 #pragma once
+#include "core/result/Result.h"
+
 #include <QSettings>
 #include <QString>
 #include <QVariant>
@@ -13,6 +15,9 @@ class AppConfig {
     QVariant get(const QString& key, const QVariant& default_val = {}) const;
     void set(const QString& key, const QVariant& value);
     void remove(const QString& key);
+    /// Flush pending changes and report whether the platform settings backend
+    /// accepted them. Call before showing persistence-sensitive save success.
+    Result<void> sync();
 
     // Typed accessors for common settings
     QString api_base_url() const;
