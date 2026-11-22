@@ -283,7 +283,9 @@ void ModelBadge::open_picker() {
     const auto pick = [self, feature, context](const mb_ai::ModelChoice& c) {
         QString error;
         if (!mb_ai::ModelRouter::instance().set_choice(feature, context, c, &error)) {
-            LOG_WARN("ModelBadge", QStringLiteral("Model choice not stored: %1").arg(error));
+            LOG_WARN("ModelBadge", QStringLiteral("Model choice not stored: %1").arg(privacy::redact_text(error)));
+            if (self)
+                QMessageBox::warning(self, tr("Model"), tr("Could not switch the model: %1").arg(error));
             return;
         }
         if (self)

@@ -552,6 +552,15 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertIn("if (!mb_ai::ModelRouter::instance().clear_choice", badge)
         self.assertIn("Could not reset the model", badge)
 
+    def test_model_picker_surfaces_assignment_save_failures(self):
+        badge = (ROOT / "src/ui/widgets/ModelBadge.cpp").read_text(encoding="utf-8")
+        pick = badge[badge.index("const auto pick ="):badge.index("QAction* auto_action")]
+        self.assertIn("if (!mb_ai::ModelRouter::instance().set_choice", pick)
+        self.assertIn("privacy::redact_text(error)", pick)
+        self.assertIn("QMessageBox::warning", pick)
+        self.assertIn("Could not switch the model", pick)
+        self.assertLess(pick.index("QMessageBox::warning"), pick.index("return"))
+
     def test_deleting_active_provider_selects_deterministic_byo_fallback(self):
         source = (ROOT / "src/screens/settings/LlmConfigSection_Providers.cpp").read_text(encoding="utf-8")
         body = source[source.index("void LlmConfigSection::on_delete_provider()"):
