@@ -3840,11 +3840,14 @@ def _exponential_properties(body: Mapping[str, Any]) -> Dict[str, float]:
             "skewness": 2.0, "excess_kurtosis": 6.0}
 
 
-def _integer_parameter(body: Mapping[str, Any], name: str, minimum: int = 0) -> int:
+def _integer_parameter(body: Mapping[str, Any], name: str, minimum: int = 0,
+                       maximum: int | None = None) -> int:
     raw = _number(body, name)
     value = int(raw)
     if value != raw or value < minimum:
         raise ValueError(f"{name} must be an integer >= {minimum}")
+    if maximum is not None and value > maximum:
+        raise ValueError(f"{name} is outside local safety limits")
     return value
 
 
@@ -3853,7 +3856,7 @@ def _poisson_distribution(body: Mapping[str, Any], operation: str) -> Dict[str, 
     if operation == "properties":
         return {"mean": intensity, "variance": intensity, "standard_deviation": math.sqrt(intensity),
                 "skewness": 1 / math.sqrt(intensity), "excess_kurtosis": 1 / intensity}
-    count = _integer_parameter(body, "k")
+    count = _integer_parameter(body, "k", maximum=10000)
     pmf = math.exp(-intensity + count * math.log(intensity) - math.lgamma(count + 1))
     value = pmf if operation == "pmf" else sum(
         math.exp(-intensity + index * math.log(intensity) - math.lgamma(index + 1)) for index in range(count + 1)
@@ -3862,14 +3865,15 @@ def _poisson_distribution(body: Mapping[str, Any], operation: str) -> Dict[str, 
 
 
 def _binomial_distribution(body: Mapping[str, Any], operation: str) -> Dict[str, Any]:
-    trials, probability = _integer_parameter(body, "n", 1), _number(body, "p")
+    trials = _integer_parameter(body, "n", 1, 10000)
+    probability = _number(body, "p")
     if not 0 <= probability <= 1:
         raise ValueError("p must be in [0,1]")
     if operation == "properties":
         variance = trials * probability * (1 - probability)
         return {"mean": trials * probability, "variance": variance,
                 "standard_deviation": math.sqrt(variance)}
-    count = _integer_parameter(body, "k")
+    count = _integer_parameter(body, "k", maximum=10000)
     def pmf(index: int) -> float:
         if index > trials:
             return 0.0
@@ -3897,16 +3901,16 @@ def _geometric_distribution(body: Mapping[str, Any], operation: str) -> Dict[str
 
 
 def _hypergeometric_distribution(body: Mapping[str, Any], operation: str) -> Dict[str, Any]:
-    population = _integer_parameter(body, "N", 1)
-    successes = _integer_parameter(body, "K")
-    draws = _integer_parameter(body, "n")
+    population = _integer_parameter(body, "N", 1, 10000)
+    successes = _integer_parameter(body, "K", maximum=10000)
+    draws = _integer_parameter(body, "n", maximum=10000)
     if successes > population or draws > population:
         raise ValueError("K and n cannot exceed N")
     if operation == "properties":
         probability = successes / population
         variance = draws * probability * (1 - probability) * (population - draws) / max(1, population - 1)
         return {"mean": draws * probability, "variance": variance, "standard_deviation": math.sqrt(variance)}
-    count = _integer_parameter(body, "k")
+    count = _integer_parameter(body, "k", maximum=10000)
     def pmf(index: int) -> float:
         if index < max(0, draws - (population - successes)) or index > min(draws, successes):
             return 0.0
@@ -3916,14 +3920,15 @@ def _hypergeometric_distribution(body: Mapping[str, Any], operation: str) -> Dic
 
 
 def _negative_binomial_distribution(body: Mapping[str, Any], operation: str) -> Dict[str, Any]:
-    successes, probability = _integer_parameter(body, "r", 1), _number(body, "p")
+    successes = _integer_parameter(body, "r", 1, 10000)
+    probability = _number(body, "p")
     if not 0 < probability <= 1:
         raise ValueError("p must be in (0,1]")
     if operation == "properties":
         mean = successes * (1 - probability) / probability
         variance = successes * (1 - probability) / (probability * probability)
         return {"mean": mean, "variance": variance, "standard_deviation": math.sqrt(variance)}
-    count = _integer_parameter(body, "k")
+    count = _integer_parameter(body, "k", maximum=10000)
     def pmf(index: int) -> float:
         return math.comb(index + successes - 1, index) * probability ** successes * (1 - probability) ** index
     value = pmf(count) if operation == "pmf" else sum(pmf(index) for index in range(count + 1))

@@ -925,6 +925,21 @@ class ByoQuantLibTest(unittest.TestCase):
             self.assertEqual(answer["meta"]["fincept_credits"], 0)
             self.assertFalse(answer["meta"]["llm_used"])
 
+    def test_discrete_distribution_counts_are_bounded(self):
+        mod = load_module()
+        cases = (
+            ("statistics/distributions/poisson/cdf", {"lam": 3, "k": 10001}),
+            ("statistics/distributions/binomial/pmf", {"n": 10001, "p": 0.3, "k": 3}),
+            ("statistics/distributions/hypergeometric/pmf",
+             {"N": 10001, "K": 5000, "n": 100, "k": 50}),
+            ("statistics/distributions/negative-binomial/cdf", {"r": 2, "p": 0.3, "k": 10001}),
+        )
+        for route, body in cases:
+            with self.subTest(route=route):
+                answer = mod.execute(route, body)
+                self.assertIn("outside local safety limits", answer.get("error", ""))
+                self.assertEqual(answer["meta"]["fincept_credits"], 0)
+
     def test_sabr_and_flat_surface_routes_return_volatility(self):
         mod = load_module()
         sabr = mod.execute(
