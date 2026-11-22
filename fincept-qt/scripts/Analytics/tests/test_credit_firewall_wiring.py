@@ -433,6 +433,14 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertIn("ON CONFLICT(provider) DO UPDATE SET", save)
         self.assertIn("tools_enabled = excluded.tools_enabled", save)
 
+    def test_model_repository_updates_rows_without_replace_delete(self):
+        source = (ROOT / "src/storage/repositories/LlmConfigRepository.cpp").read_text(encoding="utf-8")
+        save = source[source.index("Result<void> LlmConfigRepository::save_model"):
+                      source.index("Result<void> LlmConfigRepository::delete_model")]
+        self.assertNotIn("INSERT OR REPLACE", save)
+        self.assertIn("ON CONFLICT(id) DO UPDATE SET", save)
+        self.assertIn("is_default = excluded.is_default", save)
+
     def test_deleting_active_provider_selects_deterministic_byo_fallback(self):
         source = (ROOT / "src/screens/settings/LlmConfigSection_Providers.cpp").read_text(encoding="utf-8")
         body = source[source.index("void LlmConfigSection::on_delete_provider()"):

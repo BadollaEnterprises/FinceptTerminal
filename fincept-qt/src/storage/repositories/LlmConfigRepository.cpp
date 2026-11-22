@@ -191,9 +191,13 @@ Result<QVector<LlmModelConfig>> LlmConfigRepository::list_models(const QString& 
 
 Result<void> LlmConfigRepository::save_model(const LlmModelConfig& m) {
     auto saved = exec_write(
-        "INSERT OR REPLACE INTO llm_model_configs "
+        "INSERT INTO llm_model_configs "
         "(id, provider, model_id, display_name, api_key, base_url, is_enabled, is_default, updated_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))",
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now')) "
+        "ON CONFLICT(id) DO UPDATE SET "
+        "provider = excluded.provider, model_id = excluded.model_id, display_name = excluded.display_name, "
+        "api_key = excluded.api_key, base_url = excluded.base_url, is_enabled = excluded.is_enabled, "
+        "is_default = excluded.is_default, updated_at = datetime('now')",
         {m.id, m.provider, m.model_id, m.display_name, m.api_key, m.base_url, m.is_enabled ? 1 : 0,
          m.is_default ? 1 : 0});
     if (saved.is_err())
