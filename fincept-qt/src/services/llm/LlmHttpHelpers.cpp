@@ -10,6 +10,7 @@
 #include "services/llm/LlmErrors.h"
 #include "services/llm/LlmRequestPolicy.h"
 #include "services/llm/LlmService.h"
+#include "services/llm/LlmTransportPolicy.h"
 
 #include <QCoreApplication>
 #include <QEvent>
@@ -115,25 +116,16 @@ QString report_fincept_refusal(int http_status, const QByteArray& body, const QS
     return make_fincept_error(LlmErrorKind::FinceptAuth, {}, server_msg);
 }
 
-// HTTP statuses that mean "the provider did not process this request": rate
-// limiting and transient upstream/overload errors (529 is Anthropic's
-// "overloaded"). A tool loop re-posts the whole transcript every round, so one
-// blip on round 7 used to throw away six rounds of tool work; one retry after a
-// short backoff recovers the common case without hiding a persistent failure.
-static bool llm_http_is_transient_status(int status) {
-    return status == 429 || status == 500 || status == 502 || status == 503 || status == 504 || status == 529;
-}
-
 // ── Blocking POST ──────────────────────────────────────────────────────────
 // Background-thread only. Delegates to eventloop_request which works for
 // Cloudflare-protected endpoints (the old waitForReadyRead() path failed
-// during TLS negotiation behind Cloudflare). Retries once on a transient
-// status (see above).
+// during TLS negotiation behind Cloudflare). Retries once only when the
+// provider explicitly rejected the request before inference (HTTP 429).
 LlmService::HttpResult LlmService::blocking_post(const QString& url, const QJsonObject& body,
                                                  const QMap<QString, QString>& headers, int timeout_ms) {
     QByteArray json_data = QJsonDocument(body).toJson(QJsonDocument::Compact);
     HttpResult r = eventloop_request("POST", url, json_data, headers, timeout_ms);
-    if (!r.success && !r.cancelled && llm_http_is_transient_status(r.status)) {
+    if (!r.success && !r.cancelled && should_automatically_retry_paid_post(r.status)) {
         // Honour Retry-After when the provider sends one, within sane bounds.
         const int backoff_ms = std::clamp(r.retry_after_s * 1000, 2000, 15000);
         LOG_WARN("LlmService", QString("POST failed with HTTP %1 — retrying once in %2 ms").arg(r.status).arg(backoff_ms));

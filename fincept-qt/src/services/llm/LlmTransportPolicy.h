@@ -17,4 +17,12 @@ inline bool should_execute_text_tool_calls(bool tools_enabled) {
     return tools_enabled;
 }
 
+/// A paid POST is safe to replay automatically only when the provider has
+/// explicitly rejected it before inference. 5xx/overload and transport
+/// failures are ambiguous: the model may already have generated (and billed)
+/// an answer even though the client received only an error.
+inline bool should_automatically_retry_paid_post(int http_status) {
+    return http_status == 429;
+}
+
 } // namespace fincept::ai_chat

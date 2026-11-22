@@ -16,6 +16,7 @@ class TestAiChatEffortPolicy : public QObject {
     void deepseek_effort_builds_current_thinking_fields();
     void tool_calls_use_a_single_request_transport();
     void text_tool_compatibility_respects_the_toggle();
+    void paid_posts_retry_only_explicit_pre_inference_rejections();
 };
 
 void TestAiChatEffortPolicy::ordinary_effort_has_no_usage_warning() {
@@ -95,6 +96,12 @@ void TestAiChatEffortPolicy::tool_calls_use_a_single_request_transport() {
 void TestAiChatEffortPolicy::text_tool_compatibility_respects_the_toggle() {
     QVERIFY(fincept::ai_chat::should_execute_text_tool_calls(true));
     QVERIFY(!fincept::ai_chat::should_execute_text_tool_calls(false));
+}
+
+void TestAiChatEffortPolicy::paid_posts_retry_only_explicit_pre_inference_rejections() {
+    QVERIFY(fincept::ai_chat::should_automatically_retry_paid_post(429));
+    for (const int ambiguous_status : {0, 500, 502, 503, 504, 529})
+        QVERIFY(!fincept::ai_chat::should_automatically_retry_paid_post(ambiguous_status));
 }
 
 QTEST_GUILESS_MAIN(TestAiChatEffortPolicy)
