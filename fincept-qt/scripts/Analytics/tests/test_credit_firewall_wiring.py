@@ -396,6 +396,25 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertIn("Could not save the interface language", switcher)
         self.assertIn("privacy::redact_text", switcher)
 
+    def test_keybindings_mutate_only_after_storage_succeeds(self):
+        header = (ROOT / "src/core/keys/KeyConfigManager.h").read_text(encoding="utf-8")
+        manager = (ROOT / "src/core/keys/KeyConfigManager.cpp").read_text(encoding="utf-8")
+        section = (ROOT / "src/screens/settings/KeybindingsSection.cpp").read_text(encoding="utf-8")
+
+        self.assertIn("Result<void> set_key", header)
+        self.assertIn("Result<void> reset_key", header)
+        self.assertIn("Result<void> reset_all", header)
+        setter = manager[manager.index("Result<void> KeyConfigManager::set_key"):manager.index("Result<void> KeyConfigManager::reset_key")]
+        self.assertLess(setter.index("persist(a, seq)"), setter.index("act->setShortcut(seq)"))
+        reset_one = manager[manager.index("Result<void> KeyConfigManager::reset_key"):manager.index("Result<void> KeyConfigManager::reset_all")]
+        self.assertLess(reset_one.index("remove(storage_key(a))"), reset_one.index("act->setShortcut(def)"))
+        reset_all = manager[manager.index("Result<void> KeyConfigManager::reset_all"):manager.index("find_conflict")]
+        self.assertLess(reset_all.index("clear_category"), reset_all.index("act->setShortcut"))
+
+        self.assertGreaterEqual(section.count("Could not save the keybinding"), 2)
+        self.assertIn("Could not reset keybindings", section)
+        self.assertIn("privacy::redact_text", section)
+
     def test_llm_settings_diagnostics_scrub_storage_errors_and_profile_identity(self):
         providers = (ROOT / "src/screens/settings/LlmConfigSection_Providers.cpp").read_text(encoding="utf-8")
         profiles = (ROOT / "src/screens/settings/LlmConfigSection_Profiles.cpp").read_text(encoding="utf-8")

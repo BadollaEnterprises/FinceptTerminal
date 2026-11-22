@@ -195,8 +195,8 @@ void KeyConfigManager::load_from_storage() {
     }
 }
 
-void KeyConfigManager::persist(KeyAction a, const QKeySequence& seq) {
-    SettingsRepository::instance().set(storage_key(a), seq.toString(), "keybindings");
+Result<void> KeyConfigManager::persist(KeyAction a, const QKeySequence& seq) {
+    return SettingsRepository::instance().set(storage_key(a), seq.toString(), "keybindings");
 }
 
 QAction* KeyConfigManager::action(KeyAction a) const {
@@ -408,26 +408,36 @@ QList<KeyAction> KeyConfigManager::all_actions() const {
     };
 }
 
-void KeyConfigManager::set_key(KeyAction a, const QKeySequence& seq) {
-    if (auto* act = actions_.value(a, nullptr)) {
-        act->setShortcut(seq);
-        persist(a, seq);
-        emit key_changed(a, seq);
-        LOG_INFO("KeyConfig", QString("Rebound %1 to %2").arg(display_name(a), seq.toString()));
-    }
+Result<void> KeyConfigManager::set_key(KeyAction a, const QKeySequence& seq) {
+    auto* act = actions_.value(a, nullptr);
+    if (!act)
+        return Result<void>::err("Unknown keybinding action");
+    const auto saved = persist(a, seq);
+    if (saved.is_err())
+        return Result<void>::err(saved.error());
+    act->setShortcut(seq);
+    emit key_changed(a, seq);
+    LOG_INFO("KeyConfig", QString("Rebound %1 to %2").arg(display_name(a), seq.toString()));
+    return Result<void>::ok();
 }
 
-void KeyConfigManager::reset_key(KeyAction a) {
+Result<void> KeyConfigManager::reset_key(KeyAction a) {
     const QKeySequence def = defaults_.value(a);
-    if (auto* act = actions_.value(a, nullptr)) {
-        act->setShortcut(def);
-        SettingsRepository::instance().remove(storage_key(a));
-        emit key_changed(a, def);
-    }
+    auto* act = actions_.value(a, nullptr);
+    if (!act)
+        return Result<void>::err("Unknown keybinding action");
+    const auto removed = SettingsRepository::instance().remove(storage_key(a));
+    if (removed.is_err())
+        return Result<void>::err(removed.error());
+    act->setShortcut(def);
+    emit key_changed(a, def);
+    return Result<void>::ok();
 }
 
-void KeyConfigManager::reset_all() {
-    SettingsRepository::instance().clear_category("keybindings");
+Result<void> KeyConfigManager::reset_all() {
+    const auto cleared = SettingsRepository::instance().clear_category("keybindings");
+    if (cleared.is_err())
+        return Result<void>::err(cleared.error());
     for (auto it = defaults_.begin(); it != defaults_.end(); ++it) {
         if (auto* act = actions_.value(it.key(), nullptr)) {
             act->setShortcut(it.value());
@@ -435,6 +445,7 @@ void KeyConfigManager::reset_all() {
         }
     }
     LOG_INFO("KeyConfig", "All keybindings reset to defaults");
+    return Result<void>::ok();
 }
 
 std::optional<KeyAction> KeyConfigManager::find_conflict(const QKeySequence& seq, KeyAction exclude) const {

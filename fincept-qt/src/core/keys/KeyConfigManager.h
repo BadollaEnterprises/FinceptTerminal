@@ -1,6 +1,7 @@
 // src/core/keys/KeyConfigManager.h
 #pragma once
 #include "core/keys/KeyActions.h"
+#include "core/result/Result.h"
 
 #include <QAction>
 #include <QKeySequence>
@@ -38,14 +39,15 @@ class KeyConfigManager : public QObject {
     /// All actions in definition order.
     QList<KeyAction> all_actions() const;
 
-    /// Update the key for an action. Updates QAction shortcut and persists to DB.
-    void set_key(KeyAction a, const QKeySequence& seq);
+    /// Persist and update the key for an action. The live shortcut is unchanged
+    /// when storage rejects the update.
+    Result<void> set_key(KeyAction a, const QKeySequence& seq);
 
     /// Reset one action to its default.
-    void reset_key(KeyAction a);
+    Result<void> reset_key(KeyAction a);
 
     /// Reset all actions to defaults and clear the "keybindings" category in DB.
-    void reset_all();
+    Result<void> reset_all();
 
     /// Returns the KeyAction that currently uses seq, or nullopt if none.
     /// Pass exclude to skip the action being edited (conflict check).
@@ -57,7 +59,7 @@ class KeyConfigManager : public QObject {
   private:
     KeyConfigManager();
     void load_from_storage();
-    void persist(KeyAction a, const QKeySequence& seq);
+    Result<void> persist(KeyAction a, const QKeySequence& seq);
 
     QMap<KeyAction, QAction*> actions_;
     QMap<KeyAction, QKeySequence> defaults_;

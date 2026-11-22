@@ -5,6 +5,7 @@
 #include "core/actions/ActionRegistry.h"
 #include "core/actions/builtin_actions.h"
 #include "core/keys/KeyConfigManager.h"
+#include "core/privacy/LogRedact.h"
 #include "ui/theme/Theme.h"
 #include "ui/theme/ThemeManager.h"
 
@@ -401,7 +402,12 @@ void KeybindingsSection::build_ui() {
             QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
         if (reply != QMessageBox::Yes)
             return;
-        KeyConfigManager::instance().reset_all();
+        const auto reset = KeyConfigManager::instance().reset_all();
+        if (reset.is_err()) {
+            const QString detail = privacy::redact_text(QString::fromStdString(reset.error()));
+            QMessageBox::warning(this, tr("Reset Keybindings"),
+                                 tr("Could not reset keybindings: %1").arg(detail));
+        }
     });
 
     root->addWidget(hint_label_);
@@ -529,7 +535,14 @@ QWidget* KeybindingsSection::build_group(const QString& group_name, const QList<
         reset_btn->setEnabled(custom);
         reset_btn->setToolTip(custom ? tr("Restore %1").arg(km.default_key(a).toString(QKeySequence::NativeText))
                                      : tr("Already the default"));
-        connect(reset_btn, &QPushButton::clicked, this, [a]() { KeyConfigManager::instance().reset_key(a); });
+        connect(reset_btn, &QPushButton::clicked, this, [this, a]() {
+            const auto reset = KeyConfigManager::instance().reset_key(a);
+            if (reset.is_err()) {
+                const QString detail = privacy::redact_text(QString::fromStdString(reset.error()));
+                QMessageBox::warning(this, tr("Keybinding"),
+                                     tr("Could not save the keybinding: %1").arg(detail));
+            }
+        });
         hl->addWidget(reset_btn);
 
         vbox->addWidget(row);
@@ -565,8 +578,14 @@ void KeybindingsSection::set_search(const QString& text) {
 void KeybindingsSection::open_capture(KeyAction a) {
     auto& km = KeyConfigManager::instance();
     KeyCaptureDialog dlg(a, km.key(a), this);
-    if (dlg.exec() == QDialog::Accepted && !dlg.captured().isEmpty())
-        km.set_key(a, dlg.captured());
+    if (dlg.exec() == QDialog::Accepted && !dlg.captured().isEmpty()) {
+        const auto changed = km.set_key(a, dlg.captured());
+        if (changed.is_err()) {
+            const QString detail = privacy::redact_text(QString::fromStdString(changed.error()));
+            QMessageBox::warning(this, tr("Keybinding"),
+                                 tr("Could not save the keybinding: %1").arg(detail));
+        }
+    }
 }
 
 bool KeybindingsSection::eventFilter(QObject* obj, QEvent* event) {
