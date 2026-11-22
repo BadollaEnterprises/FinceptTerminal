@@ -19,8 +19,10 @@ third-party data or platform services can be replaced by an LLM.
 | Packaged application diagnostics | Pass | All 10 packaged CI self-tests passed with the bundled Qt offscreen plugin. |
 | macOS bundle integrity | Pass for local distribution | `codesign --verify --deep --strict` passed after the final release rebuild. The bundle is ad-hoc signed. OpenSSL 3.5.9 is bundle-relative, arm64, and built for macOS 13.0. |
 | Live unlocked UI walkthrough | Pass | The signed release was unlocked locally. AI Chat displayed `DeepSeek / deepseek-flash`, `0 credits`, and billing to the user's DeepSeek key; Settings displayed all five BYO guardrails; `AAPL DES` opened Overview and `MSFT financials` opened Financials. |
-| Cross-platform packaging contracts | Pass | The fast CI gate verifies architecture-specific Windows OpenSSL/zlib triplets, ARM64 runtime DLL discovery, Qt host-tool deployment, and release-workflow trigger coverage. |
-| Windows and Linux packages | Not host-verified | Windows ARM64 packaging is statically hardened, but no Windows or Linux build host was available for an end-to-end package run. |
+| Cross-platform packaging contracts | Pass | Hosted lint run [44961400096](https://github.com/BadollaEnterprises/FinceptTerminal/actions/runs/44961400096) passed the architecture-specific OpenSSL/zlib, Qt host-tool, PE-filter fixture, and release-workflow contracts on `31721fd`. |
+| Linux package | Pass | Matrix run [44961406531](https://github.com/BadollaEnterprises/FinceptTerminal/actions/runs/44961406531) compiled and ran the Linux x64 self-tests; release run [44953568374](https://github.com/BadollaEnterprises/FinceptTerminal/actions/runs/44953568374) installed, opened, and removed the `.deb` on Ubuntu 22.04/24.04/26.04 and Debian 12/13. |
+| Windows x64 package | Pass | Matrix run [44961406531](https://github.com/BadollaEnterprises/FinceptTerminal/actions/runs/44961406531) compiled, ran self-tests, passed the recursive x64 PE audit, packaged, and uploaded the artifact on `31721fd`. |
+| Windows ARM64 package | Blocked by hosted CI | The application compiled and its executable passed the ARM64 check in run [44955322888](https://github.com/BadollaEnterprises/FinceptTerminal/actions/runs/44955322888). That run exposed an x64 compatibility DLL inside Visual Studio's ARM64 redist directory; `31721fd` now filters CRT files by their PE machine header and passes local plus hosted fixture tests. The exact package retry was cancelled when GitHub automatically paused workflows on the fork for Actions usage, before ARM64 packaging ran. |
 | Live public-data adapters | Pass on 2026-11-22 | AAPL technical rating, options positioning, analyst, ownership, and earnings adapters plus Market Pulse returned valid zero-credit public-data envelopes. The earnings result was valid but empty. |
 | Apple distribution | Not complete | Developer ID signing, hardened-runtime entitlements, notarization, and stapling require the owner's Apple distribution identity. |
 
@@ -82,7 +84,9 @@ used as a substitute for factual market feeds.
 
 ## Remaining release blockers
 
-1. Build and run the same test gates on Windows and Linux packaging hosts.
+1. Re-enable GitHub Actions for the fork and complete one Windows ARM64 package
+   run on `31721fd` or later; independently audit the uploaded artifact with
+   `check_windows_pe_arch.py` before declaring that target ready.
 2. Replace ad-hoc signing with Developer ID signing and complete notarization.
 3. Repeat the live public-feed smoke immediately before distribution because
    upstream availability, schemas, limits, and latency remain outside this repository.
