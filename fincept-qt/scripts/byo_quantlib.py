@@ -2450,6 +2450,8 @@ def _risk_ratios(body: Mapping[str, Any]) -> Dict[str, float]:
     if len(returns) < 2:
         raise ValueError("returns must contain at least two values")
     periods = float(body.get("periods_per_year", 252))
+    if not math.isfinite(periods) or periods <= 0:
+        raise ValueError("periods_per_year must be positive and finite")
     risk_free = float(body.get("risk_free_rate", 0.0))
     mean = statistics.mean(returns)
     volatility = statistics.stdev(returns)

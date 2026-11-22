@@ -688,6 +688,15 @@ class ByoQuantLibTest(unittest.TestCase):
         self.assertIn("sortino_ratio", ratios["data"])
         self.assertIn("max_drawdown", ratios["data"])
 
+    def test_portfolio_risk_annualization_is_positive_and_finite(self):
+        mod = load_module()
+        body = {"returns": [0.01, -0.02, 0.03]}
+        for periods in (0, -252, float("nan")):
+            with self.subTest(periods=periods):
+                answer = mod.execute("portfolio/risk/ratios", {**body, "periods_per_year": periods})
+                self.assertIn("periods_per_year must be positive and finite", answer.get("error", ""))
+                self.assertEqual(answer["meta"]["fincept_credits"], 0)
+
     def test_efficient_frontier_returns_normalized_portfolios(self):
         mod = load_module()
         answer = mod.execute(
