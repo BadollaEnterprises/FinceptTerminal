@@ -15,7 +15,15 @@ from rdagent.oai.backend import LiteLLMAPIBackend
 
 
 class SingleAttemptLiteLLMBackend(LiteLLMAPIBackend):
-    """Prevent an RD-Agent step from silently issuing continuation calls."""
+    """Prevent hidden continuation calls and plaintext settings logging."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        # RD-Agent's constructor logs LITELLM_SETTINGS.model_dump(), including
+        # openai_api_key. Mark the project-owned subclass as already logged so
+        # the parent preserves its remaining initialization without writing
+        # the user's DeepSeek credential to the RD-Agent log.
+        self.__class__._has_logged_settings = True
+        super().__init__(*args, **kwargs)
 
     def _create_chat_completion_inner_function(
         self, *args: Any, **kwargs: Any

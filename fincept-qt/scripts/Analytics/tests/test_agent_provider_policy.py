@@ -750,6 +750,8 @@ class AgentProviderPolicyTest(unittest.TestCase):
         self.assertTrue(RDAGENT_BACKEND.exists())
         source = RDAGENT_BACKEND.read_text(encoding="utf-8")
         self.assertIn("class SingleAttemptLiteLLMBackend", source)
+        self.assertIn("def __init__", source)
+        self.assertIn("self.__class__._has_logged_settings = True", source)
         self.assertIn("super()._create_chat_completion_inner_function", source)
         self.assertIn('finish_reason == "length"', source)
         self.assertIn("fincept_length_limit", source)
