@@ -350,6 +350,13 @@ QWidget* DataSourcesSection::build_content() {
         add_metric(tr("PUBLIC DATA"), usage.public_data_calls, ui::colors::POSITIVE());
         add_metric(tr("FINCEPT CREDITS"), usage.fincept_credits_used, ui::colors::POSITIVE());
         static_cast<QVBoxLayout*>(panel->layout())->addWidget(body);
+        if (!usage.persistence_error.isEmpty()) {
+            auto* warning = new QLabel(
+                tr("Usage totals are only available for this session: %1").arg(usage.persistence_error), panel);
+            warning->setWordWrap(true);
+            warning->setStyleSheet(QString("color:%1;padding:0 12px 10px 12px;").arg(ui::colors::NEGATIVE()));
+            static_cast<QVBoxLayout*>(panel->layout())->addWidget(warning);
+        }
         vl->addWidget(panel);
         vl->addSpacing(6);
     }

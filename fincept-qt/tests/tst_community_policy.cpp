@@ -178,6 +178,43 @@ class CommunityPolicyTest : public QObject {
         QVERIFY(!restored.source_last_success.value(QStringLiteral("rss")).isEmpty());
         QCOMPARE(restored.fincept_credits_used, 0);
     }
+
+    void local_usage_metrics_report_persistence_failures() {
+        using fincept::metrics::LocalUsageMetrics;
+        QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        const QString blocker_path = temp.filePath(QStringLiteral("not-a-directory"));
+        QFile blocker(blocker_path);
+        QVERIFY(blocker.open(QIODevice::WriteOnly));
+        QCOMPARE(blocker.write("x"), qint64(1));
+        blocker.close();
+
+        LocalUsageMetrics::set_storage_path(blocker_path + QStringLiteral("/usage.json"));
+        LocalUsageMetrics::reset_for_test();
+        LocalUsageMetrics::record_llm(QStringLiteral("deepseek"), 10, 2, true, 5);
+
+        const auto snapshot = LocalUsageMetrics::snapshot();
+        QVERIFY(!snapshot.persistence_error.isEmpty());
+        QCOMPARE(snapshot.llm_requests, 1);
+    }
+
+    void local_usage_metrics_never_overwrite_unreadable_totals() {
+        using fincept::metrics::LocalUsageMetrics;
+        QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        const QString path = temp.filePath(QStringLiteral("usage.json"));
+        QFile file(path);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        QCOMPARE(file.write("not-json"), qint64(8));
+        file.close();
+
+        LocalUsageMetrics::set_storage_path(path);
+        QVERIFY(!LocalUsageMetrics::snapshot().persistence_error.isEmpty());
+        LocalUsageMetrics::record_llm(QStringLiteral("deepseek"), 10, 2, true, 5);
+
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        QCOMPARE(file.readAll(), QByteArray("not-json"));
+    }
 };
 
 QTEST_MAIN(CommunityPolicyTest)

@@ -455,6 +455,14 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertLess(save.index("if (budgets_saved.is_err())"), save.index("Global settings saved"))
         self.assertIn("privacy::redact_text", save)
 
+    def test_usage_dashboard_surfaces_metrics_persistence_failures(self):
+        metrics = (ROOT / "src/core/metrics/LocalUsageMetrics.h").read_text(encoding="utf-8")
+        panel = (ROOT / "src/screens/settings/DataSourcesSection.cpp").read_text(encoding="utf-8")
+        self.assertIn("QString persistence_error", metrics)
+        self.assertIn("value.persistence_error", metrics)
+        self.assertIn("usage.persistence_error", panel)
+        self.assertIn("Usage totals are only available for this session", panel)
+
     def test_llm_settings_diagnostics_scrub_storage_errors_and_profile_identity(self):
         providers = (ROOT / "src/screens/settings/LlmConfigSection_Providers.cpp").read_text(encoding="utf-8")
         profiles = (ROOT / "src/screens/settings/LlmConfigSection_Profiles.cpp").read_text(encoding="utf-8")

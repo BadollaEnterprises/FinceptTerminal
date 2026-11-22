@@ -7,6 +7,7 @@
 #include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QJsonParseError>
 #include <QMutex>
 #include <QMutexLocker>
 #include <QSaveFile>
@@ -36,6 +37,9 @@ struct LocalUsageSnapshot {
     QHash<QString, qint64> monthly_provider_cached_prompt_tokens;
     QHash<QString, QString> provider_last_success;
     QHash<QString, QString> source_last_success;
+    /// Empty when the persistent counter file is healthy. The counters remain
+    /// valid in memory when storage is temporarily unavailable.
+    QString persistence_error;
 };
 
 /// Thread-safe, process-local accounting for BYO/public/local routes. Provider
@@ -108,6 +112,7 @@ class LocalUsageMetrics {
     static void reset_for_test() {
         QMutexLocker lock(&mutex());
         data() = {};
+        storage_contents_unknown() = false;
         if (!storage_path().isEmpty())
             QFile::remove(storage_path());
     }
@@ -131,6 +136,11 @@ class LocalUsageMetrics {
 
     static QString& storage_path() {
         static QString value;
+        return value;
+    }
+
+    static bool& storage_contents_unknown() {
+        static bool value = false;
         return value;
     }
 
@@ -187,10 +197,25 @@ class LocalUsageMetrics {
 
     static LocalUsageSnapshot load_locked() {
         LocalUsageSnapshot value;
-        QFile file(storage_path());
-        if (storage_path().isEmpty() || !file.open(QIODevice::ReadOnly))
+        storage_contents_unknown() = false;
+        if (storage_path().isEmpty())
             return value;
-        const QJsonObject root = QJsonDocument::fromJson(file.readAll()).object();
+        QFile file(storage_path());
+        if (!file.exists())
+            return value;
+        if (!file.open(QIODevice::ReadOnly)) {
+            value.persistence_error = QStringLiteral("The usage totals file could not be read");
+            storage_contents_unknown() = true;
+            return value;
+        }
+        QJsonParseError parse_error{};
+        const QJsonDocument document = QJsonDocument::fromJson(file.readAll(), &parse_error);
+        if (parse_error.error != QJsonParseError::NoError || !document.isObject()) {
+            value.persistence_error = QStringLiteral("The usage totals file is not valid JSON");
+            storage_contents_unknown() = true;
+            return value;
+        }
+        const QJsonObject root = document.object();
         value.llm_requests = qint64(root.value(QStringLiteral("llm_requests")).toDouble());
         value.successful_llm_requests = qint64(root.value(QStringLiteral("successful_llm_requests")).toDouble());
         value.prompt_tokens = qint64(root.value(QStringLiteral("prompt_tokens")).toDouble());
@@ -225,8 +250,15 @@ class LocalUsageMetrics {
     static void save_locked() {
         if (storage_path().isEmpty())
             return;
-        QDir().mkpath(QFileInfo(storage_path()).absolutePath());
-        const auto& value = data();
+        auto& value = data();
+        // A failed read means the on-disk counters are unknown, not empty.
+        // Never replace them with this session's partial totals.
+        if (storage_contents_unknown())
+            return;
+        if (!QDir().mkpath(QFileInfo(storage_path()).absolutePath())) {
+            value.persistence_error = QStringLiteral("The usage totals folder could not be created");
+            return;
+        }
         QJsonObject root{{QStringLiteral("version"), 2},
                          {QStringLiteral("llm_requests"), double(value.llm_requests)},
                          {QStringLiteral("successful_llm_requests"), double(value.successful_llm_requests)},
@@ -253,11 +285,17 @@ class LocalUsageMetrics {
                           integer_map(value.monthly_provider_cached_prompt_tokens)},
                          {QStringLiteral("provider_last_success"), string_map(value.provider_last_success)},
                          {QStringLiteral("source_last_success"), string_map(value.source_last_success)}};
+        const QByteArray encoded = QJsonDocument(root).toJson(QJsonDocument::Compact);
         QSaveFile file(storage_path());
-        if (file.open(QIODevice::WriteOnly)) {
-            file.write(QJsonDocument(root).toJson(QJsonDocument::Compact));
-            file.commit();
+        if (!file.open(QIODevice::WriteOnly)) {
+            value.persistence_error = QStringLiteral("The usage totals file could not be opened for writing");
+            return;
         }
+        if (file.write(encoded) != encoded.size() || !file.commit()) {
+            value.persistence_error = QStringLiteral("The usage totals file could not be saved");
+            return;
+        }
+        value.persistence_error.clear();
     }
 };
 
