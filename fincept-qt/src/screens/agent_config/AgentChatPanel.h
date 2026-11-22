@@ -65,6 +65,7 @@ class AgentChatPanel : public QWidget {
         QString provider;
         QString model;
         QString source; ///< one sentence for the tooltip: where this model comes from
+        QString error;  ///< redacted configuration read failure; never falls back
         bool ok = false;
     };
     AnsweringModel answering_model() const;

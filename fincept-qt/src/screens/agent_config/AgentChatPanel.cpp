@@ -3,6 +3,7 @@
 
 #include "core/events/EventBus.h"
 #include "core/logging/Logger.h"
+#include "core/privacy/LogRedact.h"
 #include "services/agents/AgentService.h"
 #include "services/llm/LlmService.h"
 #include "services/llm/ProviderCatalog.h"
@@ -774,6 +775,11 @@ AgentChatPanel::AnsweringModel AgentChatPanel::answering_model() const {
     }
     auto& repo = LlmProfileRepository::instance();
     const ResolvedLlmProfile r = repo.resolve_for_context(QStringLiteral("agent"), agent_id);
+    if (!r.config_error.isEmpty()) {
+        m.error = privacy::redact_text(r.config_error).left(240);
+        m.source = tr("The selected agent's LLM configuration could not be read.");
+        return m;
+    }
     if (r.provider.isEmpty()) {
         use_global();
         m.source = tr("No LLM profile applies to this agent: it answers with the global LLM.");
@@ -782,15 +788,29 @@ AgentChatPanel::AnsweringModel AgentChatPanel::answering_model() const {
     m.provider = r.provider;
     m.model = r.model_id;
     m.ok = true;
-    const QString own_id = repo.get_assignment(QStringLiteral("agent"), agent_id);
+    const auto own_assignment = repo.read_assignment(QStringLiteral("agent"), agent_id);
+    if (own_assignment.is_err()) {
+        m.ok = false;
+        m.error = privacy::redact_text(QString::fromStdString(own_assignment.error())).left(240);
+        m.source = tr("The selected agent's LLM assignment could not be read.");
+        return m;
+    }
+    const QString own_id = own_assignment.value();
     QString own_harness; // the agent's own assignment is a harness profile the runtime passes over
     if (!own_id.isEmpty() && own_id != r.profile_id) {
         if (const auto own = repo.get_profile(own_id); own.is_ok() && own.value().is_harness())
             own_harness = own.value().name;
     }
+    const auto default_assignment = repo.read_assignment(QStringLiteral("agent_default"), {});
+    if (default_assignment.is_err()) {
+        m.ok = false;
+        m.error = privacy::redact_text(QString::fromStdString(default_assignment.error())).left(240);
+        m.source = tr("The default agent LLM assignment could not be read.");
+        return m;
+    }
     if (!own_id.isEmpty() && own_id == r.profile_id)
         m.source = tr("This agent's LLM profile “%1”.").arg(r.profile_name);
-    else if (!r.profile_id.isEmpty() && r.profile_id == repo.get_assignment(QStringLiteral("agent_default"), {}))
+    else if (!r.profile_id.isEmpty() && r.profile_id == default_assignment.value())
         m.source = tr("The default LLM profile for agents, “%1”.").arg(r.profile_name);
     else if (!r.profile_id.isEmpty())
         m.source = tr("The global default LLM profile, “%1”.").arg(r.profile_name);
@@ -829,14 +849,17 @@ void AgentChatPanel::update_llm_status() {
             hdr_status_lbl_->setStyleSheet(QString("color:%1;font-size:" + fincept::ui::fonts::px(-5) + "px;font-weight:700;").arg(col::SUCCESS()));
         }
     } else {
-        hdr_model_lbl_->setText(tr("No LLM configured"));
-        hdr_model_lbl_->setToolTip(tr("No LLM answers this selection — configure one in Settings > LLM Configuration."));
+        const bool failed = !m.error.isEmpty();
+        hdr_model_lbl_->setText(failed ? tr("LLM configuration unavailable") : tr("No LLM configured"));
+        hdr_model_lbl_->setToolTip(failed ? QStringLiteral("%1\n%2").arg(m.source, m.error)
+                                         : tr("No LLM answers this selection — configure one in Settings > LLM Configuration."));
         set_model_pill_style(QString("color:%1;font-size:" + fincept::ui::fonts::px(-5) +
                                      "px;background:%2;border:1px solid %3;border-radius:3px;padding:2px 8px;")
                                  .arg(col::DANGER(), col::BG_BASE(), col::DANGER()));
-        hdr_status_lbl_->setText(tr("Unconfigured"));
+        hdr_status_lbl_->setText(failed ? tr("Configuration error") : tr("Unconfigured"));
         hdr_status_lbl_->setStyleSheet(QString("color:%1;font-size:" + fincept::ui::fonts::px(-5) + "px;font-weight:700;").arg(col::DANGER()));
-        status_label_->setText(tr("No LLM provider configured — go to Settings > LLM Configuration"));
+        status_label_->setText(failed ? tr("LLM configuration unavailable: %1").arg(m.error)
+                                      : tr("No LLM provider configured — go to Settings > LLM Configuration"));
     }
 }
 
@@ -851,8 +874,11 @@ void AgentChatPanel::send_message() {
     // answer even when no global provider is set (AgentService embeds its model);
     // a background task resolves on its own side, so it keeps the global check.
     auto& llm = ai_chat::LlmService::instance();
-    if (run_as_task_ ? !llm.is_configured() : !answering_model().ok) {
-        add_system_bubble(tr("No LLM provider configured. Go to Settings > LLM Configuration to set one up."));
+    const AnsweringModel answering = answering_model();
+    if (run_as_task_ ? !llm.is_configured() : !answering.ok) {
+        add_system_bubble(!answering.error.isEmpty()
+                              ? tr("LLM configuration unavailable: %1").arg(answering.error)
+                              : tr("No LLM provider configured. Go to Settings > LLM Configuration to set one up."));
         return;
     }
 

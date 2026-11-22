@@ -2,6 +2,7 @@
 #include "screens/agent_config/AgentsViewPanel.h"
 
 #include "core/logging/Logger.h"
+#include "core/privacy/LogRedact.h"
 #include "screens/agent_config/AgentProfileRows.h"
 #include "screens/agent_config/AgentResultFormat.h"
 #include "services/agents/AgentService.h"
@@ -1480,9 +1481,12 @@ void AgentsViewPanel::load_agent_into_editor(const services::AgentInfo& agent) {
     agent_desc_label_->setText(agent.description);
 
     // Restore the profile assignment for this agent in the combo
-    const QString assigned_id = LlmProfileRepository::instance().get_assignment("agent", agent.id);
+    const auto assignment = LlmProfileRepository::instance().read_assignment("agent", agent.id);
+    const QString assigned_id = assignment.is_ok() ? assignment.value() : QString();
     llm_profile_combo_->blockSignals(true);
     int select_idx = 0; // default = "Default (Global)"
+    if (assignment.is_err())
+        select_idx = -1;
     if (!assigned_id.isEmpty()) {
         for (int i = 1; i < llm_profile_combo_->count(); ++i) {
             if (llm_profile_combo_->itemData(i).toString() == assigned_id) {
@@ -1491,9 +1495,16 @@ void AgentsViewPanel::load_agent_into_editor(const services::AgentInfo& agent) {
             }
         }
     }
-    llm_profile_combo_->blockSignals(false);
     llm_profile_combo_->setCurrentIndex(select_idx);
+    llm_profile_combo_->blockSignals(false);
     refresh_llm_pill();
+    if (assignment.is_err()) {
+        const QString error = privacy::redact_text(QString::fromStdString(assignment.error())).left(240);
+        llm_resolved_lbl_->setText(tr("LLM assignment unavailable"));
+        llm_resolved_lbl_->setStyleSheet(
+            QString("color:%1;font-size:" + fincept::ui::fonts::px(-4) + "px;padding:2px 0;").arg(ui::colors::DANGER()));
+        set_status(result_status_, tr("Could not read the LLM assignment: %1").arg(error), ui::colors::DANGER());
+    }
 
     const QJsonObject config = agent.config;
     instructions_edit_->setPlainText(config["instructions"].toString());
@@ -1557,6 +1568,11 @@ QJsonObject AgentsViewPanel::build_config_from_editor() const {
 void AgentsViewPanel::save_current_config() {
     if (selected_agent_idx_ < 0 || selected_agent_idx_ >= filtered_agents_.size())
         return;
+    if (llm_profile_combo_->currentIndex() < 0) {
+        set_status(result_status_, tr("Choose an LLM profile before saving; the previous assignment could not be read."),
+                   ui::colors::DANGER());
+        return;
+    }
     const auto& agent = filtered_agents_[selected_agent_idx_];
 
     const QString profile_id = llm_profile_combo_->currentData().toString();

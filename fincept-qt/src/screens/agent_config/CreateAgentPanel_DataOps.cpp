@@ -7,6 +7,7 @@
 // Part of the partial-class split of CreateAgentPanel.cpp.
 
 #include "core/logging/Logger.h"
+#include "core/privacy/LogRedact.h"
 #include "mcp/McpService.h"
 #include "screens/agent_config/AgentResultFormat.h"
 #include "screens/agent_config/CreateAgentPanel.h"
@@ -91,9 +92,12 @@ void CreateAgentPanel::set_test_page(bool output) {
 void CreateAgentPanel::load_agent_into_form(const AgentConfig& cfg) {
     editing_id_ = cfg.id;
 
-    const QString assigned_id = LlmProfileRepository::instance().get_assignment("agent", cfg.id);
+    const auto assignment = LlmProfileRepository::instance().read_assignment("agent", cfg.id);
+    const QString assigned_id = assignment.is_ok() ? assignment.value() : QString();
     llm_profile_combo_->blockSignals(true);
     int select_idx = 0;
+    if (assignment.is_err())
+        select_idx = -1;
     if (!assigned_id.isEmpty()) {
         for (int i = 1; i < llm_profile_combo_->count(); ++i) {
             if (llm_profile_combo_->itemData(i).toString() == assigned_id) {
@@ -102,9 +106,14 @@ void CreateAgentPanel::load_agent_into_form(const AgentConfig& cfg) {
             }
         }
     }
-    llm_profile_combo_->blockSignals(false);
     llm_profile_combo_->setCurrentIndex(select_idx);
+    llm_profile_combo_->blockSignals(false);
     refresh_llm_pill();
+    if (assignment.is_err()) {
+        llm_resolved_lbl_->setText(tr("LLM assignment unavailable"));
+        llm_resolved_lbl_->setStyleSheet(
+            QString("color:%1;font-size:" + fincept::ui::fonts::px(-4) + "px;padding:1px 0 4px 0;").arg(ui::colors::DANGER()));
+    }
 
     name_edit_->setText(cfg.name);
     desc_edit_->setPlainText(cfg.description);
@@ -211,7 +220,14 @@ void CreateAgentPanel::load_agent_into_form(const AgentConfig& cfg) {
     for (int i = 0; i < mcp_servers_list_->count(); ++i)
         mcp_servers_list_->item(i)->setSelected(mcp_ids.contains(mcp_servers_list_->item(i)->data(Qt::UserRole).toString()));
 
-    set_form_status(status_lbl_, tr("Loaded: %1").arg(cfg.name), ui::colors::CYAN());
+    if (assignment.is_err()) {
+        set_form_status(status_lbl_,
+                        tr("Loaded, but the LLM assignment could not be read: %1")
+                            .arg(privacy::redact_text(QString::fromStdString(assignment.error())).left(240)),
+                        ui::colors::DANGER());
+    } else {
+        set_form_status(status_lbl_, tr("Loaded: %1").arg(cfg.name), ui::colors::CYAN());
+    }
 }
 
 void CreateAgentPanel::start_new_agent() {
@@ -377,6 +393,11 @@ void CreateAgentPanel::save_agent() {
     const QString name = name_edit_->text().trimmed();
     if (name.isEmpty()) {
         set_form_status(status_lbl_, tr("Agent name is required"), ui::colors::DANGER());
+        return;
+    }
+    if (llm_profile_combo_->currentIndex() < 0) {
+        set_form_status(status_lbl_, tr("Choose an LLM profile before saving; the previous assignment could not be read."),
+                        ui::colors::DANGER());
         return;
     }
     AgentConfig db;

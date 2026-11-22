@@ -116,8 +116,9 @@ class LlmProfileRepository : public BaseRepository<LlmProfile> {
     /// Remove assignment for a context slot (falls back to next level).
     Result<void> remove_assignment(const QString& context_type, const QString& context_id);
 
-    /// Get the profile_id currently assigned to a slot, or empty if none.
-    QString get_assignment(const QString& context_type, const QString& context_id) const;
+    /// Read the profile_id currently assigned to a slot. Empty is a valid
+    /// unassigned value; storage failures remain distinguishable from it.
+    Result<QString> read_assignment(const QString& context_type, const QString& context_id) const;
 
     // ── Resolution ────────────────────────────────────────────────────────────
 
@@ -135,7 +136,6 @@ class LlmProfileRepository : public BaseRepository<LlmProfile> {
 
     static LlmProfile map_profile(QSqlQuery& q);
     static QString type_default_key(const QString& context_type);
-    Result<QString> read_assignment(const QString& context_type, const QString& context_id) const;
     ResolvedLlmProfile profile_to_resolved(const LlmProfile& p) const;
     ResolvedLlmProfile legacy_fallback() const;
 };

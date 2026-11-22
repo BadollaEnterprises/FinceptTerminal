@@ -30,6 +30,8 @@ AGENT_NODES = MODULE.parents[3] / "src" / "services" / "workflow" / "nodes" / "A
 CREATE_AGENT = MODULE.parents[3] / "src" / "screens" / "agent_config" / "CreateAgentPanel.cpp"
 CREATE_AGENT_DATA = CREATE_AGENT.with_name("CreateAgentPanel_DataOps.cpp")
 WORKFLOWS_PANEL = CREATE_AGENT.with_name("WorkflowsViewPanel.cpp")
+AGENT_CHAT_PANEL = CREATE_AGENT.with_name("AgentChatPanel.cpp")
+LLM_PROFILE_HEADER = MODULE.parents[3] / "src" / "storage" / "repositories" / "LlmProfileRepository.h"
 RDAGENT_CLI = MODULE.parent.parent / "rdagents" / "cli.py"
 RDAGENT_LOOPS = RDAGENT_CLI.with_name("loops.py")
 
@@ -202,6 +204,43 @@ class AgentProviderPolicyTest(unittest.TestCase):
         self.assertIn("if (saved.is_err())", panel_save)
         self.assertNotIn("repo.assign_profile", panel_save)
         self.assertNotIn("repo.remove_assignment", panel_save)
+
+    def test_agent_assignment_reads_fail_closed_in_editors_and_chat(self):
+        header = LLM_PROFILE_HEADER.read_text(encoding="utf-8")
+        self.assertIn("Result<QString> read_assignment", header)
+        public_assignment = header[header.index("// ── Assignment CRUD"):
+                                   header.index("// ── Resolution")]
+        self.assertIn("Result<QString> read_assignment", public_assignment)
+        self.assertNotIn("QString get_assignment", header)
+
+        create = CREATE_AGENT_DATA.read_text(encoding="utf-8")
+        load_create = create[create.index("void CreateAgentPanel::load_agent_into_form"):
+                             create.index("void CreateAgentPanel::start_new_agent")]
+        save_create = create[create.index("void CreateAgentPanel::save_agent"):
+                             create.index("void CreateAgentPanel::delete_agent")]
+        self.assertIn("read_assignment", load_create)
+        self.assertIn("assignment.is_err()", load_create)
+        self.assertIn("select_idx = -1", load_create)
+        self.assertIn("llm_profile_combo_->currentIndex() < 0", save_create)
+
+        agents = AGENTS_PANEL.read_text(encoding="utf-8")
+        load_agent = agents[agents.index("void AgentsViewPanel::load_agent_into_editor"):
+                            agents.index("QJsonObject AgentsViewPanel::build_config_from_editor")]
+        save_agent = agents[agents.index("void AgentsViewPanel::save_current_config"):
+                            agents.index("void AgentsViewPanel::delete_current_config")]
+        self.assertIn("read_assignment", load_agent)
+        self.assertIn("assignment.is_err()", load_agent)
+        self.assertIn("select_idx = -1", load_agent)
+        self.assertIn("llm_profile_combo_->currentIndex() < 0", save_agent)
+
+        chat = AGENT_CHAT_PANEL.read_text(encoding="utf-8")
+        model = chat[chat.index("AgentChatPanel::AnsweringModel AgentChatPanel::answering_model"):
+                     chat.index("void AgentChatPanel::set_model_pill_style")]
+        self.assertIn("r.config_error", model)
+        self.assertLess(model.index("r.config_error"), model.index("r.provider.isEmpty()"))
+        self.assertGreaterEqual(model.count("read_assignment"), 2)
+        self.assertGreaterEqual(model.count("is_err()"), 2)
+        self.assertNotIn("get_assignment", model)
 
     def test_super_agent_normalizes_saved_legacy_model_before_llm_routing(self):
         source = SUPER_AGENT.read_text(encoding="utf-8")

@@ -305,15 +305,6 @@ Result<void> LlmProfileRepository::remove_assignment(const QString& context_type
                       {context_type, context_id});
 }
 
-QString LlmProfileRepository::get_assignment(const QString& context_type, const QString& context_id) const {
-    const auto r = read_assignment(context_type, context_id);
-    if (r.is_err()) {
-        LOG_WARN("LlmProfileRepo", privacy::redact_text(QString::fromStdString(r.error())));
-        return {};
-    }
-    return r.value();
-}
-
 Result<QString> LlmProfileRepository::read_assignment(const QString& context_type,
                                                       const QString& context_id) const {
     QVariant ctx_id = context_id.isEmpty() ? QVariant(QMetaType(QMetaType::QString)) : QVariant(context_id);
