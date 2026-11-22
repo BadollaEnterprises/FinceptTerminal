@@ -1,7 +1,19 @@
 """Discounted Cash Flow (DCF) Valuation Model"""
 from typing import Dict, Any, List, Optional
+import os
 import sys
 import numpy as np
+
+try:
+    from quant.runtime_limits import bounded_positive_int, bounded_workload
+except ImportError:  # run by hand without PYTHONPATH=scripts/Analytics
+    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+    from quant.runtime_limits import bounded_positive_int, bounded_workload
+
+
+MAX_PROJECTION_YEARS = 100
+MAX_SENSITIVITY_SCENARIOS = 25
+MAX_SENSITIVITY_WORK = 62_500
 
 class DCFModel:
     """Comprehensive DCF valuation model"""
@@ -170,6 +182,8 @@ class DCFModel:
     def project_cash_flows(self, base_year_fcf: float,
                           growth_rates: List[float]) -> List[Dict[str, Any]]:
         """Project future free cash flows"""
+
+        bounded_positive_int(len(growth_rates), "growth_rates", MAX_PROJECTION_YEARS)
 
         projections = []
         current_fcf = base_year_fcf
@@ -413,6 +427,16 @@ class DCFModel:
                            balance_sheet: Dict[str, float],
                            shares_outstanding: float) -> Dict[str, Any]:
         """Two-way sensitivity analysis (WACC vs Terminal Growth)"""
+
+        growth_periods = bounded_positive_int(len(growth_rates), "growth_rates", MAX_PROJECTION_YEARS)
+        terminal_scenarios = bounded_positive_int(
+            len(terminal_growth_scenarios), "terminal_growth_scenarios", MAX_SENSITIVITY_SCENARIOS
+        )
+        wacc_count = bounded_positive_int(len(wacc_scenarios), "wacc_scenarios", MAX_SENSITIVITY_SCENARIOS)
+        bounded_workload("dcf_sensitivity",
+            [growth_periods, terminal_scenarios, wacc_count],
+            MAX_SENSITIVITY_WORK,
+        )
 
         sensitivity_matrix = []
 
@@ -662,6 +686,7 @@ def _svc_dcf_inputs(p):
     growth_rates = p.get("growth_rates")
     if not isinstance(growth_rates, list) or not growth_rates:
         years = int(_svc_num(p, "projection_years", default=5))
+        years = bounded_positive_int(years, "projection_years", MAX_PROJECTION_YEARS)
         g0 = _svc_num(p, "growth_rate", "revenue_growth", default=0.05)
         # Fade linearly from the near-term growth rate to the terminal rate.
         growth_rates = [g0 + (terminal_growth - g0) * i / max(years - 1, 1) for i in range(max(years, 1))]
@@ -714,7 +739,12 @@ def main():
     """CLI entry point - outputs JSON for C++ integration"""
     import json
 
-    sys.argv = _service_argv(sys.argv)
+    try:
+        sys.argv = _service_argv(sys.argv)
+    except Exception as e:
+        command = sys.argv[1] if len(sys.argv) > 1 else None
+        print(json.dumps({"success": False, "error": str(e), "command": command}))
+        sys.exit(1)
     if len(sys.argv) < 2:
         result = {
             "success": False,

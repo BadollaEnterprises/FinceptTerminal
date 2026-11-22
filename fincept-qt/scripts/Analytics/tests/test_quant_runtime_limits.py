@@ -17,6 +17,7 @@ LBO_MODEL = ANALYTICS / "corporateFinance" / "lbo" / "lbo_model.py"
 REVENUE_SYNERGIES = (
     ANALYTICS / "corporateFinance" / "synergies" / "revenue_synergies.py"
 )
+DCF_MODEL = ANALYTICS / "corporateFinance" / "valuation" / "dcf_model.py"
 
 
 def load_limits_module():
@@ -169,6 +170,38 @@ class QuantRuntimeLimitsTest(unittest.TestCase):
                 guard = 'bounded_positive_int(ramp_years, "ramp_years", MAX_RAMP_YEARS)'
                 self.assertIn(guard, method)
                 self.assertLess(method.index(guard), method.index("for year in range("))
+
+    def test_dcf_bounds_projection_and_sensitivity_workloads(self):
+        source = DCF_MODEL.read_text(encoding="utf-8")
+        project = source[source.index("def project_cash_flows("):
+                         source.index("def calculate_terminal_value(")]
+        self.assertIn(
+            'bounded_positive_int(len(growth_rates), "growth_rates", MAX_PROJECTION_YEARS)',
+            project,
+        )
+        self.assertLess(project.index("bounded_positive_int("), project.index("for year,"))
+
+        service = source[source.index("def _svc_dcf_inputs("):
+                         source.index("def _service_argv(")]
+        self.assertIn(
+            'bounded_positive_int(years, "projection_years", MAX_PROJECTION_YEARS)',
+            service,
+        )
+        self.assertLess(service.index("bounded_positive_int("), service.index("for i in range("))
+
+        sensitivity = source[source.index("def sensitivity_analysis("):
+                             source.index("def scenario_analysis(")]
+        self.assertIn('bounded_workload("dcf_sensitivity"', sensitivity)
+        self.assertLess(
+            sensitivity.index('bounded_workload("dcf_sensitivity"'),
+            sensitivity.index("for terminal_growth in"),
+        )
+
+        main = source[source.index("def main()") :]
+        self.assertIn(
+            "try:\n        sys.argv = _service_argv(sys.argv)\n    except Exception as e:",
+            main,
+        )
 
 
 if __name__ == "__main__":
