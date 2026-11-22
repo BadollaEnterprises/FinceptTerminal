@@ -482,6 +482,16 @@ class CreditFirewallWiringTest(unittest.TestCase):
         emitted = initialize.index("emit servers_changed()")
         self.assertIn("}\n    LOG_DEBUG", initialize[swapped:emitted])
 
+    def test_mcp_save_reconciles_rows_committed_before_secret_failure(self):
+        source = (ROOT / "src/mcp/McpManager.cpp").read_text(encoding="utf-8")
+        save = source[source.index("Result<void> McpManager::save_server"):
+                      source.index("Result<void> McpManager::remove_server")]
+        failed = save[save.index("if (r.is_err())"):save.index("return Result<void>::ok()")]
+        self.assertIn("McpServerRepository::instance().get(srv.id)", failed)
+        self.assertIn("persisted_matches", failed)
+        self.assertIn("apply_config()", failed)
+        self.assertIn("emit servers_changed()", failed)
+
     def test_deleting_active_provider_selects_deterministic_byo_fallback(self):
         source = (ROOT / "src/screens/settings/LlmConfigSection_Providers.cpp").read_text(encoding="utf-8")
         body = source[source.index("void LlmConfigSection::on_delete_provider()"):

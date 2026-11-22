@@ -149,11 +149,7 @@ Result<void> McpManager::save_server(const McpServerConfig& config) {
         env_obj[it.key()] = it.value();
     srv.env = QJsonDocument(env_obj).toJson(QJsonDocument::Compact);
 
-    auto r = McpServerRepository::instance().save(srv);
-    if (r.is_err())
-        return r;
-
-    {
+    auto apply_config = [&]() {
         QMutexLocker lock(&mutex_);
         McpServerConfig cfg = config;
         cfg.id = srv.id;
@@ -161,8 +157,31 @@ Result<void> McpManager::save_server(const McpServerConfig& config) {
         const auto existing = configs_.constFind(cfg.id);
         cfg.status = existing != configs_.constEnd() ? existing->status : ServerStatus::Stopped;
         configs_.insert(cfg.id, cfg);
+    };
+
+    auto r = McpServerRepository::instance().save(srv);
+    if (r.is_err()) {
+        // The repository commits the recoverable row before moving env values
+        // into secure storage. Reflect a matching committed row in memory so
+        // the generated id is not lost and a retry cannot create a duplicate.
+        const auto persisted = McpServerRepository::instance().get(srv.id);
+        if (persisted.is_ok()) {
+            const auto& saved = persisted.value();
+            const bool persisted_matches = saved.id == srv.id && saved.name == srv.name &&
+                                           saved.description == srv.description && saved.command == srv.command &&
+                                           saved.args == srv.args && saved.env == srv.env &&
+                                           saved.category == srv.category && saved.icon == srv.icon &&
+                                           saved.enabled == srv.enabled && saved.auto_start == srv.auto_start &&
+                                           saved.status == srv.status;
+            if (persisted_matches) {
+                apply_config();
+                emit servers_changed();
+            }
+        }
+        return r;
     }
 
+    apply_config();
     emit servers_changed();
     return Result<void>::ok();
 }
