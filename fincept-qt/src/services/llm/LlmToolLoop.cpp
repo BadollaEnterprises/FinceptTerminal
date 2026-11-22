@@ -507,10 +507,10 @@ std::optional<LlmResponse> LlmService::try_extract_and_execute_text_tool_calls(c
     // Raw tool JSON is NOT an answer — label it so the user can tell the
     // difference, and log the reason instead of silently passing it off as one.
     auto raw_fallback = [&](const QString& reason) -> LlmResponse {
+        const QString safe_reason = privacy::redact_text(reason).left(240);
         LOG_WARN(kLlmToolLoopTag,
-                 "Text-tool follow-up unavailable (" + privacy::redact_text(reason) +
-                     ") — returning raw tool output");
-        resp.content = "*(could not summarise — " + reason + ". Raw tool output below.)*\n" + tool_results;
+                 "Text-tool follow-up unavailable (" + safe_reason + ") — returning raw tool output");
+        resp.content = "*(could not summarise — " + safe_reason + ". Raw tool output below.)*\n" + tool_results;
         resp.success = true;
         return resp;
     };

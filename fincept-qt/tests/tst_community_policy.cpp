@@ -73,6 +73,15 @@ class CommunityPolicyTest : public QObject {
         QVERIFY(code.contains("{\"error\", privacy::redact_text(resp.error)}"));
     }
 
+    void text_tool_fallback_does_not_persist_raw_provider_errors() {
+        QFile source(QStringLiteral(FINCEPT_SOURCE_DIR "/src/services/llm/LlmToolLoop.cpp"));
+        QVERIFY2(source.open(QIODevice::ReadOnly), qPrintable(source.errorString()));
+        const QByteArray code = source.readAll();
+        QVERIFY2(!code.contains("could not summarise — \" + reason"),
+                 "Provider errors can contain secrets and must not be copied raw into chat history");
+        QVERIFY(code.contains("could not summarise — \" + safe_reason"));
+    }
+
     void fincept_cloud_sync_is_disabled() {
         QCOMPARE(fincept::policy::fincept_cloud_sync_enabled(), false);
     }
