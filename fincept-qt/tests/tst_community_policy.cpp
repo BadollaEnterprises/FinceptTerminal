@@ -46,6 +46,21 @@ class CommunityPolicyTest : public QObject {
         QVERIFY(!copy.contains("codex"));
     }
 
+    void shipped_marketing_metadata_omits_retired_backends() {
+        const QStringList paths = {
+            QStringLiteral(FINCEPT_SOURCE_DIR "/../README.md"),
+            QStringLiteral(FINCEPT_SOURCE_DIR "/packaging/linux/fincept-terminal.appdata.xml"),
+            QStringLiteral(FINCEPT_SOURCE_DIR "/packaging/flatpak/in.fincept.FinceptTerminal.metainfo.xml"),
+        };
+        for (const QString& path : paths) {
+            QFile file(path);
+            QVERIFY2(file.open(QIODevice::ReadOnly), qPrintable(path + QStringLiteral(": ") + file.errorString()));
+            const QByteArray copy = file.readAll().toLower();
+            QVERIFY2(!copy.contains("ollama"), qPrintable(path));
+            QVERIFY2(!copy.contains("codex"), qPrintable(path));
+        }
+    }
+
     void fincept_cloud_sync_is_disabled() {
         QCOMPARE(fincept::policy::fincept_cloud_sync_enabled(), false);
     }

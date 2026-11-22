@@ -21,7 +21,7 @@
     <p>Key features:</p>
     <ul>
       <li>Real-time crypto and equity trading with 16+ broker integrations (Zerodha, Angel One, IBKR, Alpaca, and more)</li>
-      <li>AI chat with multiple LLM providers (OpenAI, Anthropic, Groq, Ollama) and specialized agent frameworks</li>
+      <li>BYO AI chat with DeepSeek, OpenAI, Anthropic, Gemini, Groq and OpenRouter</li>
       <li>Comprehensive Python analytics across equity, derivatives, fixed income, quant, and corporate finance</li>
       <li>18-tab QuantLib suite for quantitative analysis</li>
       <li>Visual workflow node editor with risk management and audit logging</li>
@@ -87,13 +87,13 @@
     </release>
     <release version="4.5.2" date="2026-11-09">
       <description>
-        <p>Claude Code, Codex, Gemini CLI, Cursor, VS Code and Claude Desktop can work in the terminal through its built-in MCP server (Settings › AI Agents (MCP)) with ten tools; orders, money moves, spends and deletions ask you first unless auto mode is on.</p>
+        <p>Supported external coding agents, editors and desktop assistants can work in the terminal through its built-in MCP server (Settings › AI Agents (MCP)); orders, money moves, spends and deletions ask you first unless auto mode is on.</p>
         <p>Several analytics that ran as Python scripts now run natively in C++, and the version number is shown on the sign-in and setup screens.</p>
       </description>
     </release>
     <release version="4.5.1" date="2026-10-13">
       <description>
-        <p>Plans simplified to Free and Pro ($10/month). New Agent Workbench runs Claude Code and OpenAI Codex inside the terminal with live access to its data, and the terminal can act as an MCP server for external agents.</p>
+        <p>Plans simplified to Free and Pro ($10/month). New Agent Workbench runs supported user-owned coding agents inside the terminal with live access to its data, and the terminal can act as an MCP server for external agents.</p>
         <p>Faster first-run setup with parallel installs, a catalog of 240+ runnable data connectors, faster live tables and instrument search, and safer trading: confirmations for live orders, pre-trade risk limits, a kill switch and pending-order expiry.</p>
       </description>
     </release>

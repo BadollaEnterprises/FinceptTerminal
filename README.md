@@ -160,7 +160,7 @@ Latest release: **v4.5.3** — [View all releases](https://github.com/Fincept-Co
 ## What's in the open build
 
 - **Analytics** — DCF, portfolio optimisation, VaR/Sharpe, derivatives pricing, fixed income, alternatives, plus an 18-module QuantLib suite
-- **AI** — 37 trader/investor, economic and geopolitics agents; bring your own key (OpenAI, Anthropic, Gemini, Groq, DeepSeek, OpenRouter, Ollama)
+- **AI** — 37 trader/investor, economic and geopolitics agents; bring your own key (DeepSeek, OpenAI, Anthropic, Gemini, Groq, OpenRouter)
 - **Data** — 100+ connectors: FRED, IMF, World Bank, DBnomics, AkShare, Polygon, Kraken, Yahoo Finance, government APIs
 - **Trading** — crypto and equity feeds, paper-trading engine, 16 broker integrations
 - **Automation** — visual node editor, MCP tools, AI Quant Lab (ML, factor discovery, RL)
