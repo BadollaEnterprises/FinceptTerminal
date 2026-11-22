@@ -248,6 +248,12 @@ class CreditFirewallWiringTest(unittest.TestCase):
         angel = (ROOT / "src/trading/websocket/AngelOneWebSocket.cpp").read_text(encoding="utf-8")
         self.assertNotIn("msg.left(200)", angel)
 
+    def test_broker_http_diagnostics_redact_external_errors(self):
+        source = (ROOT / "src/trading/brokers/BrokerHttp.cpp").read_text(encoding="utf-8")
+        self.assertIn('#include "core/privacy/LogRedact.h"', source)
+        self.assertGreaterEqual(source.count("privacy::redact_text(result.error)"), 2)
+        self.assertNotIn('{"error", result.error}', source)
+
     def test_portfolio_import_logs_do_not_persist_rejected_rows(self):
         source = (ROOT / "src/services/portfolio/PortfolioService_ImportExport.cpp").read_text(encoding="utf-8")
         self.assertIn('#include "core/privacy/LogRedact.h"', source)

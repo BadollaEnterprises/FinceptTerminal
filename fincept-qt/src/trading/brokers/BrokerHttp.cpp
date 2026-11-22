@@ -3,6 +3,7 @@
 #include "trading/brokers/BrokerHttp.h"
 
 #include "core/logging/Logger.h"
+#include "core/privacy/LogRedact.h"
 
 #include <QElapsedTimer>
 #include <QEventLoop>
@@ -266,7 +267,7 @@ BrokerHttpResponse BrokerHttp::execute(const QString& method, const QString& url
                                {"path", broker_http_log_path(req_url)},
                                {"qt_error", static_cast<int>(reply->error())},
                                {"duration_ms", static_cast<qint64>(elapsed_ms)},
-                               {"error", result.error}}));
+                               {"error", privacy::redact_text(result.error)}}));
         }
         reply->deleteLater();
         return result;
@@ -343,7 +344,7 @@ BrokerHttpResponse BrokerHttp::execute(const QString& method, const QString& url
                                                      {"path", broker_http_log_path(req_url)},
                                                      {"status", result.status_code},
                                                      {"duration_ms", static_cast<qint64>(elapsed_ms)},
-                                                     {"error", result.error}}));
+                                                     {"error", privacy::redact_text(result.error)}}));
     }
 
     reply->deleteLater();
