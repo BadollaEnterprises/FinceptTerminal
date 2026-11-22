@@ -145,6 +145,7 @@ class TestModelRouter : public QObject {
 
     // ── Resolution order ──
     void nothing_configured_is_local();
+    void configuration_read_failure_blocks_routing();
     void active_provider_then_local();
     void legacy_deepseek_alias_is_normalized_in_route_label();
     void legacy_ollama_routes_are_blocked_in_community_mode();
@@ -356,6 +357,18 @@ void TestModelRouter::nothing_configured_is_local() {
         ModelRouter::resolve_with({}, QString::fromLatin1(kFeatureProAnalyticsExplain));
     QVERIFY(!analytics_route.chain.isEmpty());
     QVERIFY(mr_is_byo_fallback(analytics_route.chain.constFirst()));
+}
+
+void TestModelRouter::configuration_read_failure_blocks_routing() {
+    RouterState st;
+    st.config_error = QStringLiteral("Could not read LLM routing configuration: storage unavailable");
+    mr_add_active_openai(st);
+
+    const RouteResult r = ModelRouter::resolve_with(st, QString::fromLatin1(kFeatureAiChat));
+    QCOMPARE(r.chain.size(), 1);
+    QCOMPARE(r.chain.constFirst().reason, QStringLiteral("configuration_error"));
+    QCOMPARE(r.chain.constFirst().config_error, st.config_error);
+    QCOMPARE(r.chain.constFirst().label, QStringLiteral("LLM configuration unavailable"));
 }
 
 void TestModelRouter::active_provider_then_local() {

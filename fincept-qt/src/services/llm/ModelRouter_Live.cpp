@@ -50,11 +50,21 @@ bool mrl_provider_allowed(const QString& provider) {
 /// Profiles, assignments, the active provider row and the per-feature
 /// switches: database + settings, safe from any thread.
 void mrl_gather_db(RouterState& s) {
+    s.config_error.clear();
     s.profiles.clear();
     s.assignments.clear();
     s.active_row = RouterActiveRow{};
     s.harness_default_allowed.clear();
     s.provider_names.clear();
+
+    const auto add_config_error = [&s](const QString& what, const std::string& detail) {
+        const QString message = QStringLiteral("Could not read %1: %2")
+                                    .arg(what, privacy::redact_text(QString::fromStdString(detail)));
+        if (!s.config_error.isEmpty())
+            s.config_error += QLatin1Char('\n');
+        s.config_error += message;
+        LOG_WARN(kMrlTag, message);
+    };
 
     if (auto r = LlmProfileRepository::instance().list_all_profiles(); r.is_ok()) {
         for (const LlmProfile& p : r.value()) {
@@ -72,35 +82,40 @@ void mrl_gather_db(RouterState& s) {
             s.profiles.insert(p.id, rp);
         }
     } else {
-        LOG_WARN(kMrlTag, QStringLiteral("Profiles could not be read: %1")
-                              .arg(privacy::redact_text(QString::fromStdString(r.error()))));
+        add_config_error(QStringLiteral("LLM profiles"), r.error());
     }
     if (auto r = LlmProfileRepository::instance().list_assignments(); r.is_ok()) {
         for (const LlmProfileAssignment& a : r.value())
             s.assignments.insert(ModelRouter::assignment_key(a.context_type, a.context_id), a.profile_id);
+    } else {
+        add_config_error(QStringLiteral("LLM model assignments"), r.error());
     }
     // Prefer the active allowed row, else the first allowed row. A historical
     // Ollama/Fincept row must not mask a configured DeepSeek provider.
-    if (auto r = LlmConfigRepository::instance().list_providers(); r.is_ok() && !r.value().isEmpty()) {
-        const QVector<LlmConfig>& rows = r.value();
-        const LlmConfig* pick = nullptr;
-        for (const LlmConfig& c : rows) {
-            if (!mrl_provider_allowed(c.provider))
-                continue;
-            if (!pick)
-                pick = &c;
-            if (c.is_active) {
-                pick = &c;
-                break;
+    if (auto r = LlmConfigRepository::instance().list_providers(); r.is_ok()) {
+        if (!r.value().isEmpty()) {
+            const QVector<LlmConfig>& rows = r.value();
+            const LlmConfig* pick = nullptr;
+            for (const LlmConfig& c : rows) {
+                if (!mrl_provider_allowed(c.provider))
+                    continue;
+                if (!pick)
+                    pick = &c;
+                if (c.is_active) {
+                    pick = &c;
+                    break;
+                }
+            }
+            if (pick) {
+                s.active_row.present = true;
+                s.active_row.provider = pick->provider.toLower();
+                s.active_row.model = policy::normalize_llm_model(pick->provider, pick->model);
+                s.active_row.has_key = !pick->api_key.isEmpty();
+                s.active_row.key_required = ProviderCatalog::requires_api_key(s.active_row.provider);
             }
         }
-        if (pick) {
-            s.active_row.present = true;
-            s.active_row.provider = pick->provider.toLower();
-            s.active_row.model = policy::normalize_llm_model(pick->provider, pick->model);
-            s.active_row.has_key = !pick->api_key.isEmpty();
-            s.active_row.key_required = ProviderCatalog::requires_api_key(s.active_row.provider);
-        }
+    } else {
+        add_config_error(QStringLiteral("LLM providers"), r.error());
     }
     auto& cfg = AppConfig::instance();
     for (const FeatureSpec& f : feature_specs()) {

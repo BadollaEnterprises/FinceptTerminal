@@ -207,6 +207,18 @@ QString ModelRouter::billing_note(const ModelChoice& c) {
 
 RouteResult ModelRouter::resolve_with(const RouterState& state, const QString& feature, const QString& context_id) {
     RouteResult out;
+    if (!state.config_error.isEmpty()) {
+        ModelChoice blocked;
+        blocked.kind = ModelChoice::Kind::Api;
+        blocked.provider = policy::default_llm_provider();
+        blocked.model = policy::default_llm_model();
+        blocked.label = QStringLiteral("LLM configuration unavailable");
+        blocked.reason = QStringLiteral("configuration_error");
+        blocked.vendor = mr_provider_name(state, blocked.provider);
+        blocked.config_error = state.config_error;
+        out.chain.append(blocked);
+        return out;
+    }
     const FeatureSpec spec = mr_spec_or_default(feature);
     const QString feature_label = QString::fromUtf8(spec.label);
     const auto add = [&out](const ModelChoice& c) {

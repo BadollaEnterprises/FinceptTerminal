@@ -101,6 +101,9 @@ struct ModelChoice {
     /// explicit | harness_default | profile | active_provider | fincept_fallback
     QString reason;
     QString vendor;     // who is billed: "Anthropic", "OpenAI", "Fincept"
+    /// A routing-storage failure that must block execution instead of silently
+    /// falling through to a different provider.
+    QString config_error;
     /// Harness: the call checks the CLI's own report that it uses an API key.
     bool require_api_key_source = true;
 
@@ -156,6 +159,9 @@ struct RouterActiveRow {
 };
 
 struct RouterState {
+    /// Non-empty when any persisted routing input could not be read. Resolution
+    /// fails closed so a partial snapshot cannot select an unexpected model.
+    QString config_error;
     QVector<RouterHarness> harnesses; // registration order
     QString default_harness;          // HarnessRegistry::default_harness()
     /// "<feature>|<context_id>" (context may be empty: the type-level row) → profile id

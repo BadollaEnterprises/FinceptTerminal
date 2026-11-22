@@ -465,6 +465,14 @@ QVector<ModelChoice> LlmService::route_chain(const ChatRoute& route) {
 
 LlmService::ConfigSnapshot LlmService::snapshot_for(const ModelChoice& choice, const QString& feature) const {
     ConfigSnapshot s;
+    if (!choice.config_error.isEmpty()) {
+        s.provider = choice.provider.toLower();
+        s.model = choice.model;
+        s.feature = feature;
+        s.tools_enabled = false;
+        s.config_error = choice.config_error;
+        return s;
+    }
     QString legacy_provider;
     {
         QMutexLocker lock(&mutex_);

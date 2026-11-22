@@ -231,7 +231,7 @@ class CreditFirewallWiringTest(unittest.TestCase):
         router = (ROOT / "src/services/llm/ModelRouter_Live.cpp").read_text(encoding="utf-8")
         self.assertIn('#include "core/privacy/LogRedact.h"', providers)
         self.assertGreaterEqual(providers.count("privacy::redact_text"), 3)
-        self.assertIn("privacy::redact_text(QString::fromStdString(r.error()))", router)
+        self.assertIn("privacy::redact_text(QString::fromStdString(detail))", router)
         self.assertGreaterEqual(profiles.count("log_mask(editing_profile_id_)"), 1)
         self.assertIn("log_mask(profile_id)", profiles)
         self.assertIn("log_mask(profile.id)", profiles)
@@ -515,6 +515,29 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertIn("s.config_error = config_error_", source)
         self.assertIn("config_error_ = snap.config_error", source)
         self.assertGreaterEqual(source.count("if (!config_error_.isEmpty())"), 2)
+
+    def test_model_router_fails_closed_on_partial_configuration_reads(self):
+        header = (ROOT / "src/services/llm/ModelRouter.h").read_text(encoding="utf-8")
+        rule = (ROOT / "src/services/llm/ModelRouter.cpp").read_text(encoding="utf-8")
+        live = (ROOT / "src/services/llm/ModelRouter_Live.cpp").read_text(encoding="utf-8")
+        service = (ROOT / "src/services/llm/LlmService.cpp").read_text(encoding="utf-8")
+
+        self.assertGreaterEqual(header.count("QString config_error"), 2)
+        gather = live[live.index("void mrl_gather_db"):live.index("qint64 mrl_gather_harnesses")]
+        self.assertIn("s.config_error.clear()", gather)
+        self.assertIn('add_config_error(QStringLiteral("LLM profiles")', gather)
+        self.assertIn('add_config_error(QStringLiteral("LLM model assignments")', gather)
+        self.assertIn('add_config_error(QStringLiteral("LLM providers")', gather)
+        resolve = rule[rule.index("RouteResult ModelRouter::resolve_with"):
+                       rule.index("FallbackDecision ModelRouter::decide_fallback")]
+        self.assertIn("if (!state.config_error.isEmpty())", resolve)
+        self.assertIn('QStringLiteral("configuration_error")', resolve)
+        snapshot = service[service.index("LlmService::ConfigSnapshot LlmService::snapshot_for"):
+                           service.index("void LlmService::stamp_route")]
+        self.assertIn("if (!choice.config_error.isEmpty())", snapshot)
+        self.assertIn("s.tools_enabled = false", snapshot)
+        self.assertLess(snapshot.index("if (!choice.config_error.isEmpty())"),
+                        snapshot.index("ensure_config()"))
 
     def test_llm_api_keys_never_use_remote_plaintext_endpoints(self):
         service = (ROOT / "src/services/llm/LlmService.cpp").read_text(encoding="utf-8")
