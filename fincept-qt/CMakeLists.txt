@@ -4613,7 +4613,18 @@ endif()
 # script was added or removed. Without it a deleted script stayed a DEPENDS of the
 # stamp below and ninja failed ("missing and no known rule to make it") until
 # someone reconfigured by hand.
-file(GLOB_RECURSE FINCEPT_SCRIPT_DEPS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/scripts/*")
+# Enumerate only source/assets that can ship.  A broad `scripts/*` glob also watches
+# ignored __pycache__/*.pyc files, so merely running Python tests forces CMake to
+# regenerate the entire native build even though those files are filtered below.
+file(GLOB_RECURSE FINCEPT_SCRIPT_DEPS CONFIGURE_DEPENDS LIST_DIRECTORIES false
+     "${CMAKE_CURRENT_SOURCE_DIR}/scripts/*.py"
+     "${CMAKE_CURRENT_SOURCE_DIR}/scripts/*.json"
+     "${CMAKE_CURRENT_SOURCE_DIR}/scripts/*.md"
+     "${CMAKE_CURRENT_SOURCE_DIR}/scripts/*.txt"
+     "${CMAKE_CURRENT_SOURCE_DIR}/scripts/*.gz")
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/scripts/.gitkeep")
+    list(APPEND FINCEPT_SCRIPT_DEPS "${CMAKE_CURRENT_SOURCE_DIR}/scripts/.gitkeep")
+endif()
 list(FILTER FINCEPT_SCRIPT_DEPS EXCLUDE REGEX
      "/(\\.venv|venv|env|__pycache__|\\.pytest_cache|\\.benchmarks|\\.firecrawl|\\.git|\\.mypy_cache|\\.ruff_cache|node_modules)/")
 list(FILTER FINCEPT_SCRIPT_DEPS EXCLUDE REGEX "\\.(pyc|pyo|bak|log|db|sqlite|sqlite3)$")
