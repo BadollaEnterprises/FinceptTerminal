@@ -11,6 +11,7 @@
 #include "screens/equity_trading/EquityTradingScreen.h"
 
 #include "core/logging/Logger.h"
+#include "core/privacy/LogRedact.h"
 #include "core/session/ScreenStateManager.h"
 #include "core/symbol/SymbolContext.h"
 #include "core/symbol/SymbolDragSource.h"
@@ -210,7 +211,8 @@ EquityTradingScreen::EquityTradingScreen(QWidget* parent) : QWidget(parent) {
                 });
         connect(&trading::InstrumentService::instance(), &trading::InstrumentService::refresh_failed, this,
                 [](const QString& broker_id, const QString& error) {
-                    LOG_WARN(TAG, QString("Instrument load failed for %1: %2").arg(broker_id, error));
+                    LOG_WARN(TAG,
+                             QString("Instrument load failed for %1: %2").arg(broker_id, privacy::redact_text(error)));
                 });
     }
 
@@ -1189,7 +1191,7 @@ void EquityTradingScreen::init_focused_account() {
 
     update_account_menu();
     update_connection_status();
-    LOG_DEBUG(TAG, QString("Initialized focused account: %1").arg(focused_account_id_));
+    LOG_DEBUG(TAG, QString("Initialized focused account: %1").arg(log_mask(focused_account_id_)));
 }
 
 // ============================================================================

@@ -322,6 +322,17 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertNotIn('QString("Order failed: %1").arg(result.message)', source)
         self.assertNotIn('{"order_id", order_id}', source)
 
+    def test_equity_stream_diagnostics_mask_accounts_and_provider_errors(self):
+        screen = (ROOT / "src/screens/equity_trading/EquityTradingScreen.cpp").read_text(encoding="utf-8")
+        streams = (ROOT / "src/screens/equity_trading/EquityTradingScreen_Streams.cpp").read_text(encoding="utf-8")
+        for source in (screen, streams):
+            self.assertIn('#include "core/privacy/LogRedact.h"', source)
+        self.assertIn("log_mask(focused_account_id_)", screen)
+        self.assertGreaterEqual(streams.count("log_mask(focused_account_id_)"), 2)
+        self.assertGreaterEqual(streams.count("privacy::redact_text("), 5)
+        self.assertNotIn(".arg(broker_id_for_focused(), focused_account_id_, why)", streams)
+        self.assertNotIn("focused_account_id_, why", streams)
+
     def test_exchange_process_diagnostics_redact_external_errors(self):
         pool = (ROOT / "src/trading/ExchangeDaemonPool.cpp").read_text(encoding="utf-8")
         session = (ROOT / "src/trading/ExchangeSession.cpp").read_text(encoding="utf-8")

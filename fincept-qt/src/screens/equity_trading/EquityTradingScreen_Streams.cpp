@@ -10,6 +10,7 @@
 // Part of the partial-class split of EquityTradingScreen.cpp.
 
 #include "core/logging/Logger.h"
+#include "core/privacy/LogRedact.h"
 #include "datahub/DataHub.h"
 #include "datahub/DataHubMetaTypes.h"
 #include "screens/equity_trading/EquityBottomPanel.h"
@@ -484,7 +485,8 @@ void EquityTradingScreen::on_stream_candles_failed(const QString& account_id, co
                                 : tr("CHART UNAVAILABLE · %1 · %2").arg(symbol, timeframe),
                         no_data ? tr("%1: %2 Try another timeframe.").arg(chart_source_label(), why)
                                 : tr("%1: %2").arg(chart_source_label(), why));
-    LOG_WARN(TAG, QString("Broker history for %1 · %2 failed: %3").arg(symbol, timeframe, why));
+    LOG_WARN(TAG,
+             QString("Broker history for %1 · %2 failed: %3").arg(symbol, timeframe, privacy::redact_text(why)));
 }
 
 void EquityTradingScreen::on_stream_orderbook_for_symbol(const QString& account_id, const QString& symbol,
@@ -505,7 +507,7 @@ void EquityTradingScreen::on_stream_orderbook_failed(const QString& account_id, 
                                                      const QString& reason) {
     if (!is_broker_symbol_target(account_id, symbol))
         return;
-    LOG_WARN(TAG, QString("Broker depth for %1 failed: %2").arg(symbol, reason));
+    LOG_WARN(TAG, QString("Broker depth for %1 failed: %2").arg(symbol, privacy::redact_text(reason)));
     // The depth request ends in the broker's quote call; on a broker without a
     // quote stream its refusal also means the watchlist and ribbon get no prices.
     note_broker_quote_refusal(reason);
@@ -536,7 +538,7 @@ void EquityTradingScreen::note_broker_quote_refusal(const QString& reason) {
         return;
     broker_quote_refusal_ = why;
     LOG_WARN(TAG, QString("No live quotes from %1 for account '%2': %3")
-                      .arg(broker_id_for_focused(), focused_account_id_, why));
+                      .arg(broker_id_for_focused(), log_mask(focused_account_id_), privacy::redact_text(why)));
     apply_broker_quote_notice();
 }
 
@@ -569,7 +571,7 @@ void EquityTradingScreen::on_stream_time_sales_failed(const QString& account_id,
     // the other brokers answer "Not supported" to every tape request.)
     bottom_panel_->set_time_sales({});
     if (focused_is_us_market_)
-        LOG_WARN(TAG, QString("Broker time & sales for %1 failed: %2").arg(symbol, reason));
+        LOG_WARN(TAG, QString("Broker time & sales for %1 failed: %2").arg(symbol, privacy::redact_text(reason)));
 }
 
 void EquityTradingScreen::on_stream_latest_trade_for_symbol(const QString& account_id, const QString& symbol,
@@ -667,7 +669,8 @@ void EquityTradingScreen::wire_public_feed() {
             return;
         if (chart_symbol_ == chart_key()) {
             // A refresh of the series on screen failed — last-known-good stays.
-            LOG_WARN(TAG, QString("Public history refresh failed for %1 (%2), keeping chart: %3").arg(sym, tf, reason));
+            LOG_WARN(TAG, QString("Public history refresh failed for %1 (%2), keeping chart: %3")
+                              .arg(sym, tf, privacy::redact_text(reason)));
             return;
         }
         chart_->clear_candles();
@@ -718,9 +721,10 @@ void EquityTradingScreen::sync_market_feed(bool fetch_on_switch) {
     if (want_public != public_mode_) {
         public_mode_ = want_public;
         LOG_INFO(TAG, QString("Market data source -> %1 (account '%2')")
-                          .arg(public_mode_ ? QStringLiteral("public feed (Yahoo, delayed): ") + public_feed_reason()
+                          .arg(public_mode_ ? QStringLiteral("public feed (Yahoo, delayed): ") +
+                                                 privacy::redact_text(public_feed_reason())
                                             : QStringLiteral("broker stream"),
-                               focused_account_id_));
+                               log_mask(focused_account_id_)));
         reset_market_views(); // never show one source's numbers under the other
         // Broker quote topics are subscribed only while the broker is the source
         // (hub_subscribe_quotes); account topics stay either way.
