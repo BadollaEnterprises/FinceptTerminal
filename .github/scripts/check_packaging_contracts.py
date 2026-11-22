@@ -200,6 +200,12 @@ def main() -> int:
         failures,
     )
     require(
+        release_text,
+        "check_windows_dependency_closure.py $buildDir",
+        "Windows release must reject debug runtimes using the shared closure checker",
+        failures,
+    )
+    require(
         text,
         'ZLIB_TRIPLET="arm64-windows-static-md"',
         "Windows ARM64 must install the arm64-windows-static-md zlib triplet",

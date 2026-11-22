@@ -444,6 +444,9 @@ jobs:
             exit 1
           }
           Write-Host "Dependency closure OK - every imported DLL is bundled or provided by Windows."
+          python ..\.github\scripts\check_windows_dependency_closure.py $buildDir `
+            --dumpbin $dumpbin.FullName `
+            --system32 $system32
 
       # ── Clean-machine smoke test ──────────────────────────────────────────
       # The dependency-closure gate above only inspects DLL IMPORTS. It cannot

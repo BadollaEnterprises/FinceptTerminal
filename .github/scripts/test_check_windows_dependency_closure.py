@@ -74,6 +74,32 @@ class WindowsDependencyClosureTest(unittest.TestCase):
 
             self.assertEqual(failures, [])
 
+    def test_rejects_nonredistributable_debug_msvc_runtime_even_when_staged(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            bundle = root / "dist"
+            system32 = root / "System32"
+            bundle.mkdir()
+            system32.mkdir()
+            executable = bundle / "FinceptTerminal.exe"
+            debug_runtime = bundle / "vcruntime140_1d.dll"
+            executable.touch()
+            debug_runtime.touch()
+
+            failures = CLOSURE.check_dependency_closure(
+                bundle,
+                system32,
+                lambda path: ["vcruntime140_1d.dll"] if path == executable else [],
+            )
+
+            self.assertEqual(
+                failures,
+                [
+                    "FinceptTerminal.exe imports non-redistributable debug MSVC runtime vcruntime140_1d.dll",
+                    "bundle contains non-redistributable debug MSVC runtime vcruntime140_1d.dll",
+                ],
+            )
+
     def test_parses_only_dumpbin_dependency_lines(self) -> None:
         output = """
 Dump of file FinceptTerminal.exe

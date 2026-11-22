@@ -19,6 +19,11 @@ def is_msvc_runtime(name: str) -> bool:
     return lowered.endswith(".dll") and lowered.startswith(MSVC_RUNTIME_PREFIXES)
 
 
+def is_debug_msvc_runtime(name: str) -> bool:
+    lowered = name.lower()
+    return is_msvc_runtime(lowered) and Path(lowered).stem.endswith("d")
+
+
 def parse_dumpbin_dependents(output: str) -> list[str]:
     return [
         line.strip()
@@ -38,12 +43,21 @@ def check_dependency_closure(
     if not binaries:
         return ["bundle contains no PE binaries"]
     staged = {path.name.lower() for path in binaries}
-    failures: list[str] = []
+    failures = [
+        f"bundle contains non-redistributable debug MSVC runtime {path.name}"
+        for path in binaries
+        if is_debug_msvc_runtime(path.name)
+    ]
 
     for binary in binaries:
         relative = binary.relative_to(bundle)
         for dependency in dependency_reader(binary):
             lowered = dependency.lower()
+            if is_debug_msvc_runtime(lowered):
+                failures.append(
+                    f"{relative} imports non-redistributable debug MSVC runtime {dependency}"
+                )
+                continue
             if lowered in staged:
                 continue
             if is_msvc_runtime(lowered):
