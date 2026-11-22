@@ -105,6 +105,28 @@ class AgentProviderPolicyTest(unittest.TestCase):
         self.assertLess(parsed.index("resolved_configuration_error(active_llm)"),
                         parsed.index("if active_llm:"))
 
+    def test_explicit_profile_read_errors_cannot_fall_back_to_another_provider(self):
+        service = AGENT_SERVICE.read_text(encoding="utf-8")
+        expand = service[service.index("QJsonObject agent_svc_expand_config"):
+                         service.index("QString agent_svc_run_token")]
+        self.assertIn("!resolved.config_error.isEmpty()", expand)
+        self.assertIn("LlmService::profile_to_json(resolved)", expand)
+
+        selected = service[service.index("QJsonObject AgentService::model_config_for_profile"):
+                           service.index("void AgentService::run_python_light")]
+        self.assertIn("if (pr.is_err())", selected)
+        self.assertIn("resolved.config_error", selected)
+        self.assertIn("privacy::redact_text", selected)
+        self.assertLess(selected.index("if (pr.is_err())"), selected.index("resolve_profile(context_type"))
+
+        payload = service[service.index("QJsonObject AgentService::build_payload"):
+                          service.index("// Resolve user_id")]
+        self.assertIn('configured_model.value(QStringLiteral("configuration_error"))', payload)
+        self.assertLess(payload.index("configured_configuration_error"),
+                        payload.index("configured_model_allowed"))
+        self.assertLess(payload.index("!configured_configuration_error.isEmpty()"),
+                        payload.index("if (configured_model_allowed)"))
+
     def test_super_agent_normalizes_saved_legacy_model_before_llm_routing(self):
         source = SUPER_AGENT.read_text(encoding="utf-8")
         init = source[source.index("class SuperAgent") : source.index("def _setup_default_routes")]

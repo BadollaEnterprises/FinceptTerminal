@@ -16,6 +16,7 @@
 #include "core/events/EventBus.h"
 #include "core/logging/Logger.h"
 #include "core/policy/CommunityPolicy.h"
+#include "core/privacy/LogRedact.h"
 #include "datahub/DataHub.h"
 #include "datahub/TopicPolicy.h"
 #include "mcp/McpProvider.h"
@@ -209,7 +210,7 @@ QJsonObject agent_svc_expand_config(const QJsonObject& config) {
             if (out.value(QStringLiteral("model")).toObject().value(QStringLiteral("provider")).toString().isEmpty()) {
                 const ResolvedLlmProfile resolved =
                     ai_chat::LlmService::instance().resolve_profile(QStringLiteral("agent"), agent_id);
-                if (!resolved.provider.isEmpty())
+                if (!resolved.provider.isEmpty() || !resolved.config_error.isEmpty())
                     out.insert(QStringLiteral("model"), ai_chat::LlmService::profile_to_json(resolved));
             }
         }
@@ -582,13 +583,19 @@ QJsonObject AgentService::build_payload(const QString& action, const QJsonObject
     // (as build_config_from_editor() now does), Python gets the right per-agent creds.
     {
         const QJsonObject configured_model = config.value(QStringLiteral("model")).toObject();
+        const QString configured_configuration_error =
+            configured_model.value(QStringLiteral("configuration_error")).toString().trimmed();
         const QString configured_provider =
             configured_model.value(QStringLiteral("provider")).toString().trimmed().toLower();
         const bool configured_model_allowed =
             !configured_provider.isEmpty() && !policy::is_deprecated_llm_provider(configured_provider) &&
             !ai_chat::provider_is_harness(configured_provider) &&
             (configured_provider != QLatin1String("fincept") || policy::fincept_metered_services_enabled());
-        if (configured_model_allowed) {
+        if (!configured_configuration_error.isEmpty()) {
+            // Preserve an explicit fail-closed marker. Falling through here
+            // would let Python infer another provider from the API-key map.
+            payload["active_llm"] = configured_model;
+        } else if (configured_model_allowed) {
             // Use the per-agent resolved profile already embedded in the config
             payload["active_llm"] = configured_model;
         } else {
@@ -754,7 +761,11 @@ QJsonObject AgentService::model_config_for_profile(const QString& profile_id, co
     ResolvedLlmProfile resolved;
     if (!profile_id.isEmpty()) {
         const auto pr = LlmProfileRepository::instance().get_profile(profile_id);
-        if (pr.is_ok()) {
+        if (pr.is_err()) {
+            resolved.config_error = QStringLiteral("Could not read selected LLM profile: %1")
+                                        .arg(privacy::redact_text(QString::fromStdString(pr.error())));
+            return ai_chat::LlmService::profile_to_json(resolved);
+        } else {
             const LlmProfile& p = pr.value();
             resolved.profile_id = p.id;
             resolved.profile_name = p.name;
