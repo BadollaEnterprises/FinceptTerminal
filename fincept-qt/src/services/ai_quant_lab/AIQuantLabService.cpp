@@ -798,6 +798,8 @@ void AIQuantLabService::run_deep_agent(const QJsonObject& params) {
     python::PythonRunner::RunOptions opts;
     opts.timeout_ms = kAiqDeepAgentTimeoutMs;
     opts.stdin_data = QJsonDocument(payload).toJson(QJsonDocument::Compact);
+    // The selected BYO model key is already inside the stdin payload.
+    opts.credential_allowlist = QStringList{};
     run_python("agents/deepagents/cli.py", {"execute_task", "--stdin"}, "deep_agent", "execute_task", opts);
 }
 
@@ -813,8 +815,10 @@ void AIQuantLabService::deep_agent_list_capabilities(QObject* context,
 void AIQuantLabService::deep_agent_query(const QString& command, QObject* context,
                                          std::function<void(const QJsonObject&)> on_done) {
     QPointer<QObject> guard = context;
-    python::PythonRunner::instance().run(
-        "agents/deepagents/cli.py", {command}, [guard, command, on_done](python::PythonResult result) {
+    python::PythonRunner::RunOptions opts;
+    opts.credential_allowlist = QStringList{};
+    python::PythonRunner::instance().run_with_options(
+        "agents/deepagents/cli.py", {command}, opts, [guard, command, on_done](python::PythonResult result) {
             if (!guard)
                 return;
             // check_status names the import error of a missing library in "error" next to

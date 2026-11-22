@@ -42,6 +42,7 @@ class CreditFirewallWiringTest(unittest.TestCase):
         quant = (ROOT / "src/services/ai_quant_lab/AIQuantLabService.cpp").read_text(encoding="utf-8")
         self.assertIn("build_python_env(QStringList{})", agents)
         self.assertIn("py.build_python_env(QStringList{})", quant)
+        self.assertGreaterEqual(quant.count("credential_allowlist = QStringList{}"), 2)
 
     def test_macro_and_geopolitics_services_check_firewall(self):
         geopolitics = (ROOT / "src/services/geopolitics/GeopoliticsService.cpp").read_text(encoding="utf-8")
