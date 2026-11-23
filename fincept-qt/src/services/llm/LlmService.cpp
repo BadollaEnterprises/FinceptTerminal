@@ -921,6 +921,9 @@ LlmResponse LlmService::do_request(const QString& user_message, const std::vecto
             loop_msgs.append(QJsonObject{{"role", "assistant"}, {"content", content}});
 
             QJsonArray tool_results;
+            std::vector<QString> tool_ids;
+            std::vector<QString> result_names;
+            std::vector<mcp::ToolResult> initial_results;
             for (const auto& block_val : content) {
                 QJsonObject block = block_val.toObject();
                 if (block["type"].toString() != "tool_use")
@@ -941,10 +944,15 @@ LlmResponse LlmService::do_request(const QString& user_message, const std::vecto
                 tool_timer.start();
                 auto tr = mcp::McpService::instance().execute_openai_function(tool_name, input);
                 emit_tool_done(bare, input, tr, tool_timer.elapsed());
-                tool_results.append(
-                    QJsonObject{{"type", "tool_result"},
-                                {"tool_use_id", tool_id},
-                                {"content", detail::encode_tool_result_for_llm(bare, tr)}});
+                tool_ids.push_back(tool_id);
+                result_names.push_back(bare);
+                initial_results.push_back(std::move(tr));
+            }
+            const auto encoded_initial_results = detail::encode_tool_results_for_llm(result_names, initial_results);
+            for (std::size_t k = 0; k < initial_results.size(); ++k) {
+                tool_results.append(QJsonObject{{"type", "tool_result"},
+                                                {"tool_use_id", tool_ids[k]},
+                                                {"content", encoded_initial_results[k]}});
             }
 
             loop_msgs.append(QJsonObject{{"role", "user"}, {"content", tool_results}});
@@ -1353,6 +1361,9 @@ LlmResponse LlmService::do_request(const QString& user_message, const std::vecto
                 loop_msgs.append(QJsonObject{{"role", "user"}, {"content", user_message}});
                 loop_msgs.append(msg); // assistant turn with tool_calls
 
+                std::vector<QString> call_ids;
+                std::vector<QString> result_names;
+                std::vector<mcp::ToolResult> initial_results;
                 for (const auto& tc_val : tcs) {
                     if (detail::cancel_requested()) {
                         resp.cancelled = true;
@@ -1380,9 +1391,15 @@ LlmResponse LlmService::do_request(const QString& user_message, const std::vecto
                     tool_timer.start();
                     auto tr = mcp::McpService::instance().execute_openai_function(fn_name, fn_args);
                     emit_tool_done(bare, fn_args, tr, tool_timer.elapsed()); // logs "LLM tool call finished"
+                    call_ids.push_back(call_id);
+                    result_names.push_back(bare);
+                    initial_results.push_back(std::move(tr));
+                }
+                const auto encoded_initial_results = detail::encode_tool_results_for_llm(result_names, initial_results);
+                for (std::size_t k = 0; k < initial_results.size(); ++k) {
                     loop_msgs.append(QJsonObject{{"role", "tool"},
-                                                 {"tool_call_id", call_id},
-                                                 {"content", detail::encode_tool_result_for_llm(bare, tr)}});
+                                                 {"tool_call_id", call_ids[k]},
+                                                 {"content", encoded_initial_results[k]}});
                 }
 
                 LlmResponse r1;

@@ -84,6 +84,16 @@ class CommunityPolicyTest : public QObject {
         QVERIFY(code.contains("could not summarise — \" + safe_reason"));
     }
 
+    void native_tool_rounds_never_bypass_the_aggregate_result_budget() {
+        QFile source(QStringLiteral(FINCEPT_SOURCE_DIR "/src/services/llm/LlmService.cpp"));
+        QVERIFY2(source.open(QIODevice::ReadOnly), qPrintable(source.errorString()));
+        const QByteArray code = source.readAll();
+        QVERIFY2(!code.contains("detail::encode_tool_result_for_llm("),
+                 "Provider-facing tool rounds must shape the whole result batch; per-result encoding can multiply "
+                 "the transcript and re-bill oversized evidence on every follow-up");
+        QVERIFY(code.count("detail::encode_tool_results_for_llm(") >= 3);
+    }
+
     void fincept_cloud_sync_is_disabled() {
         QCOMPARE(fincept::policy::fincept_cloud_sync_enabled(), false);
     }
