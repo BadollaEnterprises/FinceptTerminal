@@ -1,5 +1,6 @@
 #include "core/policy/CommunityPolicy.h"
 #include "core/metrics/LocalUsageMetrics.h"
+#include "services/ai_quant_lab/AIQuantUsage.h"
 #include "services/llm/LlmEndpointPolicy.h"
 #include "services/llm/ModelRouter.h"
 
@@ -170,6 +171,24 @@ class CommunityPolicyTest : public QObject {
         QCOMPARE(snapshot.provider_tokens.value(QStringLiteral("deepseek")), 180);
         QCOMPARE(snapshot.provider_cached_prompt_tokens.value(QStringLiteral("deepseek")), 90);
         QCOMPARE(snapshot.fincept_credits_used, 0);
+    }
+
+    void ai_quant_usage_is_bounded_before_local_accounting() {
+        using fincept::services::quant::parse_ai_quant_llm_usage;
+        const QJsonObject response{
+            {QStringLiteral("usage"),
+             QJsonObject{{QStringLiteral("provider"), QStringLiteral(" DeepSeek ")},
+                         {QStringLiteral("prompt_tokens"), 150.0},
+                         {QStringLiteral("completion_tokens"), 30.0},
+                         {QStringLiteral("total_tokens"), 1.0},
+                         {QStringLiteral("cached_prompt_tokens"), 999.0}}}};
+
+        const auto usage = parse_ai_quant_llm_usage(response);
+        QVERIFY(usage.reported);
+        QCOMPARE(usage.provider, QStringLiteral("deepseek"));
+        QCOMPARE(usage.prompt_tokens, qint64(150));
+        QCOMPARE(usage.completion_tokens, qint64(30));
+        QCOMPARE(usage.cached_prompt_tokens, qint64(150));
     }
 
     void local_usage_metrics_persist_monthly_totals_and_provider_health() {

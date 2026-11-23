@@ -748,6 +748,40 @@ class AgentProviderPolicyTest(unittest.TestCase):
         self.assertIn('"recursion_limit": recursion_limit(config)', execute)
         self.assertNotIn('"recursion_limit": 1000', execute)
 
+    def test_deep_agent_result_reports_provider_and_cache_usage(self):
+        cli = load_path("fincept_deepagent_cli_usage", DEEPAGENT_CLI)
+        messages = [
+            types.SimpleNamespace(
+                content="first",
+                usage_metadata={
+                    "input_tokens": 100,
+                    "output_tokens": 20,
+                    "input_token_details": {"cache_read": 60},
+                },
+            ),
+            types.SimpleNamespace(
+                content="final",
+                usage_metadata={
+                    "input_tokens": 50,
+                    "output_tokens": 10,
+                    "input_token_details": {"cached_tokens": 30},
+                },
+            ),
+        ]
+
+        result = cli._format_result(
+            {"messages": messages}, "thread-1", "deepseek"
+        )
+
+        self.assertEqual(result["result"], "final")
+        self.assertEqual(result["usage"], {
+            "provider": "deepseek",
+            "prompt_tokens": 150,
+            "completion_tokens": 30,
+            "total_tokens": 180,
+            "cached_prompt_tokens": 90,
+        })
+
     def test_ai_quant_agent_failures_redact_provider_credentials(self):
         deepagents = DEEPAGENT_CLI.read_text(encoding="utf-8")
         execute = deepagents[

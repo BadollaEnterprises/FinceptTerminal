@@ -1076,6 +1076,25 @@ void QuantModulePanel::render_result(const QString& command, const QJsonObject& 
             gs_section_header(tid.isEmpty() ? tr("DEEP ANALYSIS REPORT")
                                             : tr("DEEP ANALYSIS REPORT  |  THREAD %1").arg(tid.left(24)),
                               accent));
+        const QJsonObject usage = payload.value(QStringLiteral("usage")).toObject();
+        const qint64 prompt_tokens = static_cast<qint64>(usage.value(QStringLiteral("prompt_tokens")).toDouble());
+        const qint64 completion_tokens =
+            static_cast<qint64>(usage.value(QStringLiteral("completion_tokens")).toDouble());
+        const qint64 cached_tokens =
+            static_cast<qint64>(usage.value(QStringLiteral("cached_prompt_tokens")).toDouble());
+        if (prompt_tokens > 0 || completion_tokens > 0) {
+            const QString provider = usage.value(QStringLiteral("provider")).toString().trimmed().toUpper();
+            auto* usage_note = new QLabel(
+                tr("%1 tokens · %2 cache-read · billed to your %3 API key · 0 Fincept credits")
+                    .arg(QLocale().toString(prompt_tokens + completion_tokens),
+                         QLocale().toString(qMin(cached_tokens, prompt_tokens)),
+                         provider.isEmpty() ? tr("BYO") : provider),
+                result_host_);
+            usage_note->setWordWrap(true);
+            usage_note->setStyleSheet(QStringLiteral("color:%1;padding:2px 0 8px 0;")
+                                          .arg(ui::colors::TEXT_TERTIARY()));
+            results_layout_->addWidget(usage_note);
+        }
         if (text.trimmed().isEmpty()) {
             display_result(payload);
             return;

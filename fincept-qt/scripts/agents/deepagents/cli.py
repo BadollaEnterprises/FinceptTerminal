@@ -166,7 +166,11 @@ def _execute_with_deepagents(
             config=run_config,
             context=ctx,
         )
-        return _format_result(result, thread_id)
+        return _format_result(
+            result,
+            thread_id,
+            str(config.get("llm_provider") or "").strip().lower(),
+        )
 
     except Exception as exc:
         # Provider exceptions may echo authorization headers or API keys. Keep
@@ -176,7 +180,44 @@ def _execute_with_deepagents(
         return _error(safe_error)
 
 
-def _format_result(raw: dict[str, Any], thread_id: str) -> dict[str, Any]:
+def _usage_value(value: Any) -> int:
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError, OverflowError):
+        return 0
+
+
+def _message_usage(message: Any) -> tuple[int, int, int]:
+    """Return input, output and cache-read tokens for one LangChain message.
+
+    ``usage_metadata`` is the provider-neutral LangChain shape. Older adapters
+    expose the same data below ``response_metadata.token_usage``; only consult
+    that fallback when the canonical shape is absent so counts are never added
+    twice.
+    """
+    usage = getattr(message, "usage_metadata", None)
+    if not isinstance(usage, dict) or not usage:
+        response_metadata = getattr(message, "response_metadata", None)
+        if isinstance(response_metadata, dict):
+            usage = response_metadata.get("token_usage") or response_metadata.get("usage") or {}
+    if not isinstance(usage, dict):
+        return 0, 0, 0
+
+    prompt = _usage_value(usage.get("input_tokens", usage.get("prompt_tokens")))
+    completion = _usage_value(usage.get("output_tokens", usage.get("completion_tokens")))
+    details = usage.get("input_token_details") or usage.get("prompt_tokens_details") or {}
+    if not isinstance(details, dict):
+        details = {}
+    cached = _usage_value(
+        usage.get(
+            "cache_read_tokens",
+            details.get("cache_read", details.get("cached_tokens")),
+        )
+    )
+    return prompt, completion, min(cached, prompt)
+
+
+def _format_result(raw: dict[str, Any], thread_id: str, provider: str = "") -> dict[str, Any]:
     """Normalise a deepagents invoke() result to the standard output schema."""
     messages = raw.get("messages", [])
     result_text = ""
@@ -195,12 +236,26 @@ def _format_result(raw: dict[str, Any], thread_id: str) -> dict[str, Any]:
             elif isinstance(t, str):
                 todos.append({"id": f"todo-{i+1}", "task": t, "status": "completed", "subtasks": []})
 
+    prompt_tokens = completion_tokens = cached_prompt_tokens = 0
+    for message in messages:
+        prompt, completion, cached = _message_usage(message)
+        prompt_tokens += prompt
+        completion_tokens += completion
+        cached_prompt_tokens += cached
+
     return {
         "success":   True,
         "result":    result_text,
         "todos":     todos,
         "files":     raw.get("files", {}),
         "thread_id": thread_id,
+        "usage": {
+            "provider": provider,
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "total_tokens": prompt_tokens + completion_tokens,
+            "cached_prompt_tokens": cached_prompt_tokens,
+        },
         "error":     None,
     }
 

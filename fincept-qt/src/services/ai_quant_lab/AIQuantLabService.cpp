@@ -5,10 +5,12 @@
 #include "core/config/AppConfig.h"
 #include "core/config/AppPaths.h"
 #include "core/logging/Logger.h"
+#include "core/metrics/LocalUsageMetrics.h"
 #include "core/policy/CommunityPolicy.h"
 #include "core/privacy/LogRedact.h"
 #include "core/process/ProcessTree.h"
 #include "python/PythonRunner.h"
+#include "services/ai_quant_lab/AIQuantUsage.h"
 #include "services/llm/LlmBudgetSettings.h"
 #include "services/llm/ModelCatalog.h"
 #include "storage/cache/CacheManager.h"
@@ -119,6 +121,14 @@ AIQuantLabService::Tag AIQuantLabService::take_tag() {
 
 void AIQuantLabService::emit_done(const Tag& tag, const QString& module_id, const QString& command,
                                   const QJsonObject& data) {
+    if (module_id == QLatin1String("deep_agent") && command == QLatin1String("execute_task")) {
+        const AiQuantLlmUsage usage = parse_ai_quant_llm_usage(data);
+        if (usage.reported) {
+            metrics::LocalUsageMetrics::record_llm(
+                usage.provider, usage.prompt_tokens, usage.completion_tokens,
+                data.value(QStringLiteral("success")).toBool(true), usage.cached_prompt_tokens);
+        }
+    }
     const bool dataset_changed = (command == QLatin1String("build_dataset") ||
                                   command == QLatin1String("update_dataset") ||
                                   command == QLatin1String("download_data")) &&
