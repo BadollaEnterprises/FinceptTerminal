@@ -6,6 +6,7 @@
 #include "services/llm/ModelRouter.h"
 
 #include <QFile>
+#include <QProcess>
 #include <QtTest>
 #include <QTemporaryDir>
 
@@ -194,6 +195,47 @@ class CommunityPolicyTest : public QObject {
         const qsizetype fetch = cmake.indexOf("FetchContent_MakeAvailable(QtADS)");
         QVERIFY2(shim >= 0 && fetch > shim,
                  "The in-tree Versioning module must precede QtADS' upstream module during configure");
+    }
+
+    void md4c_policy_patch_is_deterministic_and_idempotent() {
+        const QString patch_path = QStringLiteral(FINCEPT_SOURCE_DIR "/cmake/patches/md4c_cmake_compat.cmake");
+        QVERIFY2(QFile::exists(patch_path), qPrintable(patch_path));
+
+        QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        const QString fixture_path = temp.filePath(QStringLiteral("CMakeLists.txt"));
+        QFile fixture(fixture_path);
+        QVERIFY(fixture.open(QIODevice::WriteOnly));
+        // The pinned upstream file currently begins with a blank line. Keep
+        // that harmless prefix in the fixture so PATCH_COMMAND idempotency is
+        // tested against the source shape CMake actually populates.
+        fixture.write("\ncmake_minimum_required(VERSION 3.5)\nproject(MD4C C)\n");
+        fixture.close();
+
+        auto run_patch = [&]() {
+            QProcess process;
+            process.start(QStringLiteral("cmake"),
+                          {QStringLiteral("-DFILE=") + fixture_path, QStringLiteral("-P"), patch_path});
+            QVERIFY2(process.waitForFinished(30'000), qPrintable(process.errorString()));
+            QCOMPARE(process.exitStatus(), QProcess::NormalExit);
+            QCOMPARE(process.exitCode(), 0);
+        };
+        run_patch();
+        run_patch();
+
+        QVERIFY(fixture.open(QIODevice::ReadOnly));
+        const QByteArray patched = fixture.readAll();
+        QCOMPARE(patched.count("cmake_minimum_required"), 1);
+        QVERIFY(patched.startsWith("\ncmake_minimum_required(VERSION 3.5...3.10)\n"));
+
+        QFile source(QStringLiteral(FINCEPT_SOURCE_DIR "/CMakeLists.txt"));
+        QVERIFY2(source.open(QIODevice::ReadOnly), qPrintable(source.errorString()));
+        const QByteArray cmake = source.readAll();
+        const qsizetype md4c = cmake.indexOf("FetchContent_Declare(\n    md4c");
+        const qsizetype make_available = cmake.indexOf("FetchContent_MakeAvailable(md4c)", md4c);
+        const qsizetype patch_command = cmake.indexOf("md4c_cmake_compat.cmake", md4c);
+        QVERIFY2(md4c >= 0 && patch_command > md4c && patch_command < make_available,
+                 "The compatibility patch must run while the pinned md4c source is populated");
     }
 
     void ai_quant_agents_obey_the_global_turn_output_ceiling() {

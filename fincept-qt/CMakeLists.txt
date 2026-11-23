@@ -705,6 +705,9 @@ FetchContent_Declare(
     GIT_REPOSITORY https://github.com/mity/md4c.git
     GIT_TAG        729e6b8b320caa96328968ab27d7db2235e4fb47  # release-0.5.2
     GIT_SHALLOW    TRUE
+    PATCH_COMMAND  ${CMAKE_COMMAND}
+        -DFILE=<SOURCE_DIR>/CMakeLists.txt
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/patches/md4c_cmake_compat.cmake"
 )
 FetchContent_MakeAvailable(md4c)
 # md4c builds md4c (parser) and md4c-html (HTML renderer) as static libs.
