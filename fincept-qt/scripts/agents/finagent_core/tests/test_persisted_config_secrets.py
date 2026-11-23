@@ -50,6 +50,7 @@ def test_resumable_task_policy_removes_runtime_wiring_and_nested_credentials():
     config = _config_with_secrets()
     config["terminal_mcp_endpoint"] = "http://127.0.0.1:9999"
     config["terminal_tools"] = [{"name": "quote"}]
+    config["__fincept_runtime_budgets"] = {"input_max_tokens": 32000}
 
     stored = persistable_config(config)
 
@@ -59,6 +60,7 @@ def test_resumable_task_policy_removes_runtime_wiring_and_nested_credentials():
     assert "terminal_mcp_token" not in stored
     assert "terminal_mcp_destructive_token" not in stored
     assert "terminal_tools" not in stored
+    assert "__fincept_runtime_budgets" not in stored
 
 
 def test_schedule_store_never_writes_credentials_to_sqlite(tmp_path):

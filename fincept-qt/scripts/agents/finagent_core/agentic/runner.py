@@ -31,6 +31,7 @@ from finagent_core.input_budget import (
     DEFAULT_INPUT_MAX_CHARS,
     DEFAULT_INPUT_MAX_TOKENS,
     DEFAULT_OUTPUT_MAX_TOKENS,
+    RUNTIME_BUDGETS_KEY,
     apply_nested_output_budgets,
     input_budget_error,
     request_budget_error,
@@ -54,6 +55,7 @@ _RUNTIME_CONFIG_KEYS = (
     "terminal_mcp_token",
     "terminal_mcp_destructive_token",
     "terminal_tools",
+    RUNTIME_BUDGETS_KEY,
 )
 
 

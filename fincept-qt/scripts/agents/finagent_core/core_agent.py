@@ -13,6 +13,7 @@ import os
 
 from finagent_core.provider_policy import normalize_byo_model_config, resolve_byo_model_config
 from finagent_core.runtime_limits import bounded_agent_steps, bounded_reasoning_steps
+from finagent_core.input_budget import RUNTIME_BUDGETS_KEY, provider_prompt_budget_error
 
 logger = logging.getLogger(__name__)
 
@@ -218,6 +219,10 @@ class CoreAgent:
             Agent response
         """
         config = normalize_ui_config(config)
+        if budget_error := provider_prompt_budget_error(query, config):
+            raise RuntimeError(budget_error)
+        config = dict(config)
+        config.pop(RUNTIME_BUDGETS_KEY, None)
         if session_id:
             config = {**config, "session_id": session_id}
 
@@ -252,6 +257,11 @@ class CoreAgent:
     ) -> Any:
         """Execute a multi-agent team."""
         from finagent_core.modules import TeamModule
+
+        if budget_error := provider_prompt_budget_error(query, team_config):
+            raise RuntimeError(budget_error)
+        team_config = dict(team_config)
+        team_config.pop(RUNTIME_BUDGETS_KEY, None)
 
         agents = []
         for agent_config in team_config.get("agents", team_config.get("members", [])):

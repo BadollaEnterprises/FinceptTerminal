@@ -1,4 +1,5 @@
 from finagent_core.input_budget import (
+    RUNTIME_BUDGETS_KEY,
     apply_nested_output_budgets,
     apply_output_budget,
     request_budget_error,
@@ -124,6 +125,28 @@ def test_agentic_resume_reclamps_stored_nested_models_to_live_output_budget(tmp_
     assert result["success"] is True
     assert captured["model"]["max_tokens"] == 12000
     assert captured["team"]["model"]["max_tokens"] == 12000
+
+
+def test_core_agent_rechecks_generated_prompt_at_provider_boundary(monkeypatch):
+    import pytest
+    from finagent_core.core_agent import CoreAgent
+
+    agent = CoreAgent(api_keys={})
+    provider_calls = []
+    monkeypatch.setattr(
+        agent._registry,
+        "get_or_create",
+        lambda **kwargs: provider_calls.append(kwargs),
+    )
+    config = {
+        "model": {"provider": "deepseek", "max_tokens": 12000},
+        RUNTIME_BUDGETS_KEY: {"input_max_chars": 0, "input_max_tokens": 64},
+    }
+
+    with pytest.raises(RuntimeError, match="turn-input guardrail"):
+        agent.run("generated evidence " * 100, config)
+
+    assert provider_calls == []
 
 
 def test_complete_agent_request_obeys_turn_input_token_budget():

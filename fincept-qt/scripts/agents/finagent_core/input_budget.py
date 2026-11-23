@@ -12,6 +12,7 @@ DEFAULT_INPUT_MAX_TOKENS = 32_000
 MAX_INPUT_MAX_TOKENS = 2_000_000
 DEFAULT_OUTPUT_MAX_TOKENS = 12_000
 MAX_OUTPUT_MAX_TOKENS = 131_072
+RUNTIME_BUDGETS_KEY = "__fincept_runtime_budgets"
 
 _PROMPT_FIELDS = frozenset({
     "answer",
@@ -99,6 +100,29 @@ def request_budget_error(params: Any, config: Any, limit_tokens: Any) -> str | N
         f"{parsed_limit}-token BYO AI turn-input guardrail. No provider request was sent. "
         "Shorten the query, instructions, or attached tool context, or raise Turn Input "
         "Tokens in Settings > LLM Configuration."
+    )
+
+
+def provider_prompt_budget_error(prompt: Any, config: Any) -> str | None:
+    """Final guard for prompts assembled after the host request preflight."""
+    if not isinstance(config, dict):
+        return None
+    budgets = config.get(RUNTIME_BUDGETS_KEY)
+    if not isinstance(budgets, dict):
+        return None
+    provider_config = {key: value for key, value in config.items() if key != RUNTIME_BUDGETS_KEY}
+    params = {"query": prompt}
+    error = input_budget_error(
+        params,
+        provider_config,
+        budgets.get("input_max_chars", DEFAULT_INPUT_MAX_CHARS),
+    )
+    if error:
+        return error
+    return request_budget_error(
+        params,
+        provider_config,
+        budgets.get("input_max_tokens", DEFAULT_INPUT_MAX_TOKENS),
     )
 
 

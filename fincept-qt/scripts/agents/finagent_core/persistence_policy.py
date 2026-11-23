@@ -19,6 +19,7 @@ _NEVER_PERSIST = {
     "terminal_mcp_token",
     "terminal_mcp_destructive_token",
     "terminal_tools",
+    "fincept_runtime_budgets",
 }
 
 _SECRET_KEYS = {

@@ -52,6 +52,7 @@ from finagent_core.input_budget import (
     apply_nested_output_budgets as _apply_nested_output_budgets,
     input_budget_error as _input_budget_error,
     request_budget_error as _request_budget_error,
+    RUNTIME_BUDGETS_KEY,
 )
 
 # Timeout for discovery operations (seconds)
@@ -422,6 +423,13 @@ def main(args=None):
         # dispatcher let that material bypass complete-input accounting and
         # nested output ceilings.
         config = _prepare_agent_card_for_budget(action, config)
+
+        config = dict(config)
+        config[RUNTIME_BUDGETS_KEY] = {
+            "input_max_chars": payload.get("input_max_chars", DEFAULT_INPUT_MAX_CHARS),
+            "input_max_tokens": payload.get("input_max_tokens", DEFAULT_INPUT_MAX_TOKENS),
+            "output_max_tokens": payload.get("output_max_tokens", DEFAULT_OUTPUT_MAX_TOKENS),
+        }
 
         if action in _AGENTIC_RESUME_ACTIONS:
             # The stored task policy is loaded only inside AgenticRunner. Carry
