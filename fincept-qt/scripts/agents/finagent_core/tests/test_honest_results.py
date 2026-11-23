@@ -41,6 +41,22 @@ def test_run_error_text_explains_missing_model():
     assert explain_llm_error("Rate limit reached for tokens") == "Rate limit reached for tokens"
 
 
+def test_model_errors_redact_credentials_before_display():
+    raw = (
+        "401 Authorization: Bearer secret-bearer-value "
+        "api_key=sk-deepseek-secret-value x-api-key: another-secret"
+    )
+    shown = explain_llm_error(raw)
+
+    for secret in (
+        "secret-bearer-value",
+        "sk-deepseek-secret-value",
+        "another-secret",
+    ):
+        assert secret not in shown
+    assert shown.count("[REDACTED]") >= 3
+
+
 # ── planner (Planner tab: generate_dynamic_plan) ─────────────────────────────
 
 def test_plan_fails_cleanly_without_model():

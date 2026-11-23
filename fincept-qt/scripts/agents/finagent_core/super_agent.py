@@ -16,6 +16,7 @@ from enum import Enum
 import logging
 
 from finagent_core.provider_policy import normalize_byo_model_config, resolve_byo_model_config
+from finagent_core.run_errors import explain_llm_error
 
 logger = logging.getLogger(__name__)
 
@@ -245,7 +246,10 @@ class LLMRouter:
             try:
                 return self._llm_classify(query, provider, model_id)
             except Exception as e:
-                logger.warning(f"LLM routing failed, using keyword fallback: {e}")
+                logger.warning(
+                    "LLM routing failed, using keyword fallback: %s",
+                    explain_llm_error(str(e)),
+                )
 
         # Keyword fallback
         results = self._fallback.classify(query)
@@ -629,7 +633,7 @@ class SuperAgent:
                 "model_used": f"{model_provider}/{model_id}"
             }
         except Exception as e:
-            error_msg = str(e)
+            error_msg = explain_llm_error(str(e))
             # Provide helpful error for common issues
             if "api_key" in error_msg.lower() or "authentication" in error_msg.lower() or "unauthorized" in error_msg.lower():
                 error_msg = f"API key error for provider '{model_provider}': {error_msg}. Check your API key in Settings > LLM Configuration."

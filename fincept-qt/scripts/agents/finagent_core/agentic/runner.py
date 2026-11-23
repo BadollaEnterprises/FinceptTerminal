@@ -27,6 +27,7 @@ from finagent_core.agentic.budget import BudgetGuard
 from finagent_core.agentic.reflector import Reflector, ReflectorDecision
 from finagent_core.agentic.reflexion_store import ReflexionStore
 from finagent_core.agentic.skill_library import SkillLibrary
+from finagent_core.run_errors import explain_llm_error
 from finagent_core.task_state import ResumableTaskRunner
 
 # stderr only (main.py routes logging there) — stdout is the JSON result channel.
@@ -408,8 +409,9 @@ class AgenticRunner(ResumableTaskRunner):
             return result
 
         except Exception as e:
-            self.state_mgr.fail_task(task_id, str(e))
-            event: Dict[str, Any] = {"task_id": task_id, "error": str(e)}
+            error = explain_llm_error(str(e))
+            self.state_mgr.fail_task(task_id, error)
+            event: Dict[str, Any] = {"task_id": task_id, "error": error}
             if running_step is not None:
                 event["step_index"] = running_step
             self._emit("error", event)
@@ -581,7 +583,7 @@ class AgenticRunner(ResumableTaskRunner):
             except Exception as e:
                 self._emit("skill_skipped",
                            {"task_id": task_id, "reason": "structural_save_failed",
-                            "error": str(e)})
+                            "error": explain_llm_error(str(e))})
             return
 
         # score == 2 — ambiguous middle ground; let the LLM cast the deciding vote.
@@ -664,7 +666,7 @@ class AgenticRunner(ResumableTaskRunner):
             # Distillation is best-effort; never raise into the success path.
             self._emit("skill_skipped",
                        {"task_id": task_id, "reason": "distill_error",
-                        "error": str(e)})
+                        "error": explain_llm_error(str(e))})
 
     @staticmethod
     def _parse_distill_json(raw: str) -> Optional[Dict[str, Any]]:

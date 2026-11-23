@@ -37,6 +37,15 @@ _NO_MODEL_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+_SECRET_ASSIGNMENT = re.compile(
+    r"\b(api[_ -]?key|x-api-key|authorization)\b"
+    r"(\s*[\"']?\s*[:=]\s*)"
+    r"(?:\"[^\"]*\"|'[^']*'|(?:bearer\s+)?[^\s,;\]}]+)",
+    re.IGNORECASE,
+)
+_BEARER_SECRET = re.compile(r"\bbearer\s+[^\s,;\]}]+", re.IGNORECASE)
+_SK_SECRET = re.compile(r"\bsk-[A-Za-z0-9._-]{8,}\b", re.IGNORECASE)
+
 
 class RunFailed(RuntimeError):
     """An agent/model run failed; the message is ready to show to the user."""
@@ -47,11 +56,21 @@ class AgentFeatureUnavailable(RuntimeError):
     cannot be built; the message names what is missing."""
 
 
+def redact_error_secrets(text: str) -> str:
+    """Remove common provider credentials from exception and response text."""
+    redacted = str(text or "")
+    redacted = _SECRET_ASSIGNMENT.sub(
+        lambda match: f"{match.group(1)}{match.group(2)}[REDACTED]", redacted
+    )
+    redacted = _BEARER_SECRET.sub("Bearer [REDACTED]", redacted)
+    return _SK_SECRET.sub("[REDACTED]", redacted)
+
+
 def explain_llm_error(text: str) -> str:
     """Prefix NO_MODEL_MESSAGE when the provider error means there is no usable
     model (missing key, auth failure, endpoint unreachable). Other errors are
     returned unchanged."""
-    text = (text or "").strip() or "Agent run failed"
+    text = redact_error_secrets(text).strip() or "Agent run failed"
     if text.startswith(NO_MODEL_MESSAGE):
         return text
     if _NO_MODEL_PATTERNS.search(text):

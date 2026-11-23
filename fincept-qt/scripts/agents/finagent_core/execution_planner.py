@@ -721,8 +721,9 @@ def generate_dynamic_plan(
     except Exception as e:
         # Model construction/connection errors are failures, never a
         # substitute plan.
-        logger.error(f"Dynamic plan generation failed: {type(e).__name__}: {e}")
-        return {"success": False, "error": explain_llm_error(f"Plan generation failed: {e}"),
+        safe_error = explain_llm_error(str(e))
+        logger.error("Dynamic plan generation failed: %s: %s", type(e).__name__, safe_error)
+        return {"success": False, "error": explain_llm_error(f"Plan generation failed: {safe_error}"),
                 "error_kind": "planning_failed"}
 
     run_err = run_error_text(response)

@@ -16,6 +16,7 @@ import os
 import re as _re
 
 from finagent_core.provider_policy import resolve_byo_provider
+from finagent_core.run_errors import explain_llm_error, run_error_text
 
 # Strip all emoji and non-BMP characters from text before emitting.
 # This avoids cp1252 encoding errors on Windows and keeps terminal output clean.
@@ -170,7 +171,6 @@ class StreamingCoreAgent:
                     # emitted as an ordinary TOKEN and the run reported as successful,
                     # so the UI showed the error message as the agent's answer.
                     if getattr(chunk, 'event', None) == 'RunError':
-                        from finagent_core.run_errors import explain_llm_error
                         err_text = explain_llm_error(str(getattr(chunk, 'content', None) or 'Agent run failed'))
                         self.emit("error", err_text)
                         yield {"type": "error", "content": err_text}
@@ -213,7 +213,6 @@ class StreamingCoreAgent:
                         yield {"type": "token", "content": visible}
             else:
                 # Non-streaming response - strip think blocks then chunk-emit
-                from finagent_core.run_errors import run_error_text
                 run_err = run_error_text(response)
                 if run_err:
                     self.emit("error", run_err)
@@ -239,8 +238,9 @@ class StreamingCoreAgent:
             yield {"type": "done", "content": clean_content}
 
         except Exception as e:
-            self.emit("error", str(e))
-            yield {"type": "error", "content": str(e)}
+            error = explain_llm_error(str(e))
+            self.emit("error", error)
+            yield {"type": "error", "content": error}
 
     def _stream_simulated(
         self,
@@ -258,7 +258,6 @@ class StreamingCoreAgent:
             for note in core.last_warnings:
                 self.emit("thinking", f"Note: {note}")
                 yield {"type": "warning", "content": note}
-            from finagent_core.run_errors import run_error_text
             run_err = run_error_text(response)
             if run_err:
                 # A failed run's content is the error text — never stream it
@@ -279,8 +278,9 @@ class StreamingCoreAgent:
             yield {"type": "done", "content": content}
 
         except Exception as e:
-            self.emit("error", str(e))
-            yield {"type": "error", "content": str(e)}
+            error = explain_llm_error(str(e))
+            self.emit("error", error)
+            yield {"type": "error", "content": error}
 
     def run_team_streaming(
         self,
@@ -307,7 +307,6 @@ class StreamingCoreAgent:
             # run_team returns an Agno TeamRunOutput object (not a dict).
             # Use get_response_content() to safely extract text — same as main.py does.
             team_response = core.run_team(query, team_config, session_id)
-            from finagent_core.run_errors import run_error_text
             run_err = run_error_text(team_response)
             if run_err:
                 self.emit("error", run_err)
@@ -330,8 +329,9 @@ class StreamingCoreAgent:
                 yield {"type": "done", "content": ""}
 
         except Exception as e:
-            self.emit("error", str(e))
-            yield {"type": "error", "content": str(e)}
+            error = explain_llm_error(str(e))
+            self.emit("error", error)
+            yield {"type": "error", "content": error}
 
 
 def main(args=None):

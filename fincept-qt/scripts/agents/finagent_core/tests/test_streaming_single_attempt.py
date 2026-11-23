@@ -1,6 +1,7 @@
 from unittest.mock import patch
 
 from finagent_core import main
+from finagent_core.core_agent_stream import StreamingCoreAgent
 
 
 class _CoreAgent:
@@ -26,7 +27,9 @@ class _BrokenStream:
 
     def run_streaming(self, *args, **kwargs):
         yield {"type": "token", "content": "partial"}
-        raise ConnectionError("stream disconnected after dispatch")
+        raise ConnectionError(
+            "stream disconnected after dispatch api_key=sk-stream-secret-value"
+        )
 
 
 def test_midstream_failure_does_not_replay_the_paid_request():
@@ -42,4 +45,28 @@ def test_midstream_failure_does_not_replay_the_paid_request():
 
     assert result["success"] is False
     assert "stream disconnected" in result["error"]
+    assert "sk-stream-secret-value" not in result["error"]
+    assert "[REDACTED]" in result["error"]
     assert _CoreAgent.run_calls == 0
+
+
+def test_native_stream_exception_redacts_provider_credentials():
+    class BrokenCore:
+        _guardrails = None
+        build_warnings = []
+
+        def _create_agent(self, config):
+            raise RuntimeError("Authorization: Bearer provider-secret-token")
+
+    emitted = []
+    stream = StreamingCoreAgent(
+        stream_callback=lambda kind, content, metadata=None: emitted.append(
+            (kind, content)
+        )
+    )
+    chunks = list(stream._stream_native(BrokenCore(), "query", {}, None))
+
+    assert chunks[-1]["type"] == "error"
+    assert "provider-secret-token" not in chunks[-1]["content"]
+    assert "[REDACTED]" in chunks[-1]["content"]
+    assert "provider-secret-token" not in str(emitted)

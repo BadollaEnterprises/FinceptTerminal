@@ -44,6 +44,7 @@ if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
 from finagent_core.provider_policy import resolved_configuration_error
+from finagent_core.run_errors import explain_llm_error
 from finagent_core.input_budget import (
     DEFAULT_INPUT_MAX_CHARS,
     input_budget_error as _input_budget_error,
@@ -509,7 +510,7 @@ def dispatch_action(
         except Exception as e:
             if agent._tracing:
                 agent.end_trace()
-            return {"success": False, "error": str(e)}
+            return {"success": False, "error": explain_llm_error(str(e))}
 
     if action == "run_team":
         from finagent_core.core_agent import CoreAgent
@@ -1235,7 +1236,7 @@ def dispatch_action_streaming(
                     elif chunk.get("type") == "warning":
                         notes.append(chunk.get("content", ""))
             except Exception as stream_exc:
-                stream_error = str(stream_exc) or "Agent stream failed"
+                stream_error = explain_llm_error(str(stream_exc) or "Agent stream failed")
                 stream_print("error", stream_error)
 
             if core_agent._tracing:
@@ -1255,8 +1256,9 @@ def dispatch_action_streaming(
         except Exception as e:
             if core_agent._tracing:
                 core_agent.end_trace()
-            stream_print("error", str(e))
-            return {"success": False, "error": str(e)}
+            error = explain_llm_error(str(e))
+            stream_print("error", error)
+            return {"success": False, "error": error}
 
     if action == "run_team":
         from finagent_core.core_agent import CoreAgent
@@ -1305,8 +1307,9 @@ def dispatch_action_streaming(
             return {"success": True, "response": content}
 
         except Exception as e:
-            stream_print("error", str(e))
-            return {"success": False, "error": str(e)}
+            error = explain_llm_error(str(e))
+            stream_print("error", error)
+            return {"success": False, "error": error}
 
     # =========================================================================
     # Agentic Mode — durable, event-emitting task runners.
