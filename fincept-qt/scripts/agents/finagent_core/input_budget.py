@@ -10,6 +10,8 @@ DEFAULT_INPUT_MAX_CHARS = 48_000
 MAX_INPUT_MAX_CHARS = 2_000_000
 DEFAULT_INPUT_MAX_TOKENS = 32_000
 MAX_INPUT_MAX_TOKENS = 2_000_000
+DEFAULT_OUTPUT_MAX_TOKENS = 12_000
+MAX_OUTPUT_MAX_TOKENS = 131_072
 
 _PROMPT_FIELDS = frozenset({
     "answer",
@@ -98,3 +100,26 @@ def request_budget_error(params: Any, config: Any, limit_tokens: Any) -> str | N
         "Shorten the query, instructions, or attached tool context, or raise Turn Input "
         "Tokens in Settings > LLM Configuration."
     )
+
+
+def apply_output_budget(config: Any, limit_tokens: Any) -> int | None:
+    """Clamp an agent model block to the terminal-wide per-turn output ceiling."""
+    if not isinstance(config, dict) or not isinstance(config.get("model"), dict):
+        return None
+    model = config["model"]
+    try:
+        requested = int(model.get("max_tokens", 4096))
+    except (TypeError, ValueError, OverflowError):
+        requested = 4096
+    if requested <= 0:
+        requested = 4096
+    requested = min(requested, MAX_OUTPUT_MAX_TOKENS)
+
+    try:
+        turn_limit = int(limit_tokens)
+    except (TypeError, ValueError, OverflowError):
+        turn_limit = DEFAULT_OUTPUT_MAX_TOKENS
+    turn_limit = max(0, min(turn_limit, MAX_OUTPUT_MAX_TOKENS))
+    resolved = min(requested, turn_limit) if turn_limit > 0 else requested
+    model["max_tokens"] = resolved
+    return resolved

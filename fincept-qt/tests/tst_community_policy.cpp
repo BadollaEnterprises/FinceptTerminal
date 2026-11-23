@@ -119,6 +119,8 @@ class CommunityPolicyTest : public QObject {
         const QByteArray code = source.readAll();
         QVERIFY(code.contains("kLlmPromptTokensKey"));
         QVERIFY(code.contains("payload[\"input_max_tokens\"]"));
+        QVERIFY(code.contains("kLlmCompletionTokensKey"));
+        QVERIFY(code.contains("payload[\"output_max_tokens\"]"));
     }
 
     void fincept_cloud_sync_is_disabled() {

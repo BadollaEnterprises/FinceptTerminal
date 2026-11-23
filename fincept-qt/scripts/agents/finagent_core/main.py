@@ -48,6 +48,8 @@ from finagent_core.run_errors import explain_llm_error
 from finagent_core.input_budget import (
     DEFAULT_INPUT_MAX_CHARS,
     DEFAULT_INPUT_MAX_TOKENS,
+    DEFAULT_OUTPUT_MAX_TOKENS,
+    apply_output_budget as _apply_output_budget,
     input_budget_error as _input_budget_error,
     request_budget_error as _request_budget_error,
 )
@@ -387,6 +389,10 @@ def main(args=None):
             # request value (providers reject or truncate max_tokens: 0).
             if not isinstance(config["model"]["max_tokens"], (int, float)) or config["model"]["max_tokens"] <= 0:
                 config["model"]["max_tokens"] = 4096
+
+        _apply_output_budget(
+            config, payload.get("output_max_tokens", DEFAULT_OUTPUT_MAX_TOKENS)
+        )
 
         # Enable streaming in params if flag is set
         if streaming:

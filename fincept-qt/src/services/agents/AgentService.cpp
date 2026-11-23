@@ -591,9 +591,14 @@ QJsonObject AgentService::build_payload(const QString& action, const QJsonObject
         AppConfig::instance()
             .get(ai_chat::kLlmPromptTokensKey, QVariant(ai_chat::kDefaultLlmPromptTokens))
             .toInt();
+    input_budget.completion_tokens =
+        AppConfig::instance()
+            .get(ai_chat::kLlmCompletionTokensKey, QVariant(ai_chat::kDefaultLlmCompletionTokens))
+            .toInt();
     input_budget = ai_chat::validate_llm_budget_settings(input_budget);
     payload["input_max_chars"] = input_budget.history_chars;
     payload["input_max_tokens"] = input_budget.prompt_tokens;
+    payload["output_max_tokens"] = input_budget.completion_tokens;
 
     // Inject the resolved LLM config as active_llm so Python can build the exact
     // model instance without re-resolving credentials.
