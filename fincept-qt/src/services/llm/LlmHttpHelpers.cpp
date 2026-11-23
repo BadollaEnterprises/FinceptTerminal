@@ -322,6 +322,7 @@ void LlmService::parse_usage(LlmResponse& resp, const QJsonObject& rj, const QSt
     resp.completion_tokens = usage.completion_tokens;
     resp.total_tokens = usage.total_tokens;
     resp.cached_prompt_tokens = usage.cached_prompt_tokens;
+    resp.provider_requests = usage.provider_requests;
 }
 
 } // namespace fincept::ai_chat

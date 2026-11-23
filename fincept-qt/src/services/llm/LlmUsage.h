@@ -13,6 +13,7 @@ struct ProviderUsage {
     int completion_tokens = 0;
     int total_tokens = 0;
     int cached_prompt_tokens = 0;
+    int provider_requests = 0;
 };
 
 inline int bounded_usage_count(qint64 value) {
@@ -25,12 +26,13 @@ inline ProviderUsage normalize_provider_usage(ProviderUsage usage) {
     const int measured_total = bounded_usage_count(qint64(usage.prompt_tokens) + usage.completion_tokens);
     usage.total_tokens = std::max(bounded_usage_count(usage.total_tokens), measured_total);
     usage.cached_prompt_tokens = std::clamp(usage.cached_prompt_tokens, 0, usage.prompt_tokens);
+    usage.provider_requests = std::clamp(usage.provider_requests, 0, 1'000'000);
     return usage;
 }
 
 /// Sum provider-reported usage over every request in a multi-round turn.
 /// Works for ProviderUsage and LlmResponse (the latter intentionally exposes
-/// the same four accounting fields).
+/// the same five accounting fields).
 template <typename Usage>
 inline void add_provider_usage(Usage& total, const Usage& round) {
     const int round_prompt = bounded_usage_count(round.prompt_tokens);
@@ -44,6 +46,8 @@ inline void add_provider_usage(Usage& total, const Usage& round) {
     total.total_tokens = bounded_usage_count(qint64(bounded_usage_count(total.total_tokens)) + round_total);
     total.cached_prompt_tokens =
         bounded_usage_count(qint64(bounded_usage_count(total.cached_prompt_tokens)) + round_cached);
+    total.provider_requests = bounded_usage_count(
+        qint64(bounded_usage_count(total.provider_requests)) + bounded_usage_count(round.provider_requests));
 }
 
 /// Preserve usage accrued by a multi-request operation on every exit path.
@@ -78,6 +82,9 @@ inline int prompt_cache_hit_percent(qint64 prompt_tokens, qint64 cached_prompt_t
 /// a separate subset so the UI can show whether prompt caching is working.
 inline ProviderUsage parse_provider_usage(const QJsonObject& response, const QString& provider) {
     ProviderUsage out;
+    // This function is called for one completed provider response. Preserve
+    // the request count even when a gateway omits token usage metadata.
+    out.provider_requests = 1;
     if (response.contains(QStringLiteral("usageMetadata"))) {
         const QJsonObject usage = response.value(QStringLiteral("usageMetadata")).toObject();
         out.prompt_tokens = usage.value(QStringLiteral("promptTokenCount")).toInt();

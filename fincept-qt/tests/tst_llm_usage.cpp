@@ -30,6 +30,7 @@ void TestLlmUsage::deepseek_cache_hits_are_preserved() {
     QCOMPARE(usage.completion_tokens, 500);
     QCOMPARE(usage.total_tokens, 12500);
     QCOMPARE(usage.cached_prompt_tokens, 9000);
+    QCOMPARE(usage.provider_requests, 1);
 }
 
 void TestLlmUsage::openai_nested_cache_hits_are_preserved() {
@@ -56,8 +57,8 @@ void TestLlmUsage::gemini_cached_content_is_preserved() {
 }
 
 void TestLlmUsage::multi_round_usage_includes_every_cache_hit() {
-    ProviderUsage total{10000, 500, 10500, 8000};
-    const ProviderUsage follow_up{12000, 700, 12700, 11000};
+    ProviderUsage total{10000, 500, 10500, 8000, 1};
+    const ProviderUsage follow_up{12000, 700, 12700, 11000, 1};
 
     add_provider_usage(total, follow_up);
 
@@ -65,12 +66,13 @@ void TestLlmUsage::multi_round_usage_includes_every_cache_hit() {
     QCOMPARE(total.completion_tokens, 1200);
     QCOMPARE(total.total_tokens, 23200);
     QCOMPARE(total.cached_prompt_tokens, 19000);
+    QCOMPARE(total.provider_requests, 2);
 }
 
 void TestLlmUsage::scoped_usage_survives_early_return() {
-    ProviderUsage response{10, 2, 12, 4};
+    ProviderUsage response{10, 2, 12, 4, 1};
     auto fail_after_billed_round = [&response]() {
-        const ProviderUsage accrued{100, 20, 120, 80};
+        const ProviderUsage accrued{100, 20, 120, 80, 1};
         ProviderUsageScope preserve(response, accrued);
         return;
     };
@@ -81,6 +83,7 @@ void TestLlmUsage::scoped_usage_survives_early_return() {
     QCOMPARE(response.completion_tokens, 22);
     QCOMPARE(response.total_tokens, 132);
     QCOMPARE(response.cached_prompt_tokens, 84);
+    QCOMPARE(response.provider_requests, 2);
 }
 
 void TestLlmUsage::malformed_usage_cannot_reduce_accounting() {
@@ -119,6 +122,7 @@ void TestLlmUsage::streamed_usage_survives_cancel_or_late_failure() {
     QCOMPARE(anthropic.completion_tokens, 12);
     QCOMPARE(anthropic.total_tokens, 112);
     QCOMPARE(anthropic.cached_prompt_tokens, 50);
+    QCOMPARE(anthropic.provider_requests, 1);
 
     const QJsonObject openai_tail{{QStringLiteral("prompt_tokens"), 40},
                                   {QStringLiteral("completion_tokens"), 8},
@@ -127,6 +131,7 @@ void TestLlmUsage::streamed_usage_survives_cancel_or_late_failure() {
     QCOMPARE(openai.prompt_tokens, 40);
     QCOMPARE(openai.completion_tokens, 8);
     QCOMPARE(openai.total_tokens, 48);
+    QCOMPARE(openai.provider_requests, 1);
 }
 
 QTEST_GUILESS_MAIN(TestLlmUsage)

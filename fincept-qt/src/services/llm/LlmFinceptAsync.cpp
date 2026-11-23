@@ -665,6 +665,7 @@ LlmResponse LlmService::fincept_submit_poll(const QString& prompt, QJsonArray* o
             resp.completion_tokens = usage["output_tokens"].toInt();
             resp.total_tokens = usage["total_tokens"].toInt();
         }
+        resp.provider_requests = 1;
         return resp;
     }
 
@@ -835,6 +836,7 @@ LlmResponse LlmService::fincept_async_request(const QString& user_message,
         r.completion_tokens = usage.completion_tokens;
         r.total_tokens = usage.total_tokens;
         r.cached_prompt_tokens = usage.cached_prompt_tokens;
+        r.provider_requests = usage.provider_requests;
         return r;
     };
     // Success of each memoised call, so a served-from-cache repeat reports the

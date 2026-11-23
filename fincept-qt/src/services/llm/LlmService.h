@@ -76,6 +76,7 @@ struct LlmResponse {
     int completion_tokens = 0;
     int total_tokens = 0;
     int cached_prompt_tokens = 0; ///< subset of prompt_tokens served from provider cache
+    int provider_requests = 0;    ///< provider generations represented by this response
     bool success = false;
     /// Failure looks transient (upstream/model error, not a malformed request),
     /// so the UI may offer a user-initiated retry.

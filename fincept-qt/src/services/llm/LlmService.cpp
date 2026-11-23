@@ -71,7 +71,7 @@ static bool llm_svc_provider_allowed(const QString& provider) {
 static void llm_svc_log_request_finished(const LlmResponse& resp, const QString& feature, bool stream,
                                          qint64 duration_ms) {
     metrics::LocalUsageMetrics::record_llm(resp.provider, resp.prompt_tokens, resp.completion_tokens, resp.success,
-                                           resp.cached_prompt_tokens);
+                                           resp.cached_prompt_tokens, qMax(1, resp.provider_requests));
     if (!Logger::instance().should_log(LogLevel::Info, kLlmSvcTag))
         return;
     QList<LogField> fields{{"provider", resp.provider},
@@ -81,6 +81,7 @@ static void llm_svc_log_request_finished(const LlmResponse& resp, const QString&
                            {"duration_ms", duration_ms},
                            {"tokens_in", resp.prompt_tokens},
                            {"tokens_out", resp.completion_tokens},
+                           {"provider_requests", qMax(1, resp.provider_requests)},
                            {"result", resp.success ? "ok" : (resp.cancelled ? "cancelled" : "error")}};
     if (!resp.success && !resp.cancelled)
         fields.append(LogField("error", privacy::redact_text(resp.error)));
@@ -1797,6 +1798,7 @@ LlmResponse LlmService::do_streaming_request(const QString& user_message,
     resp.completion_tokens = observed_usage.completion_tokens;
     resp.total_tokens = observed_usage.total_tokens;
     resp.cached_prompt_tokens = observed_usage.cached_prompt_tokens;
+    resp.provider_requests = observed_usage.provider_requests;
     if (detail::cancel_requested() && !stream_completed) {
         // DEBUG: the request's outcome line (LLM request finished result=cancelled) follows.
         LOG_DEBUG(kLlmSvcTag, QString("Stream cancelled by user after %1 chars").arg(accumulated.size()));

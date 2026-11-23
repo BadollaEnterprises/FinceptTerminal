@@ -118,6 +118,7 @@ LlmResponse LlmService::do_harness_request(const QString& user_message, const st
     resp.prompt_tokens = static_cast<int>(qMin<qint64>(hr.input_tokens, std::numeric_limits<int>::max()));
     resp.completion_tokens = static_cast<int>(qMin<qint64>(hr.output_tokens, std::numeric_limits<int>::max()));
     resp.total_tokens = resp.prompt_tokens + resp.completion_tokens;
+    resp.provider_requests = 1;
     resp.model = hr.model;
     resp.cost_usd = hr.cost_usd.value_or(-1.0);
     resp.harness_failure = hr.failure;
