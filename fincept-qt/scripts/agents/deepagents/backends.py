@@ -60,12 +60,14 @@ def get_backend(
     if mode == "filesystem":
         if not scripts_dir:
             raise ValueError("scripts_dir is required for filesystem backend")
-        return FilesystemBackend(root_dir=scripts_dir)
+        return FilesystemBackend(root_dir=scripts_dir, virtual_mode=True)
 
     if mode == "shell":
         if not scripts_dir:
             raise ValueError("scripts_dir is required for shell backend")
-        return LocalShellBackend(root_dir=scripts_dir)
+        # This confines filesystem tools to the declared root. The execute
+        # tool remains host-capable by design and is still HITL/opt-in only.
+        return LocalShellBackend(root_dir=scripts_dir, virtual_mode=True)
 
     if mode == "composite":
         return _make_composite_factory(scripts_dir=scripts_dir, store=store)
@@ -108,7 +110,7 @@ def _make_composite_factory(
 
         # /scripts/ — read-only access to analytics scripts
         if scripts_dir:
-            routes["/scripts/"] = FilesystemBackend(root_dir=scripts_dir)
+            routes["/scripts/"] = FilesystemBackend(root_dir=scripts_dir, virtual_mode=True)
 
         # /tmp/ — ephemeral scratch
         routes["/tmp/"] = StateBackend(runtime)
