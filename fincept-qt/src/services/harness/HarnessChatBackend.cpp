@@ -5,6 +5,7 @@
 #include "core/config/AppConfig.h"
 #include "core/config/AppPaths.h"
 #include "core/logging/Logger.h"
+#include "core/policy/CommunityPolicy.h"
 #include "core/process/HostExec.h"
 #include "mcp/server/McpHttpServer.h"
 #include "services/harness/HarnessChatBudget.h"
@@ -74,6 +75,11 @@ FailureKind hcb_kind_for(TerminalState st) {
 /// GUI thread.
 HcbPrepared hcb_prepare(const HarnessChatRequest& req) {
     HcbPrepared p;
+    if (!policy::is_ai_backend_selectable(req.harness_id)) {
+        p.kind = FailureKind::NotInstalled;
+        p.error = QStringLiteral("This AI backend is no longer available.");
+        return p;
+    }
     auto& reg = HarnessRegistry::instance();
     const IHarnessAdapter* adapter = reg.adapter(req.harness_id);
     if (!adapter) {

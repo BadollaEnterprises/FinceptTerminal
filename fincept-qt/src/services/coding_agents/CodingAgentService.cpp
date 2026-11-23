@@ -8,6 +8,7 @@
 #include "core/config/AppConfig.h"
 #include "core/config/AppPaths.h"
 #include "core/logging/Logger.h"
+#include "core/policy/CommunityPolicy.h"
 #include "core/privacy/LogRedact.h"
 #include "core/process/HostExec.h"
 #include "services/coding_agents/CodingAgentLiveRun.h"
@@ -398,6 +399,8 @@ QString CodingAgentService::start_run(const RunRequest& request, QString* error)
     QString harness_id = normalize_harness_id(request.harness);
     if (harness_id.isEmpty())
         harness_id = registry.preferred_harness();
+    if (!policy::is_ai_backend_selectable(harness_id))
+        return fail(QStringLiteral("This AI backend is no longer available. Choose a supported harness."));
     const harness::IHarnessAdapter* adapter = registry.adapter(harness_id);
     if (!adapter)
         return fail(QStringLiteral("%1 is not available in this build.").arg(registry.display_name(harness_id)));
@@ -487,6 +490,8 @@ bool CodingAgentService::can_follow_up(const QString& run_id, QString* why) cons
     const CodingAgentRun* parent = find_run(run_id);
     if (!parent)
         return deny(QStringLiteral("Run not found."));
+    if (!policy::is_ai_backend_selectable(parent->harness))
+        return deny(QStringLiteral("This run used an AI backend that is no longer available."));
     const auto& registry = harness::HarnessRegistry::instance();
     const harness::IHarnessAdapter* adapter = registry.adapter(parent->harness);
     if (!adapter)
@@ -1118,6 +1123,8 @@ QString CodingAgentService::save_schedule(const CodingAgentSchedule& schedule, Q
     const QString invalid = validate_schedule(s);
     if (!invalid.isEmpty())
         return fail(invalid);
+    if (!policy::is_ai_backend_selectable(s.harness))
+        return fail(QStringLiteral("This AI backend is no longer available — pick another harness."));
     const auto& registry = harness::HarnessRegistry::instance();
     const harness::IHarnessAdapter* adapter = registry.adapter(s.harness);
     if (!adapter)

@@ -13,6 +13,7 @@
 
 #include "core/config/AppPaths.h"
 #include "core/logging/Logger.h"
+#include "core/policy/CommunityPolicy.h"
 #include "core/process/HostExec.h"
 #include "mcp/server/McpHttpServer.h"
 #include "services/coding_agents/CodingAgentLiveRun.h"
@@ -182,6 +183,8 @@ bool CodingAgentService::launch(const QString& run_id, QString* error, QString* 
     // Everything comes from the registry's cached state — no file-system search here.
     auto& registry = harness::HarnessRegistry::instance();
     const QString harness_id = it->harness;
+    if (!policy::is_ai_backend_selectable(harness_id))
+        return fail(QStringLiteral("This AI backend is no longer available."), harness::FailureKind::NotInstalled);
     const harness::IHarnessAdapter* adapter = registry.adapter(harness_id);
     if (!adapter)
         return fail(QStringLiteral("%1 is not available in this build.").arg(registry.display_name(harness_id)),
@@ -670,6 +673,11 @@ void CodingAgentService::cleanup_live(const QString& run_id, bool immediate) {
 
 void CodingAgentService::run_cli_async(const QString& harness_id, const QStringList& args, bool with_token,
                                        std::function<void(int, const QString&)> done) {
+    if (!policy::is_ai_backend_selectable(harness_id)) {
+        QTimer::singleShot(0, this,
+                           [done]() { done(-1, QStringLiteral("This AI backend is no longer available.")); });
+        return;
+    }
     auto& registry = harness::HarnessRegistry::instance();
     const harness::HarnessStatus st = registry.status(harness_id);
     const std::optional<harness::Installation> cli = st.installation;
@@ -719,6 +727,8 @@ namespace coding_agent_process_detail {
 
 std::optional<harness::McpRegistration> client_registration(const QString& harness_id,
                                                             const char* server_name = kClientServerName) {
+    if (!policy::is_ai_backend_selectable(harness_id))
+        return std::nullopt;
     const harness::IHarnessAdapter* adapter = harness::HarnessRegistry::instance().adapter(harness_id);
     if (!adapter)
         return std::nullopt;
@@ -734,6 +744,11 @@ std::optional<harness::McpRegistration> client_registration(const QString& harne
 } // namespace coding_agent_process_detail
 
 void CodingAgentService::register_with_client(const QString& harness_id, bool replace_existing) {
+    if (!policy::is_ai_backend_selectable(harness_id)) {
+        emit client_registration_finished(harness_id, false, false,
+                                          QStringLiteral("This AI backend is no longer available."));
+        return;
+    }
     auto& registry = harness::HarnessRegistry::instance();
     const QString name = registry.display_name(harness_id);
     if (const harness::HarnessStatus st = registry.status(harness_id); !st.installation) {

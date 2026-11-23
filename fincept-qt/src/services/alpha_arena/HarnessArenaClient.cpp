@@ -4,6 +4,7 @@
 #include "services/alpha_arena/HarnessArenaClient.h"
 
 #include "core/logging/Logger.h"
+#include "core/policy/CommunityPolicy.h"
 #include "services/alpha_arena/HarnessArenaLogic.h"
 #include "services/harness/HarnessChatBackend.h"
 #include "services/harness/HarnessRegistry.h"
@@ -57,6 +58,12 @@ HarnessArenaClient::~HarnessArenaClient() {
 
 void HarnessArenaClient::complete(const ArenaLlmRequest& req, std::function<void(ArenaLlmResult)> cb) {
     const QString harness_id = ai_chat::ProviderCatalog::harness_id(req.provider);
+    if (!policy::is_ai_backend_selectable(req.provider)) {
+        ArenaLlmResult r;
+        r.error = QStringLiteral("This AI backend is no longer available.");
+        cb(r);
+        return;
+    }
     auto& reg = harness::HarnessRegistry::instance();
     const harness::IHarnessAdapter* adapter = reg.adapter(harness_id);
     if (!adapter) {

@@ -712,7 +712,7 @@ QString HarnessRunOptionsWidget::harness() const {
 }
 
 bool HarnessRunOptionsWidget::harness_known() const {
-    return harness::HarnessRegistry::instance().is_known(harness_);
+    return policy::is_ai_backend_selectable(harness_) && harness::HarnessRegistry::instance().is_known(harness_);
 }
 
 bool HarnessRunOptionsWidget::harness_runnable(QString* why) const {
@@ -720,6 +720,11 @@ bool HarnessRunOptionsWidget::harness_runnable(QString* why) const {
     if (harness_.isEmpty()) {
         if (why)
             *why = tr("No harness is selected.");
+        return false;
+    }
+    if (!policy::is_ai_backend_selectable(harness_)) {
+        if (why)
+            *why = tr("This AI backend is no longer available. Choose another harness.");
         return false;
     }
     if (!registry.is_known(harness_)) {

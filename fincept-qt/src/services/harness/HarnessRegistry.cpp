@@ -1147,13 +1147,19 @@ QStringList HarnessRegistry::installed_ids() const {
 QString HarnessRegistry::preferred_harness() const {
     const QString def = default_harness();
     const QStringList installed = installed_ids();
-    if (!def.isEmpty() && installed.contains(def))
+    if (!def.isEmpty() && installed.contains(def) && policy::is_ai_backend_selectable(def))
         return def;
-    if (!installed.isEmpty())
-        return installed.constFirst();
-    if (!def.isEmpty())
+    for (const QString& id : installed) {
+        if (policy::is_ai_backend_selectable(id))
+            return id;
+    }
+    if (!def.isEmpty() && policy::is_ai_backend_selectable(def))
         return def;
-    return d_->order.isEmpty() ? QString() : d_->order.constFirst();
+    for (const QString& id : d_->order) {
+        if (policy::is_ai_backend_selectable(id))
+            return id;
+    }
+    return {};
 }
 
 HarnessStatus HarnessRegistry::status(const QString& id) const {
@@ -1285,10 +1291,16 @@ void HarnessRegistry::set_default_effort(const QString& id, const QString& effor
 bool HarnessRegistry::enabled_for_terminal(const QString& id) const {
     // Explicit opt-in, and only with the user's consent (a value stored before
     // the consent dialog existed does not count).
-    return AppConfig::instance().get(cfg_key(id, "enabled_for_terminal"), false).toBool() && terminal_consent(id);
+    return policy::is_ai_backend_selectable(id) &&
+           AppConfig::instance().get(cfg_key(id, "enabled_for_terminal"), false).toBool() && terminal_consent(id);
 }
 
 void HarnessRegistry::set_enabled_for_terminal(const QString& id, bool on) {
+    if (on && !policy::is_ai_backend_selectable(id)) {
+        AppConfig::instance().set(cfg_key(id, "enabled_for_terminal"), false);
+        emit defaults_changed();
+        return;
+    }
     if (on && !terminal_consent(id)) {
         // Not without the user's consent: whoever asked gets the dialog first.
         // defaults_changed lets a checkbox that already flipped show "off" again.
@@ -1311,7 +1323,7 @@ bool HarnessRegistry::terminal_consent(const QString& id) const {
 
 void HarnessRegistry::grant_terminal_consent(const QString& id, bool enable) {
     const auto it = d_->entries.constFind(id);
-    if (it == d_->entries.cend())
+    if (it == d_->entries.cend() || !policy::is_ai_backend_selectable(id))
         return;
     auto& cfg = AppConfig::instance();
     cfg.set(cfg_key(id, "terminal_consent_vendor"), it->adapter->descriptor().vendor);
@@ -1347,11 +1359,11 @@ void HarnessRegistry::set_env_policy(const QString& id, const QString& policy) {
 
 QString HarnessRegistry::default_harness() const {
     const QString id = AppConfig::instance().get(default_harness_key(), QString()).toString().trimmed();
-    return d_->entries.contains(id) ? id : QString();
+    return d_->entries.contains(id) && policy::is_ai_backend_selectable(id) ? id : QString();
 }
 
 void HarnessRegistry::set_default_harness(const QString& id) {
-    if (id.isEmpty() || !d_->entries.contains(id))
+    if (id.isEmpty() || !d_->entries.contains(id) || !policy::is_ai_backend_selectable(id))
         AppConfig::instance().remove(default_harness_key());
     else
         AppConfig::instance().set(default_harness_key(), id);

@@ -41,6 +41,52 @@ class CommunityPolicyTest : public QObject {
         QVERIFY(fincept::policy::is_ai_backend_selectable(QStringLiteral("harness:claude")));
     }
 
+    void harness_registry_never_restores_a_retired_default() {
+        QFile source(QStringLiteral(FINCEPT_SOURCE_DIR "/src/services/harness/HarnessRegistry.cpp"));
+        QVERIFY2(source.open(QIODevice::ReadOnly), qPrintable(source.errorString()));
+        const QByteArray code = source.readAll();
+        const qsizetype preferred = code.indexOf("QString HarnessRegistry::preferred_harness() const");
+        const qsizetype status = code.indexOf("HarnessStatus HarnessRegistry::status", preferred);
+        QVERIFY(preferred >= 0 && status > preferred);
+        const QByteArray body = code.mid(preferred, status - preferred);
+        QVERIFY2(body.contains("policy::is_ai_backend_selectable"),
+                 "A stale default or installed retired harness must not become the implicit run backend");
+
+        const qsizetype enabled = code.indexOf("bool HarnessRegistry::enabled_for_terminal");
+        const qsizetype consent = code.indexOf("bool HarnessRegistry::terminal_consent", enabled);
+        QVERIFY(enabled >= 0 && consent > enabled);
+        const QByteArray terminal_body = code.mid(enabled, consent - enabled);
+        QVERIFY2(terminal_body.count("policy::is_ai_backend_selectable") >= 2,
+                 "Both reading and enabling terminal defaults must reject retired harnesses");
+    }
+
+    void coding_agent_runtime_rejects_retired_harnesses_at_execution_boundaries() {
+        QFile service(QStringLiteral(FINCEPT_SOURCE_DIR "/src/services/coding_agents/CodingAgentService.cpp"));
+        QVERIFY2(service.open(QIODevice::ReadOnly), qPrintable(service.errorString()));
+        const QByteArray service_code = service.readAll();
+        QVERIFY2(service_code.count("policy::is_ai_backend_selectable") >= 3,
+                 "New runs, follow-ups and schedules must each reject retired harnesses");
+
+        QFile process(QStringLiteral(FINCEPT_SOURCE_DIR
+                                     "/src/services/coding_agents/CodingAgentService_Process.cpp"));
+        QVERIFY2(process.open(QIODevice::ReadOnly), qPrintable(process.errorString()));
+        const QByteArray process_code = process.readAll();
+        QVERIFY2(process_code.count("policy::is_ai_backend_selectable") >= 3,
+                 "Process launch and client-registration helpers must not revive a retired harness");
+    }
+
+    void every_harness_chat_bridge_rechecks_the_retirement_policy() {
+        const QStringList paths = {
+            QStringLiteral(FINCEPT_SOURCE_DIR "/src/services/harness/HarnessChatBackend.cpp"),
+            QStringLiteral(FINCEPT_SOURCE_DIR "/src/services/alpha_arena/HarnessArenaClient.cpp"),
+        };
+        for (const QString& path : paths) {
+            QFile source(path);
+            QVERIFY2(source.open(QIODevice::ReadOnly), qPrintable(source.errorString()));
+            QVERIFY2(source.readAll().contains("policy::is_ai_backend_selectable"), qPrintable(path));
+        }
+    }
+
     void shipped_component_catalog_uses_provider_neutral_copy() {
         QFile catalog(QStringLiteral(FINCEPT_SOURCE_DIR "/resources/component_catalog.json"));
         QVERIFY2(catalog.open(QIODevice::ReadOnly), qPrintable(catalog.errorString()));
