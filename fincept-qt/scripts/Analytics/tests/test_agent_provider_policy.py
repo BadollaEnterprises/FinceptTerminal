@@ -698,6 +698,25 @@ class AgentProviderPolicyTest(unittest.TestCase):
         self.assertIn('"recursion_limit": recursion_limit(config)', execute)
         self.assertNotIn('"recursion_limit": 1000', execute)
 
+    def test_ai_quant_agent_failures_redact_provider_credentials(self):
+        deepagents = DEEPAGENT_CLI.read_text(encoding="utf-8")
+        execute = deepagents[
+            deepagents.index("def _execute_with_deepagents") :
+            deepagents.index("def _format_result")
+        ]
+        self.assertIn("explain_llm_error(str(exc))", execute)
+        self.assertNotIn("traceback.format_exc()", execute)
+        self.assertNotIn("return _error(str(exc))", execute)
+
+        rdagents = RDAGENT_CLI.read_text(encoding="utf-8")
+        run_task = rdagents[
+            rdagents.index("def cmd_run_task") :
+            rdagents.index("def cmd_start_mcp_server")
+        ]
+        self.assertGreaterEqual(run_task.count("explain_llm_error(str("), 2)
+        self.assertIn("fail(safe_error)", run_task)
+        self.assertNotIn("fail(str(exc))", run_task)
+
     def test_ai_quant_lab_forwards_profile_output_limit_to_deep_agents(self):
         service = (MODULE.parents[3] / "src/services/ai_quant_lab/AIQuantLabService.cpp").read_text(encoding="utf-8")
         panel = (MODULE.parents[3] / "src/screens/ai_quant_lab/QuantModulePanel.cpp").read_text(encoding="utf-8")

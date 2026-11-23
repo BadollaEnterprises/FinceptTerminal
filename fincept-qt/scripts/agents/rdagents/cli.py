@@ -38,6 +38,7 @@ sys.path.insert(0, str(_HERE.parent))
 
 from finagent_core.provider_policy import DEPRECATED_PROVIDERS
 from finagent_core.input_budget import DEFAULT_INPUT_MAX_CHARS, input_budget_error
+from finagent_core.run_errors import explain_llm_error
 
 logging.basicConfig(
     stream=sys.stderr,
@@ -193,7 +194,8 @@ def cmd_run_task(params: dict[str, Any]) -> None:
         )
         from task_runner import run_loop_sync
     except Exception as e:
-        fail(f"RD-Agent is not installed or failed to import: {e}")
+        safe_error = explain_llm_error(str(e))
+        fail(f"RD-Agent is not installed or failed to import: {safe_error}")
 
     # Preflight before constructing anything: building a Qlib scenario already
     # shells out to conda / Docker and fails deep inside rdagent otherwise.
@@ -236,8 +238,9 @@ def cmd_run_task(params: dict[str, Any]) -> None:
     except SystemExit:
         raise
     except Exception as exc:
-        logger.exception("RD-Agent task %s failed", task_id)
-        fail(str(exc))
+        safe_error = explain_llm_error(str(exc))
+        logger.error("RD-Agent task %s failed: %s", task_id, safe_error)
+        fail(safe_error)
 
 
 def cmd_start_mcp_server(params: dict[str, Any]) -> dict[str, Any]:

@@ -26,7 +26,6 @@ from __future__ import annotations
 import json
 import logging
 import sys
-import traceback
 from pathlib import Path
 from typing import Any
 
@@ -50,6 +49,7 @@ logger = logging.getLogger(__name__)
 from models import create_model, extract_text, provider_policy_error, recursion_limit, supports_tool_calling
 from subagents import list_agent_types, list_subagent_names, AGENT_SUBAGENTS
 from finagent_core.input_budget import DEFAULT_INPUT_MAX_CHARS, input_budget_error
+from finagent_core.run_errors import explain_llm_error
 
 # ---------------------------------------------------------------------------
 # Availability check (import deepagents lazily so CLI starts fast)
@@ -168,9 +168,11 @@ def _execute_with_deepagents(
         return _format_result(result, thread_id)
 
     except Exception as exc:
-        # Never silently fall through — log and report
-        logger.error("deepagents execution failed: %s\n%s", exc, traceback.format_exc())
-        return _error(str(exc))
+        # Provider exceptions may echo authorization headers or API keys. Keep
+        # both stderr and the UI response safe without issuing another request.
+        safe_error = explain_llm_error(str(exc))
+        logger.error("deepagents execution failed: %s", safe_error)
+        return _error(safe_error)
 
 
 def _format_result(raw: dict[str, Any], thread_id: str) -> dict[str, Any]:
