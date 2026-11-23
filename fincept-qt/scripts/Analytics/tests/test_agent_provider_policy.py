@@ -591,9 +591,9 @@ class AgentProviderPolicyTest(unittest.TestCase):
         self.assertEqual(models.output_token_limit({}), 4096)
         self.assertEqual(models.output_token_limit({"llm_max_tokens": 0}), 4096)
         self.assertEqual(models.output_token_limit({"llm_max_tokens": 3000000}), 2000000)
-        self.assertEqual(models.recursion_limit({}), 64)
+        self.assertEqual(models.recursion_limit({}), 24)
         self.assertEqual(models.recursion_limit({"recursion_limit": 1}), 8)
-        self.assertEqual(models.recursion_limit({"recursion_limit": 1000}), 200)
+        self.assertEqual(models.recursion_limit({"recursion_limit": 1000}), 64)
 
         cli = (DEEPAGENT_MODELS.parent / "cli.py").read_text(encoding="utf-8")
         execute = cli[cli.index("def _execute_with_deepagents") : cli.index("def _format_result")]

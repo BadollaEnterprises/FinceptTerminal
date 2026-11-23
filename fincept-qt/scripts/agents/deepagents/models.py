@@ -44,9 +44,9 @@ _DEPRECATED_PROVIDERS = {"fincept", "ollama", "codex", "harness:codex"}
 
 _DEFAULT_OUTPUT_TOKENS = 4096
 _MAX_OUTPUT_TOKENS = 2_000_000
-_DEFAULT_RECURSION_LIMIT = 64
+_DEFAULT_RECURSION_LIMIT = 24
 _MIN_RECURSION_LIMIT = 8
-_MAX_RECURSION_LIMIT = 200
+_MAX_RECURSION_LIMIT = 64
 
 
 def _bounded_int(value: Any, default: int, minimum: int, maximum: int) -> int:
