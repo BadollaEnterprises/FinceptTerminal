@@ -9,6 +9,10 @@
 
 namespace fincept::services::news_byo {
 
+inline bool can_analyze_article(const QString& url, const QString& headline, const QString& text) {
+    return !url.trimmed().isEmpty() || !headline.trimmed().isEmpty() || !text.trimmed().isEmpty();
+}
+
 inline QString analysis_prompt(const QString& url, const QString& headline, const QString& text) {
     const QJsonObject input{{QStringLiteral("url"), url},
                             {QStringLiteral("headline"), headline.trimmed()},

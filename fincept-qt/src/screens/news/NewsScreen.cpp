@@ -1431,12 +1431,14 @@ void NewsScreen::on_analyze_requested(const QString& url) {
     const bool same = article.link == url;
     services::NewsService::instance().analyze_article(
         url,
-        [self, url](bool ok, services::NewsAnalysis analysis) {
+        [self, requested_id = article.id, requested_headline = article.headline, url](
+            bool ok, services::NewsAnalysis analysis) {
             if (!self)
                 return;
             // The request can take many seconds; the user may have opened another
             // article since. Don't paint this article's analysis over a different one.
-            if (self->detail_panel_->current_article_link() != url)
+            const services::NewsArticle current = self->detail_panel_->current_article();
+            if (current.link != url || current.id != requested_id || current.headline != requested_headline)
                 return;
             if (ok)
                 self->detail_panel_->show_analysis(analysis);

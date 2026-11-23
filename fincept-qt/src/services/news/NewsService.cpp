@@ -850,6 +850,10 @@ static NewsAnalysis parse_analysis_data(const QJsonObject& data) {
 }
 
 std::optional<NewsAnalysis> NewsService::cached_analysis(const QString& url) {
+    // Link-less feed items are analyzable from supplied text, but they have no
+    // stable cache key. Never let an empty URL retrieve another item's result.
+    if (url.trimmed().isEmpty())
+        return std::nullopt;
     auto r = fincept::NewsArticleRepository::instance().load_analysis(url);
     if (r.is_err() || r.value().isEmpty())
         return std::nullopt;
@@ -866,6 +870,15 @@ std::optional<NewsAnalysis> NewsService::cached_analysis(const QString& url) {
 
 void NewsService::analyze_article(const QString& url, AnalysisCallback cb, const QString& headline,
                                   const QString& text) {
+    if (!news_byo::can_analyze_article(url, headline, text)) {
+        NewsAnalysis analysis;
+        analysis.error = QStringLiteral("This feed item has no URL, headline, or summary to analyze. No provider "
+                                        "request was sent.");
+        QTimer::singleShot(0, this, [cb = std::move(cb), analysis = std::move(analysis)]() mutable {
+            cb(false, std::move(analysis));
+        });
+        return;
+    }
     const QString prompt = news_byo::analysis_prompt(url, headline, text);
     QPointer<NewsService> self(this);
     (void)QtConcurrent::run([self, url, headline, text, prompt, cb = std::move(cb)]() mutable {
@@ -898,11 +911,13 @@ void NewsService::analyze_article(const QString& url, AnalysisCallback cb, const
                 data.insert(QStringLiteral("content"), content);
                 analysis = parse_analysis_data(data);
 
-                const QString json = QString::fromUtf8(QJsonDocument(data).toJson(QJsonDocument::Compact));
-                auto wr = fincept::NewsArticleRepository::instance().save_analysis(url, json);
-                if (wr.is_err())
-                    LOG_WARN("NewsService", "Failed to persist BYO analysis: " +
-                                                privacy::redact_text(QString::fromStdString(wr.error())));
+                if (!url.trimmed().isEmpty()) {
+                    const QString json = QString::fromUtf8(QJsonDocument(data).toJson(QJsonDocument::Compact));
+                    auto wr = fincept::NewsArticleRepository::instance().save_analysis(url, json);
+                    if (wr.is_err())
+                        LOG_WARN("NewsService", "Failed to persist BYO analysis: " +
+                                                    privacy::redact_text(QString::fromStdString(wr.error())));
+                }
             }
         }
 

@@ -7,6 +7,7 @@
 #include "network/http/HttpClient.h"
 #include "screens/news/NewsFeedPanel.h"
 #include "services/file_manager/FileManagerService.h"
+#include "services/news/NewsByoAnalysis.h"
 #include "storage/repositories/NewsArticleRepository.h"
 #include "ui/charts/Gauge.h"
 #include "ui/formatting/DateFormat.h"
@@ -842,10 +843,11 @@ void NewsDetailPanel::show_article(const services::NewsArticle& article) {
     // Reset analysis
     analysis_section_->hide();
     analyze_btn_->setText(tr("ANALYZE"));
-    // Link-less items (the parser drops non-web links) have nothing to open,
-    // copy or send to the analysis endpoint.
     const bool has_link = !article.link.isEmpty();
-    analyze_btn_->setEnabled(has_link);
+    // BYO analysis uses the supplied feed metadata and never fetches the URL,
+    // so a headline or summary is sufficient even when the source omitted its link.
+    analyze_btn_->setEnabled(services::news_byo::can_analyze_article(article.link, article.headline,
+                                                                     article.summary));
     analysis_preview_->show();
     sync_analysis_preview();
     // A previous article's failure reason must not stay on the button.

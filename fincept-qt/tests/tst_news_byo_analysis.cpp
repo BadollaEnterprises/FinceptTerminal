@@ -27,6 +27,12 @@ int main(int argc, char** argv) {
     require(prompt.contains(QStringLiteral("Return exactly one JSON object")), "prompt must demand strict JSON");
     require(prompt.contains(QStringLiteral("Acme raises guidance")), "prompt must include the headline");
     require(prompt.contains(QStringLiteral("Do not invent")), "prompt must forbid invented article facts");
+    require(can_analyze_article(QString(), QStringLiteral("Acme raises guidance"), QString()),
+            "a link-less feed item with a headline must remain analyzable");
+    require(can_analyze_article(QString(), QString(), QStringLiteral("Revenue grew 20 percent.")),
+            "a link-less feed item with summary text must remain analyzable");
+    require(!can_analyze_article(QString(), QString(), QString()),
+            "an empty feed item must never start a provider request");
 
     QString error;
     const auto data = parse_model_data(
