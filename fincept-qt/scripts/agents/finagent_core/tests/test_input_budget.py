@@ -68,6 +68,64 @@ def test_registry_agent_card_models_are_clamped_before_dispatch(monkeypatch):
     assert captured["team"]["model"]["max_tokens"] == 12000
 
 
+def test_agentic_resume_rechecks_stored_config_against_live_input_budget(tmp_path, monkeypatch):
+    from finagent_core.agentic.runner import AgenticRunner
+
+    runner = AgenticRunner(api_keys={}, db_path=str(tmp_path / "tasks.db"))
+    task_id = runner.state_mgr.create_task(
+        "continue",
+        {"instructions": "x" * 1000, "model": {"provider": "deepseek", "max_tokens": 64000}},
+    )
+    runner.state_mgr.save_answer(task_id, "keep this answer")
+    ran = []
+    monkeypatch.setattr(runner, "_run_loop", lambda *args, **kwargs: ran.append(args) or {"success": True})
+
+    result = runner.resume_task(
+        task_id,
+        live_config={"model": {"provider": "deepseek", "max_tokens": 64000}},
+        input_max_chars=0,
+        input_max_tokens=64,
+        output_max_tokens=12000,
+    )
+
+    assert result["success"] is False
+    assert "turn-input guardrail" in result["error"]
+    assert ran == []
+    assert runner.state_mgr.get_task(task_id)["pending_answer"] == "keep this answer"
+
+
+def test_agentic_resume_reclamps_stored_nested_models_to_live_output_budget(tmp_path, monkeypatch):
+    from finagent_core.agentic.runner import AgenticRunner
+
+    runner = AgenticRunner(api_keys={}, db_path=str(tmp_path / "tasks.db"))
+    task_id = runner.state_mgr.create_task(
+        "continue",
+        {
+            "model": {"provider": "deepseek", "max_tokens": 64000},
+            "team": {"model": {"max_tokens": 48000}},
+        },
+    )
+    captured = {}
+
+    def fake_run_loop(task_id, query, config, *args, **kwargs):
+        captured.update(config)
+        return {"success": True}
+
+    monkeypatch.setattr(runner, "_run_loop", fake_run_loop)
+
+    result = runner.resume_task(
+        task_id,
+        live_config={"model": {"provider": "deepseek", "max_tokens": 64000}},
+        input_max_chars=0,
+        input_max_tokens=0,
+        output_max_tokens=12000,
+    )
+
+    assert result["success"] is True
+    assert captured["model"]["max_tokens"] == 12000
+    assert captured["team"]["model"]["max_tokens"] == 12000
+
+
 def test_complete_agent_request_obeys_turn_input_token_budget():
     # Three UTF-8 wire bytes per token is the same conservative estimate used
     # by the native provider path. Structured tool/config data must count too.

@@ -27,6 +27,14 @@ from finagent_core.agentic.budget import BudgetGuard
 from finagent_core.agentic.reflector import Reflector, ReflectorDecision
 from finagent_core.agentic.reflexion_store import ReflexionStore
 from finagent_core.agentic.skill_library import SkillLibrary
+from finagent_core.input_budget import (
+    DEFAULT_INPUT_MAX_CHARS,
+    DEFAULT_INPUT_MAX_TOKENS,
+    DEFAULT_OUTPUT_MAX_TOKENS,
+    apply_nested_output_budgets,
+    input_budget_error,
+    request_budget_error,
+)
 from finagent_core.persistence_policy import sanitize_persisted_config
 from finagent_core.run_errors import explain_llm_error
 from finagent_core.task_state import ResumableTaskRunner
@@ -158,7 +166,14 @@ class AgenticRunner(ResumableTaskRunner):
         self._emit("task_started", {"task_id": task_id, "query": query})
         return self._run_loop(task_id, query, config, completed_steps=[], saved_plan=None)
 
-    def resume_task(self, task_id: str, live_config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def resume_task(
+        self,
+        task_id: str,
+        live_config: Optional[Dict[str, Any]] = None,
+        input_max_chars: int = DEFAULT_INPUT_MAX_CHARS,
+        input_max_tokens: int = DEFAULT_INPUT_MAX_TOKENS,
+        output_max_tokens: int = DEFAULT_OUTPUT_MAX_TOKENS,
+    ) -> Dict[str, Any]:
         """Resume from the last checkpoint. `live_config` is this run's payload
         config: its fresh bridge wiring and resolved model replace whatever the
         stored config holds (tokens die with the run that minted them)."""
@@ -184,8 +199,24 @@ class AgenticRunner(ResumableTaskRunner):
             self._emit("paused", {"task_id": task_id, "at_step": at_step})
             return {"success": True, "task_id": task_id, "paused": True}
 
-        # HITL: if the user replied to a clarifying question, consume the
-        # answer atomically so it isn't replayed if resume is hit twice.
+        # A checkpoint may outlive the settings under which it was created.
+        # Re-apply today's live ceilings to the complete stored+live policy
+        # before any planner, step, reflector or synthesis model can run.
+        runtime_config = overlay_runtime_config(task["config"], live_config)
+        apply_nested_output_budgets(runtime_config, output_max_tokens)
+        request_params = {"query": task["query"]}
+        staged_answer = task.get("pending_answer")
+        if staged_answer is not None:
+            request_params["answer"] = staged_answer
+        budget_error = input_budget_error(request_params, runtime_config, input_max_chars)
+        if not budget_error:
+            budget_error = request_budget_error(request_params, runtime_config, input_max_tokens)
+        if budget_error:
+            self._emit("error", {"task_id": task_id, "error": budget_error, "code": "input_budget"})
+            return {"success": False, "task_id": task_id, "error": budget_error}
+
+        # HITL: consume only after preflight succeeds. A newly tightened budget
+        # must not silently discard the user's staged reply.
         pending_answer = self.state_mgr.consume_answer(task_id)
 
         self.state_mgr.update_status(task_id, "running")
@@ -198,7 +229,7 @@ class AgenticRunner(ResumableTaskRunner):
              "budget": task.get("budget") or {}},
         )
         return self._run_loop(
-            task_id, task["query"], overlay_runtime_config(task["config"], live_config),
+            task_id, task["query"], runtime_config,
             task["steps"], task.get("plan"),
             pending_answer=pending_answer,
         )

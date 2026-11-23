@@ -243,6 +243,10 @@ _RUN_CONFIG_KEYS = ("model", "agent_id", "user_id", "tools_dry_run", "agent_data
 _CARD_RESOLVED_KEY = "__fincept_agent_card_resolved"
 _CARD_NAME_KEY = "__fincept_agent_card_name"
 _CARD_ACTIONS = frozenset({"run", "agentic_start_task"})
+_AGENTIC_RESUME_ACTIONS = frozenset({"agentic_resume_task", "agentic_reply_question"})
+_RUNTIME_INPUT_CHARS_KEY = "__fincept_input_max_chars"
+_RUNTIME_INPUT_TOKENS_KEY = "__fincept_input_max_tokens"
+_RUNTIME_OUTPUT_TOKENS_KEY = "__fincept_output_max_tokens"
 
 
 def _apply_agent_card(config: Dict[str, Any]):
@@ -418,6 +422,15 @@ def main(args=None):
         # dispatcher let that material bypass complete-input accounting and
         # nested output ceilings.
         config = _prepare_agent_card_for_budget(action, config)
+
+        if action in _AGENTIC_RESUME_ACTIONS:
+            # The stored task policy is loaded only inside AgenticRunner. Carry
+            # the current host ceilings there as ephemeral params so a resume
+            # cannot reuse yesterday's larger allowances.
+            params = dict(params)
+            params[_RUNTIME_INPUT_CHARS_KEY] = payload.get("input_max_chars", DEFAULT_INPUT_MAX_CHARS)
+            params[_RUNTIME_INPUT_TOKENS_KEY] = payload.get("input_max_tokens", DEFAULT_INPUT_MAX_TOKENS)
+            params[_RUNTIME_OUTPUT_TOKENS_KEY] = payload.get("output_max_tokens", DEFAULT_OUTPUT_MAX_TOKENS)
 
         output_limit = payload.get("output_max_tokens", DEFAULT_OUTPUT_MAX_TOKENS)
         _apply_nested_output_budgets(config, output_limit)
@@ -1387,7 +1400,13 @@ def dispatch_action_streaming(
         # `config` is this run's payload config: fresh bridge token/catalogue and
         # resolved model. The stored task config supplies the rest.
         runner = AgenticRunner(api_keys=api_keys, emit=make_emitter())
-        result = runner.resume_task(task_id, live_config=config)
+        result = runner.resume_task(
+            task_id,
+            live_config=config,
+            input_max_chars=params.pop(_RUNTIME_INPUT_CHARS_KEY, DEFAULT_INPUT_MAX_CHARS),
+            input_max_tokens=params.pop(_RUNTIME_INPUT_TOKENS_KEY, DEFAULT_INPUT_MAX_TOKENS),
+            output_max_tokens=params.pop(_RUNTIME_OUTPUT_TOKENS_KEY, DEFAULT_OUTPUT_MAX_TOKENS),
+        )
         stream_print("done", "completed")
         return result
 
@@ -1410,7 +1429,13 @@ def dispatch_action_streaming(
         # `config` is this run's payload config: fresh bridge token/catalogue and
         # resolved model. The stored task config supplies the rest.
         runner = AgenticRunner(api_keys=api_keys, emit=make_emitter())
-        result = runner.resume_task(task_id, live_config=config)
+        result = runner.resume_task(
+            task_id,
+            live_config=config,
+            input_max_chars=params.pop(_RUNTIME_INPUT_CHARS_KEY, DEFAULT_INPUT_MAX_CHARS),
+            input_max_tokens=params.pop(_RUNTIME_INPUT_TOKENS_KEY, DEFAULT_INPUT_MAX_TOKENS),
+            output_max_tokens=params.pop(_RUNTIME_OUTPUT_TOKENS_KEY, DEFAULT_OUTPUT_MAX_TOKENS),
+        )
         stream_print("done", "completed")
         return result
 
