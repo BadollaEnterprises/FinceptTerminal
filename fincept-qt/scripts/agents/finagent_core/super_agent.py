@@ -204,7 +204,8 @@ class IntentClassifier:
 
 class LLMRouter:
     """
-    True agentic router: asks an LLM to classify the query intent.
+    Model-assisted router for queries that deterministic classification cannot
+    resolve confidently.
 
     Falls back to IntentClassifier (keyword-based) if:
     - No model config / API keys are available
@@ -250,13 +251,20 @@ class LLMRouter:
         """Ask the LLM to classify the query. Returns (QueryIntent, confidence, reasoning)."""
         from finagent_core.registries import ModelsRegistry
 
-        base_url = self.api_keys.get(f"{provider}_base_url") or self.api_keys.get(f"{provider.upper()}_BASE_URL")
+        base_url = (
+            self.model_config.get("base_url")
+            or self.api_keys.get(f"{provider}_base_url")
+            or self.api_keys.get(f"{provider.upper()}_BASE_URL")
+        )
         model = ModelsRegistry.create_model(
             provider=provider,
             model_id=model_id,
+            api_key=self.model_config.get("api_key") or None,
             api_keys=self.api_keys,
             temperature=0.0,  # Deterministic — routing must be consistent
+            max_tokens=128,
             base_url=base_url or None,
+            reasoning_effort="none",
         )
 
         from agno.agent import Agent
@@ -413,8 +421,9 @@ class SuperAgent:
 
     def route(self, query: str) -> RoutingResult:
         """
-        Route query to appropriate agent using LLM classification.
-        Falls back to keyword matching if LLM is unavailable.
+        Route query locally when one intent is clear; ask the configured model
+        only when local signals are absent or tied. This avoids charging for a
+        second model call before every ordinary agent response.
 
         Args:
             query: User query
@@ -422,6 +431,25 @@ class SuperAgent:
         Returns:
             RoutingResult with agent info and confidence
         """
+        classifications = self.classifier.classify(query)
+        top_intent, top_confidence, top_keywords, top_patterns = classifications[0]
+        runner_up = classifications[1][1] if len(classifications) > 1 else 0.0
+        locally_clear = (
+            top_intent is not QueryIntent.GENERAL
+            and top_confidence >= 0.3
+            and top_confidence - runner_up >= 0.15
+        )
+        if locally_clear:
+            route = self.routes.get(top_intent, self.routes.get(QueryIntent.GENERAL))
+            return RoutingResult(
+                intent=top_intent,
+                agent_id=route.agent_id if route else self.fallback_agent_id,
+                confidence=top_confidence,
+                config=route.config_override if route else {},
+                matched_keywords=top_keywords,
+                matched_patterns=top_patterns,
+            )
+
         intent, confidence, reasoning = self.llm_router.classify(query)
         route = self.routes.get(intent, self.routes.get(QueryIntent.GENERAL))
 
