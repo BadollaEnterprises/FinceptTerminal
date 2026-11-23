@@ -57,6 +57,15 @@ int aiq_input_max_chars() {
     return ai_chat::validate_llm_budget_settings(settings).history_chars;
 }
 
+int aiq_input_max_tokens() {
+    ai_chat::LlmBudgetSettings settings;
+    settings.prompt_tokens =
+        AppConfig::instance()
+            .get(ai_chat::kLlmPromptTokensKey, QVariant(ai_chat::kDefaultLlmPromptTokens))
+            .toInt();
+    return ai_chat::validate_llm_budget_settings(settings).prompt_tokens;
+}
+
 int aiq_output_max_tokens() {
     ai_chat::LlmBudgetSettings settings;
     settings.completion_tokens =
@@ -833,6 +842,7 @@ void AIQuantLabService::run_deep_agent(const QJsonObject& params) {
     if (params.contains("thread_id"))
         payload["thread_id"] = params["thread_id"];
     payload["input_max_chars"] = aiq_input_max_chars();
+    payload["input_max_tokens"] = aiq_input_max_tokens();
     // deepagents/cli.py hands `config` to create_model(); an empty block means
     // "no provider" — resolve it here for a caller that sent none.
     QJsonObject llm = agent_llm_config(params);
@@ -1053,6 +1063,7 @@ bool AIQuantLabService::rd_spawn(const QString& task_id, const QJsonObject& llm_
     payload["max_iterations"] = it->max_iterations;
     payload["config"] = llm_config;
     payload["input_max_chars"] = aiq_input_max_chars();
+    payload["input_max_tokens"] = aiq_input_max_tokens();
     if (!resume_from.isEmpty())
         payload["resume_from"] = resume_from;
 

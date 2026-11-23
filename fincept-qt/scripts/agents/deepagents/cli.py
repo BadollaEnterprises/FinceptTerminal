@@ -48,7 +48,12 @@ logger = logging.getLogger(__name__)
 
 from models import create_model, extract_text, provider_policy_error, recursion_limit, supports_tool_calling
 from subagents import list_agent_types, list_subagent_names, AGENT_SUBAGENTS
-from finagent_core.input_budget import DEFAULT_INPUT_MAX_CHARS, input_budget_error
+from finagent_core.input_budget import (
+    DEFAULT_INPUT_MAX_CHARS,
+    DEFAULT_INPUT_MAX_TOKENS,
+    input_budget_error,
+    request_budget_error,
+)
 from finagent_core.run_errors import explain_llm_error
 
 # ---------------------------------------------------------------------------
@@ -112,6 +117,11 @@ def cmd_execute_task(params: dict[str, Any]) -> dict[str, Any]:
 
     if budget_error := input_budget_error(
         params, config, params.get("input_max_chars", DEFAULT_INPUT_MAX_CHARS)
+    ):
+        return _error(budget_error)
+    request_params = {key: value for key, value in params.items() if key != "config"}
+    if budget_error := request_budget_error(
+        request_params, config, params.get("input_max_tokens", DEFAULT_INPUT_MAX_TOKENS)
     ):
         return _error(budget_error)
 

@@ -37,7 +37,12 @@ sys.path.insert(0, str(_HERE))
 sys.path.insert(0, str(_HERE.parent))
 
 from finagent_core.provider_policy import DEPRECATED_PROVIDERS
-from finagent_core.input_budget import DEFAULT_INPUT_MAX_CHARS, input_budget_error
+from finagent_core.input_budget import (
+    DEFAULT_INPUT_MAX_CHARS,
+    DEFAULT_INPUT_MAX_TOKENS,
+    input_budget_error,
+    request_budget_error,
+)
 from finagent_core.run_errors import explain_llm_error
 from usage_tracker import reported_usage, reset_usage
 
@@ -191,6 +196,11 @@ def cmd_run_task(params: dict[str, Any]) -> None:
         fail(policy_error)
     if budget_error := input_budget_error(
         params, llm_config, params.get("input_max_chars", DEFAULT_INPUT_MAX_CHARS)
+    ):
+        fail(budget_error)
+    request_params = {key: value for key, value in params.items() if key != "config"}
+    if budget_error := request_budget_error(
+        request_params, llm_config, params.get("input_max_tokens", DEFAULT_INPUT_MAX_TOKENS)
     ):
         fail(budget_error)
     try:

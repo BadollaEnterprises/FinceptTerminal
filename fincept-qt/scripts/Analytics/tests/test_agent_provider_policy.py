@@ -172,13 +172,17 @@ class AgentProviderPolicyTest(unittest.TestCase):
         execute = deepagent[deepagent.index("def cmd_execute_task"):
                             deepagent.index("# Internal execution helpers")]
         self.assertIn("input_budget_error(", execute)
+        self.assertIn("request_budget_error(", execute)
         self.assertLess(execute.index("input_budget_error("), execute.index("provider_policy_error("))
+        self.assertLess(execute.index("request_budget_error("), execute.index("provider_policy_error("))
 
         rdagent = RDAGENT_CLI.read_text(encoding="utf-8")
         run = rdagent[rdagent.index("def cmd_run_task"):
                       rdagent.index("def cmd_start_mcp_server")]
         self.assertIn("input_budget_error(", run)
+        self.assertIn("request_budget_error(", run)
         self.assertLess(run.index("input_budget_error("), run.index("apply_llm_config("))
+        self.assertLess(run.index("request_budget_error("), run.index("apply_llm_config("))
 
         service = AI_QUANT_SERVICE.read_text(encoding="utf-8")
         deep_run = service[service.index("void AIQuantLabService::run_deep_agent"):
@@ -187,6 +191,8 @@ class AgentProviderPolicyTest(unittest.TestCase):
                            service.index("void AIQuantLabService::rd_handle_line")]
         self.assertIn('payload["input_max_chars"]', deep_run)
         self.assertIn('payload["input_max_chars"]', rd_spawn)
+        self.assertIn('payload["input_max_tokens"]', deep_run)
+        self.assertIn('payload["input_max_tokens"]', rd_spawn)
         self.assertIn("process::kill_tree(proc);", rd_spawn)
         self.assertNotIn("process::release_tree(proc);", rd_spawn)
 
