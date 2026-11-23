@@ -762,7 +762,25 @@ FetchContent_Declare(
 set(QGV_BUILD_SAMPLES OFF CACHE BOOL "" FORCE)
 set(QGV_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+# QGeoView probes GDAL unconditionally even though only its disabled sample
+# uses it. Scope the standard CMake package-disable switch to this dependency
+# so configure output does not imply that Fincept is missing a runtime map
+# dependency. Preserve a caller-provided value for later project code.
+if(DEFINED CMAKE_DISABLE_FIND_PACKAGE_GDAL)
+    set(_fincept_had_gdal_disable TRUE)
+    set(_fincept_gdal_disable_before_qgeoview "${CMAKE_DISABLE_FIND_PACKAGE_GDAL}")
+else()
+    set(_fincept_had_gdal_disable FALSE)
+endif()
+set(CMAKE_DISABLE_FIND_PACKAGE_GDAL TRUE)
 FetchContent_MakeAvailable(QGeoView)
+if(_fincept_had_gdal_disable)
+    set(CMAKE_DISABLE_FIND_PACKAGE_GDAL "${_fincept_gdal_disable_before_qgeoview}")
+else()
+    unset(CMAKE_DISABLE_FIND_PACKAGE_GDAL)
+endif()
+unset(_fincept_had_gdal_disable)
+unset(_fincept_gdal_disable_before_qgeoview)
 # QGeoView has anonymous-namespace symbol clashes under unity build
 set_target_properties(qgeoview PROPERTIES UNITY_BUILD OFF)
 # Silence upstream warnings so CI's -Werror doesn't fail on third-party code.

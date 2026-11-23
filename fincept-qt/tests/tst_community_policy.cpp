@@ -238,6 +238,18 @@ class CommunityPolicyTest : public QObject {
                  "The compatibility patch must run while the pinned md4c source is populated");
     }
 
+    void qgeoview_does_not_probe_gdal_when_examples_are_disabled() {
+        QFile source(QStringLiteral(FINCEPT_SOURCE_DIR "/CMakeLists.txt"));
+        QVERIFY2(source.open(QIODevice::ReadOnly), qPrintable(source.errorString()));
+        const QByteArray cmake = source.readAll();
+        const qsizetype declare = cmake.indexOf("FetchContent_Declare(\n    QGeoView");
+        const qsizetype disable = cmake.indexOf("set(CMAKE_DISABLE_FIND_PACKAGE_GDAL TRUE)", declare);
+        const qsizetype fetch = cmake.indexOf("FetchContent_MakeAvailable(QGeoView)", declare);
+        const qsizetype restore = cmake.indexOf("unset(CMAKE_DISABLE_FIND_PACKAGE_GDAL)", fetch);
+        QVERIFY2(declare >= 0 && disable > declare && fetch > disable && restore > fetch,
+                 "QGeoView's examples are disabled, so its example-only GDAL probe must be scoped off and restored");
+    }
+
     void ai_quant_agents_obey_the_global_turn_output_ceiling() {
         QFile source(QStringLiteral(FINCEPT_SOURCE_DIR "/src/services/ai_quant_lab/AIQuantLabService.cpp"));
         QVERIFY2(source.open(QIODevice::ReadOnly), qPrintable(source.errorString()));
