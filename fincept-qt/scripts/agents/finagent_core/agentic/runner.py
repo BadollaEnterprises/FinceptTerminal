@@ -195,7 +195,10 @@ class AgenticRunner(ResumableTaskRunner):
         self._emit(
             "task_resumed",
             {"task_id": task_id, "from_step": len(task["steps"]),
-             "with_user_input": bool(pending_answer)},
+             "with_user_input": bool(pending_answer),
+             # Usage is cumulative across processes. The native host uses this
+             # baseline so it reports only tokens spent after this resume.
+             "budget": task.get("budget") or {}},
         )
         return self._run_loop(
             task_id, task["query"], overlay_runtime_config(task["config"], live_config),

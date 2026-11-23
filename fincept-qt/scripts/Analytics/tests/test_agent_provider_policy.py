@@ -266,6 +266,7 @@ class AgentProviderPolicyTest(unittest.TestCase):
         self.assertIn("def save_budget", state)
         self.assertIn("self._budget.restore_usage", runner)
         self.assertIn("self._persist_budget()", runner)
+        self.assertIn('"budget": task.get("budget") or {}', runner)
 
     def test_agentic_budget_accounts_for_every_internal_model_call(self):
         task_state = TASK_STATE.read_text(encoding="utf-8")

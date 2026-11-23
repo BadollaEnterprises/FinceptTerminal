@@ -362,7 +362,14 @@ struct LocalAgenticExecutor::Impl final : ILocalAgentListener {
             return;
         }
         if (kind == QLatin1String("task_resumed")) {
-            r->tokens_seen = 0; // a new process: its budget counts from zero
+            // Python restores the task's cumulative budget across processes.
+            // Start deltas from that persisted baseline; resetting to zero
+            // re-reported all pre-resume usage and double-counted it locally.
+            const QJsonObject budget = ev.value(QStringLiteral("budget")).toObject();
+            r->tokens_seen = budget.contains(QStringLiteral("tokens_used"))
+                                 ? qMax<qint64>(0, static_cast<qint64>(
+                                                        budget.value(QStringLiteral("tokens_used")).toDouble()))
+                                 : 0; // old checkpoints had process-local budgets
             r->resume_from = std::max(0, ev.value(QStringLiteral("from_step")).toInt());
             r->last_ended_step = std::max(r->last_ended_step, r->resume_from - 1); // checkpointed before
             const bool with_answer = ev.value(QStringLiteral("with_user_input")).toBool();

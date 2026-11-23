@@ -9,7 +9,7 @@ prefixed with `AGENTIC_EVENT:` and republishes on DataHub topic
 
 Event kinds:
   task_started    { task_id, query }
-  task_resumed    { task_id, from_step }
+  task_resumed    { task_id, from_step, budget }
   plan_ready      { task_id, plan }
   step_start      { task_id, step_index, step }
   step_end        { task_id, step_index, result }

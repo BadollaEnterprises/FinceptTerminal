@@ -1066,7 +1066,8 @@ void TestAgentTaskExecutors::local_question_and_answer() {
     ex.answer(run.id, QStringLiteral("Growth"));
     QCOMPARE(engine->calls.last(), QStringLiteral("reply:t2:Growth"));
     // The reply process resumes from the checkpoint: step 1 stays done.
-    engine->emit_event(QStringLiteral("t2"), R"({"kind":"task_resumed","from_step":1,"with_user_input":true})",
+    engine->emit_event(QStringLiteral("t2"),
+                       R"({"kind":"task_resumed","from_step":1,"with_user_input":true,"budget":{"tokens_used":1200}})",
                        QStringLiteral("req-2"));
     engine->emit_event(QStringLiteral("t2"), kPlanReady);
     QCOMPARE(rec.plans.last().size(), 2);
@@ -1075,7 +1076,7 @@ void TestAgentTaskExecutors::local_question_and_answer() {
     QCOMPARE(rec.plans.last()[1].status, StepStatus::Pending);
     engine->emit_event(QStringLiteral("t2"), kStepStart1);
     engine->emit_event(QStringLiteral("t2"), kStepEnd1);
-    QCOMPARE(rec.tokens, qint64(1200 + 2000)); // the new process counts from zero again
+    QCOMPARE(rec.tokens, qint64(2000)); // resume budgets are cumulative; report only the new 800
     engine->emit_event(QStringLiteral("t2"), kDone);
     QCOMPARE(rec.finishes.size(), 1);
     QCOMPARE(rec.finishes[0].status, RunStatus::Completed);
@@ -1135,14 +1136,18 @@ void TestAgentTaskExecutors::local_pause_before_task_id_then_resume() {
     steps[0].summary = QStringLiteral("AAPL trades at 231.4");
     ex.start(run, steps);
     QCOMPARE(engine->calls.last(), QStringLiteral("resume:t3"));
-    engine->emit_event(QStringLiteral("t3"), R"({"kind":"task_resumed","from_step":1,"with_user_input":false})",
+    engine->emit_event(QStringLiteral("t3"),
+                       R"({"kind":"task_resumed","from_step":1,"with_user_input":false,"budget":{"tokens_used":1200}})",
                        QStringLiteral("req-2"));
     engine->emit_event(QStringLiteral("t3"), kPlanReady);
     QCOMPARE(rec.plans.last()[0].status, StepStatus::Done);
     engine->emit_event(QStringLiteral("t3"), kStepStart1);
     QCOMPARE(rec.steps.last().idx, 1);
+    engine->emit_event(QStringLiteral("t3"), kStepEnd1);
     engine->emit_event(QStringLiteral("t3"), kDone);
     QCOMPARE(rec.finishes.size(), 1);
+    const auto resumed_usage = fincept::metrics::LocalUsageMetrics::snapshot();
+    QCOMPARE(resumed_usage.provider_tokens.value(QStringLiteral("openai")), 2000);
 }
 
 void TestAgentTaskExecutors::local_cancel_and_cancel_again() {
