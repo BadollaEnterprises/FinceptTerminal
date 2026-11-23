@@ -86,6 +86,7 @@ def cmd_list_capabilities(_params: dict[str, Any]) -> dict[str, Any]:
         "features": [
             "Hierarchical subagent spawning",
             "Built-in todo management",
+            "Bounded public Yahoo market snapshots and financial news",
             "Filesystem tools (ls/read/write/edit/glob/grep)",
             "Shell execution via LocalShellBackend (opt-in)",
             "Persistent memory via AGENTS.md",

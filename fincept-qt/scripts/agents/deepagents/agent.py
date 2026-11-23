@@ -27,6 +27,8 @@ from langchain.agents.middleware import InterruptOnConfig
 
 from backends import get_backend
 from models import create_model, extract_text
+from public_tools import financial_news as fetch_financial_news
+from public_tools import market_snapshot
 from subagents import get_subagents_for_type
 
 logger = logging.getLogger(__name__)
@@ -55,61 +57,32 @@ class FinceptContext:
 
 def _make_market_data_tool() -> BaseTool:
     @tool
-    def market_data(query: str) -> str:
+    def market_data(symbol: str, view: str = "quote") -> str:
         """
-        Fetch market data for a symbol or query.
-        Input: symbol name, query like 'AAPL price', 'BTC/USD OHLCV', or 'top gainers'.
-        Returns: JSON string with market data.
+        Fetch bounded public Yahoo data for one ticker. ``view`` may be quote,
+        info, financial_ratios, company_profile, or historical_period.
+        Data may be delayed; the JSON result includes source timestamps where available.
         """
-        # Placeholder — C++ AgentService wires real data when calling via PythonRunner.
-        # In standalone testing, returns a stub response.
-        return f'{{"query": "{query}", "note": "market_data tool — connect via AgentService"}}'
+        return market_snapshot(symbol, view)
     return market_data
-
-
-def _make_portfolio_tool() -> BaseTool:
-    @tool
-    def portfolio_data(query: str) -> str:
-        """
-        Access portfolio positions, P&L, and allocation data.
-        Input: query like 'current positions', 'portfolio P&L', 'sector allocation'.
-        Returns: JSON string with portfolio data.
-        """
-        return f'{{"query": "{query}", "note": "portfolio_data tool — connect via AgentService"}}'
-    return portfolio_data
 
 
 def _make_news_tool() -> BaseTool:
     @tool
-    def financial_news(query: str) -> str:
+    def financial_news(symbol: str, count: int = 5) -> str:
         """
-        Fetch recent financial news articles for a topic or symbol.
-        Input: topic, company name, or symbol like 'AAPL earnings', 'Fed rate decision'.
-        Returns: JSON string with news headlines and summaries.
+        Fetch up to ten recent public Yahoo news items for one ticker. Data may
+        be delayed and should be attributed to its original publisher.
         """
-        return f'{{"query": "{query}", "note": "financial_news tool — connect via AgentService"}}'
+        return fetch_financial_news(symbol, count)
     return financial_news
 
 
-def _make_economics_tool() -> BaseTool:
-    @tool
-    def economics_data(query: str) -> str:
-        """
-        Fetch macroeconomic indicators and central bank data.
-        Input: indicator name like 'US GDP', 'CPI inflation', 'Fed funds rate', 'yield curve'.
-        Returns: JSON string with economic data.
-        """
-        return f'{{"query": "{query}", "note": "economics_data tool — connect via AgentService"}}'
-    return economics_data
-
-
 def _build_tools() -> list[BaseTool]:
-    """Build the list of MCP-wrapper tools for the agent."""
+    """Build only tools that return real data in this execution path."""
     return [
         _make_market_data_tool(),
-        _make_portfolio_tool(),
         _make_news_tool(),
-        _make_economics_tool(),
     ]
 
 
@@ -120,12 +93,12 @@ def _build_tools() -> list[BaseTool]:
 _FINCEPT_SYSTEM_PROMPT = """You are a Deep Agent for Fincept Terminal, an institutional-grade financial intelligence platform.
 
 You have access to:
-- Financial market data (prices, OHLCV, order books)
-- Portfolio positions and P&L
-- Financial news and research
-- Macroeconomic indicators
+- Bounded public Yahoo market snapshots and financial news (which may be delayed)
 - 1300+ analytics Python scripts in /scripts/
 - Specialist subagents for research, analysis, trading, risk, and reporting
+
+Do not claim access to a private portfolio, live order book, premium feed, or
+official macro series unless the user supplied that data in the task.
 
 Standards:
 - Apply CFA Level III analytical standards

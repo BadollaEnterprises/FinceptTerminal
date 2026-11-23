@@ -33,6 +33,7 @@ TASK_STATE = MODULE.parent / "task_state.py"
 EXECUTION_PLANNER = MODULE.parent / "execution_planner.py"
 INPUT_BUDGET = MODULE.parent / "input_budget.py"
 DEEPAGENT_CLI = MODULE.parent.parent / "deepagents" / "cli.py"
+DEEPAGENT_PUBLIC_TOOLS = DEEPAGENT_CLI.with_name("public_tools.py")
 AI_QUANT_SERVICE = MODULE.parents[3] / "src" / "services" / "ai_quant_lab" / "AIQuantLabService.cpp"
 LOCAL_AGENT_ENGINE = MODULE.parents[3] / "src" / "services" / "agent_tasks" / "LocalAgentEngine.cpp"
 AGENTS_PANEL = MODULE.parents[3] / "src" / "screens" / "agent_config" / "AgentsViewPanel.cpp"
@@ -592,6 +593,35 @@ class AgentProviderPolicyTest(unittest.TestCase):
         execute = cli[cli.index("def cmd_execute_task"):cli.index("def _execute_with_deepagents")]
         self.assertIn("provider_policy_error", execute)
         self.assertNotIn("_execute_with_orchestrator", execute)
+
+    def test_deep_agents_use_real_bounded_public_data_tools(self):
+        tools = load_path("deepagent_public_tools", DEEPAGENT_PUBLIC_TOOLS)
+
+        class FakeYfinanceData:
+            @staticmethod
+            def _cli_result(args):
+                return {"command": args[0], "symbol": args[1], "args": args, "rows": list(range(10000))}
+
+        with mock.patch.object(tools.importlib, "import_module", return_value=FakeYfinanceData):
+            quote = tools.market_snapshot("AAPL", "quote")
+            news = tools.financial_news("MSFT", 999)
+
+        self.assertLessEqual(len(quote), tools.MAX_RESULT_CHARS)
+        self.assertLessEqual(len(news), tools.MAX_RESULT_CHARS)
+        self.assertIn('"truncated":true', quote)
+        self.assertIn('\\"command\\":\\"news\\"', news)
+        self.assertIn('\\"10\\"', news)  # news count is capped before dispatch
+
+        with self.assertRaisesRegex(ValueError, "symbol"):
+            tools.market_snapshot("AAPL; rm -rf /", "quote")
+        with self.assertRaisesRegex(ValueError, "view"):
+            tools.market_snapshot("AAPL", "secret")
+
+        agent = DEEPAGENT_CLI.with_name("agent.py").read_text(encoding="utf-8")
+        self.assertIn("market_snapshot", agent)
+        self.assertIn("financial_news", agent)
+        self.assertNotIn("connect via AgentService", agent)
+        self.assertNotIn("def portfolio_data", agent)
 
     def test_deep_agents_reject_insecure_or_blocked_key_endpoints(self):
         models = load_deepagent_models()
