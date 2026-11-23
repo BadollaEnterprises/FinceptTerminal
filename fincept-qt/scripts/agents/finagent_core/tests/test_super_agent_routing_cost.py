@@ -2,7 +2,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from finagent_core.registries import ModelsRegistry
-from finagent_core.super_agent import LLMRouter, QueryIntent, SuperAgent
+from finagent_core.super_agent import IntentClassifier, LLMRouter, QueryIntent, SuperAgent
 
 
 def _model_config():
@@ -58,3 +58,16 @@ def test_llm_router_is_non_thinking_and_output_bounded():
     assert create.call_args.kwargs["reasoning_effort"] == "none"
     assert create.call_args.kwargs["api_key"] == "owned"
     assert create.call_args.kwargs["base_url"] == "https://proxy.example/v1"
+
+
+def test_custom_keywords_do_not_leak_into_later_sessions():
+    first = IntentClassifier(
+        custom_keywords={QueryIntent.ANALYSIS: ["bespoke alpha phrase"]},
+        custom_patterns={QueryIntent.RISK: [r"private-route-\d+"]},
+    )
+    second = IntentClassifier()
+
+    assert "bespoke alpha phrase" in first.keywords[QueryIntent.ANALYSIS]
+    assert "bespoke alpha phrase" not in second.keywords[QueryIntent.ANALYSIS]
+    assert r"private-route-\d+" in first.patterns[QueryIntent.RISK]
+    assert r"private-route-\d+" not in second.patterns.get(QueryIntent.RISK, [])

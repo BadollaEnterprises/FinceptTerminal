@@ -142,8 +142,15 @@ class IntentClassifier:
         custom_keywords: Dict[QueryIntent, List[str]] = None,
         custom_patterns: Dict[QueryIntent, List[str]] = None
     ):
-        self.keywords = {**self.DEFAULT_KEYWORDS}
-        self.patterns = {**self.DEFAULT_PATTERNS}
+        # Copy the nested lists as well as the dictionaries. Custom routing is
+        # session-scoped; mutating a class-level list leaks one user's keywords
+        # or regexes into every later classifier in the process.
+        self.keywords = {
+            intent: list(keywords) for intent, keywords in self.DEFAULT_KEYWORDS.items()
+        }
+        self.patterns = {
+            intent: list(patterns) for intent, patterns in self.DEFAULT_PATTERNS.items()
+        }
 
         if custom_keywords:
             for intent, kws in custom_keywords.items():
