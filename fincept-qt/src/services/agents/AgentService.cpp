@@ -60,6 +60,10 @@ namespace {
 // How long run_python_light() waits for PythonRunner's async interpreter
 // detection before giving up and failing the call.
 constexpr int kPythonReadyGraceMs = 30000;
+// Match native chat's request-size protection. The ten internal essentials
+// sort first; this cap mainly prevents every external MCP schema from riding
+// on every paid agent turn. A saved max_tools=0 remains an explicit opt-out.
+constexpr int kDefaultAgentMaxTools = 50;
 
 // Default excludes applied to every agent: the tools that DRIVE the terminal —
 // operating screens ("ui-control": ui_act, ui_invoke) and opening or arranging
@@ -85,10 +89,11 @@ const QStringList& default_tool_excludes() {
 ///   exclude_categories[]    — blacklist, ON TOP of the defaults
 ///   name_patterns[]         — regex include on tool name
 ///   exclude_name_patterns[] — regex exclude on tool name
-///   max_tools (int)         — cap on catalog size (0 = every matching tool)
+///   max_tools (int)         — cap on catalog size (default 50; 0 = every matching tool)
 mcp::ToolFilter resolve_tool_filter(const QJsonObject& config) {
     mcp::ToolFilter filter;
     filter.exclude_categories = default_tool_excludes();
+    filter.max_tools = kDefaultAgentMaxTools;
 
     const QJsonObject tf = config.value("tool_filter").toObject();
     if (tf.isEmpty())
@@ -122,7 +127,8 @@ mcp::ToolFilter resolve_tool_filter(const QJsonObject& config) {
                 filter.exclude_name_patterns.append(p);
         }
     }
-    filter.max_tools = std::max(0, tf.value("max_tools").toInt(0));
+    if (tf.contains("max_tools"))
+        filter.max_tools = std::max(0, tf.value("max_tools").toInt(kDefaultAgentMaxTools));
     return filter;
 }
 

@@ -355,11 +355,11 @@ QWidget* CreateAgentPanel::build_form_panel() {
 
     auto* max_row = new QHBoxLayout;
     max_row->setSpacing(8);
-    terminal_max_lbl_ = field_lbl(tr("Max tools for a whitelist / regex selection (0 = no cap)"));
+    terminal_max_lbl_ = field_lbl(tr("Max terminal tools per request (0 = no cap; 50 recommended)"));
     max_row->addWidget(terminal_max_lbl_);
     terminal_max_tools_spin_ = new QSpinBox;
     terminal_max_tools_spin_->setRange(0, 500);
-    terminal_max_tools_spin_->setValue(0);
+    terminal_max_tools_spin_->setValue(50);
     terminal_max_tools_spin_->setStyleSheet(input_style());
     max_row->addWidget(terminal_max_tools_spin_);
     max_row->addStretch();

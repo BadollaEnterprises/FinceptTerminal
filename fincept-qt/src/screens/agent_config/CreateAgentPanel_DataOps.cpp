@@ -211,7 +211,7 @@ void CreateAgentPanel::load_agent_into_form(const AgentConfig& cfg) {
     terminal_name_include_edit_->setText(inc_pats.isEmpty() ? QString() : inc_pats.first().toString());
     const QJsonArray exc_pats = tf["exclude_name_patterns"].toArray();
     terminal_name_exclude_edit_->setText(exc_pats.isEmpty() ? QString() : exc_pats.first().toString());
-    terminal_max_tools_spin_->setValue(tf["max_tools"].toInt(0));
+    terminal_max_tools_spin_->setValue(tf["max_tools"].toInt(50));
 
     // MCP servers selected for this agent (ids; rows carry the id in UserRole).
     QSet<QString> mcp_ids;
@@ -267,7 +267,7 @@ void CreateAgentPanel::clear_form() {
     terminal_exclude_cats_edit_->clear();
     terminal_name_include_edit_->clear();
     terminal_name_exclude_edit_->clear();
-    terminal_max_tools_spin_->setValue(0);
+    terminal_max_tools_spin_->setValue(50);
     mcp_servers_list_->clearSelection();
     agent_result::show_plain(test_result_, QString());
     set_test_page(false);
@@ -372,8 +372,9 @@ QJsonObject CreateAgentPanel::build_config_json() const {
     const QString name_exc = terminal_name_exclude_edit_->text().trimmed();
     if (!name_exc.isEmpty())
         tf["exclude_name_patterns"] = QJsonArray{name_exc};
-    if (terminal_max_tools_spin_->value() > 0)
-        tf["max_tools"] = terminal_max_tools_spin_->value();
+    // Save zero as well: it is the user's explicit unlimited opt-out from the
+    // 50-tool default, not the same thing as an absent legacy setting.
+    tf["max_tools"] = terminal_max_tools_spin_->value();
     if (!tf.isEmpty())
         config["tool_filter"] = tf;
 

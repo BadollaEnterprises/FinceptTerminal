@@ -128,6 +128,24 @@ class AgentProviderPolicyTest(unittest.TestCase):
         self.assertIn('payload["input_max_chars"]', payload)
         self.assertIn("kLlmHistoryCharsKey", payload)
 
+    def test_agent_tool_catalog_has_a_cost_conscious_default_cap(self):
+        service = AGENT_SERVICE.read_text(encoding="utf-8")
+        layout = (
+            MODULE.parents[3]
+            / "src/screens/agent_config/CreateAgentPanel_Layout.cpp"
+        ).read_text(encoding="utf-8")
+        data_ops = (
+            MODULE.parents[3]
+            / "src/screens/agent_config/CreateAgentPanel_DataOps.cpp"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("kDefaultAgentMaxTools = 50", service)
+        self.assertIn("filter.max_tools = kDefaultAgentMaxTools", service)
+        self.assertIn('tf.contains("max_tools")', service)
+        self.assertIn("terminal_max_tools_spin_->setValue(50)", layout)
+        self.assertIn('tf["max_tools"].toInt(50)', data_ops)
+        self.assertIn('tf["max_tools"] = terminal_max_tools_spin_->value()', data_ops)
+
     def test_ai_quant_agents_share_the_terminal_input_budget(self):
         budget = load_path("finagent_shared_input_budget", INPUT_BUDGET)
         self.assertIsNone(budget.input_budget_error({"task": "short"}, {}, 48_000))
