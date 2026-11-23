@@ -885,14 +885,15 @@ class CoreAgent:
         if enable_reasoning:
             agent_kwargs["reasoning"] = True
 
+            reasoning_bounds = reasoning_config if isinstance(reasoning_config, dict) else {}
+            reasoning_min_steps, reasoning_max_steps = bounded_reasoning_steps(reasoning_bounds)
+            if reasoning_min_steps is not None:
+                agent_kwargs["reasoning_min_steps"] = reasoning_min_steps
+            if reasoning_max_steps is not None:
+                agent_kwargs["reasoning_max_steps"] = reasoning_max_steps
+
             # Optional: separate reasoning model
             if isinstance(reasoning_config, dict):
-                reasoning_min_steps, reasoning_max_steps = bounded_reasoning_steps(reasoning_config)
-                if reasoning_min_steps is not None:
-                    agent_kwargs["reasoning_min_steps"] = reasoning_min_steps
-                if reasoning_max_steps is not None:
-                    agent_kwargs["reasoning_max_steps"] = reasoning_max_steps
-
                 # Create reasoning model if specified
                 if reasoning_config.get("model"):
                     reasoning_model_config = normalize_byo_model_config(

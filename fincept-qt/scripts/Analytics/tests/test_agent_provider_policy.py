@@ -98,14 +98,14 @@ class AgentProviderPolicyTest(unittest.TestCase):
         self.assertEqual(limits.bounded_agent_steps(1), 1)
         self.assertEqual(limits.bounded_agent_steps(999), 20)
 
-        self.assertEqual(limits.bounded_reasoning_steps({}), (None, None))
+        self.assertEqual(limits.bounded_reasoning_steps({}), (None, 4))
         self.assertEqual(limits.bounded_reasoning_steps({"min_steps": 4, "max_steps": 999}), (4, 20))
         self.assertEqual(limits.bounded_reasoning_steps({"min_steps": 15, "max_steps": 5}), (5, 5))
-        self.assertEqual(limits.bounded_reasoning_steps({"max_steps": "bad"}), (None, 10))
+        self.assertEqual(limits.bounded_reasoning_steps({"max_steps": "bad"}), (None, 4))
 
         source = CORE_AGENT.read_text(encoding="utf-8")
         self.assertIn("bounded_agent_steps(config.get(\"max_iterations\"))", source)
-        self.assertIn("bounded_reasoning_steps(reasoning_config)", source)
+        self.assertIn("bounded_reasoning_steps(reasoning_bounds)", source)
         self.assertNotIn('min(int(config.get("max_iterations", 10)), 20)', source)
 
     def test_agent_requests_share_the_terminal_input_budget(self):

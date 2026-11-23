@@ -30,3 +30,15 @@ def test_team_coordinator_preserves_explicit_reasoning_effort():
         agent._create_model(_deepseek_config())
 
     assert create.call_args.kwargs["reasoning_effort"] == "high"
+
+
+def test_boolean_reasoning_uses_the_cost_conscious_step_ceiling():
+    agent = CoreAgent.__new__(CoreAgent)
+    agent.api_keys = {"deepseek": "owned"}
+
+    with patch.object(ModelsRegistry, "create_model", return_value=object()):
+        with patch("agno.agent.Agent", return_value=object()) as agent_class:
+            agent._create_agent({"model": _deepseek_config(), "reasoning": True})
+
+    assert agent_class.call_args.kwargs["reasoning"] is True
+    assert agent_class.call_args.kwargs["reasoning_max_steps"] == 4
