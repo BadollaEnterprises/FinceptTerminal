@@ -135,6 +135,12 @@ fincept_add_test(tst_llm_budget_settings
 fincept_add_test(tst_llm_usage
     tst_llm_usage.cpp)
 
+# The zero-credit QuantLib adapter distinguishes an unsupported route, an
+# input/calculation error, and a successful payload before local usage is
+# counted. Keep this envelope parser pure and independent of Python/QNetwork.
+fincept_add_test(tst_quantlib_local_response
+    tst_quantlib_local_response.cpp)
+
 # A token-exhausted tool loop must not resend its entire transcript just to
 # obtain the final summary. The compact request also cannot contain orphaned
 # tool messages that OpenAI-compatible providers reject.

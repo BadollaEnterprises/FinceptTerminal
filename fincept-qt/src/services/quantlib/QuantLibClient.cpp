@@ -11,6 +11,7 @@
 #include "network/http/HttpClient.h"
 #include "python/PythonRunner.h"
 #include "services/quantlib/QuantLibAccess.h"
+#include "services/quantlib/QuantLibLocalResponse.h"
 #include "storage/cache/CacheManager.h"
 
 #include <QFutureWatcher>
@@ -568,27 +569,21 @@ quint64 QuantLibClient::call_local(const QString& endpoint, const QJsonObject& b
             }
 
             const QJsonObject answer = document.object();
-            if (!answer.value(QStringLiteral("supported")).toBool()) {
-                auto failure = mcp::ToolResult::fail(
-                    answer.value(QStringLiteral("message")).toString(
-                        tr("No zero-credit local implementation exists for this endpoint yet. "
-                           "No paid Fincept request was sent.")));
-                failure.data = QJsonObject{{QStringLiteral("error_code"), QStringLiteral("LOCAL_UNSUPPORTED")},
-                                           {QStringLiteral("local_only"), true}};
-                LOG_INFO(kQuantLibClientTag, QString("Local route unavailable — %1; cloud call suppressed").arg(endpoint));
-                callback(failure);
+            const mcp::ToolResult parsed = parse_local_quantlib_response(answer);
+            if (!parsed.success) {
+                const QString code = parsed.data.toObject().value(QStringLiteral("error_code")).toString();
+                const QString detail = code == QLatin1String("LOCAL_UNSUPPORTED")
+                                           ? QStringLiteral("cloud call suppressed")
+                                           : QStringLiteral("local calculation rejected");
+                LOG_INFO(kQuantLibClientTag, QString("Local route did not produce a result — %1; %2")
+                                                 .arg(endpoint, detail));
+                callback(parsed);
                 return;
             }
 
-            QJsonValue data = answer.value(QStringLiteral("data"));
-            if (data.isObject()) {
-                QJsonObject object = data.toObject();
-                object.insert(QStringLiteral("_local"), answer.value(QStringLiteral("meta")));
-                data = object;
-            }
             LOG_DEBUG(kQuantLibClientTag, QString("Local zero-credit route — %1 — OK").arg(endpoint));
             metrics::LocalUsageMetrics::record_local_quantlib();
-            callback(mcp::ToolResult::ok_data(data));
+            callback(parsed);
         });
     return id;
 }

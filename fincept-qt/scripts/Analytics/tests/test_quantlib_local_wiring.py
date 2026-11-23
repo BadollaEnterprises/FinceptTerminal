@@ -4,6 +4,7 @@ import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[3]
 SOURCE = ROOT / "src" / "services" / "quantlib" / "QuantLibClient.cpp"
+LOCAL_RESPONSE = ROOT / "src" / "services" / "quantlib" / "QuantLibLocalResponse.h"
 SCREEN_SOURCE = ROOT / "src" / "screens" / "quantlib" / "QuantLibScreen.cpp"
 
 
@@ -24,7 +25,9 @@ class QuantLibLocalWiringTest(unittest.TestCase):
 
     def test_local_unsupported_route_never_falls_back_to_cloud(self):
         source = SOURCE.read_text(encoding="utf-8")
-        self.assertIn('QStringLiteral("LOCAL_UNSUPPORTED")', source)
+        response = LOCAL_RESPONSE.read_text(encoding="utf-8")
+        self.assertIn('QStringLiteral("LOCAL_UNSUPPORTED")', response)
+        self.assertIn("parse_local_quantlib_response(answer)", source)
         local_branch = source[source.index('QStringLiteral("byo_quantlib.py")'):]
         self.assertNotIn("network()->post", local_branch)
 
