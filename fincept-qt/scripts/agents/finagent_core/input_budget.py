@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 
 DEFAULT_INPUT_MAX_CHARS = 48_000
 MAX_INPUT_MAX_CHARS = 2_000_000
+DEFAULT_INPUT_MAX_TOKENS = 32_000
+MAX_INPUT_MAX_TOKENS = 2_000_000
 
 _PROMPT_FIELDS = frozenset({
     "answer",
@@ -63,4 +66,35 @@ def input_budget_error(params: Any, config: Any, limit: Any) -> str | None:
         f"{parsed_limit}-character BYO AI request guardrail. "
         "No provider request was sent. Shorten the query or instructions, or raise "
         "History Chars in Settings > LLM Configuration."
+    )
+
+
+def request_budget_error(params: Any, config: Any, limit_tokens: Any) -> str | None:
+    """Reject a complete serialized agent request before loading a provider SDK."""
+    try:
+        parsed_limit = int(limit_tokens)
+    except (TypeError, ValueError, OverflowError):
+        parsed_limit = DEFAULT_INPUT_MAX_TOKENS
+    parsed_limit = max(0, min(parsed_limit, MAX_INPUT_MAX_TOKENS))
+    if parsed_limit == 0:
+        return None
+
+    try:
+        wire = json.dumps(
+            {"params": params, "config": config},
+            ensure_ascii=False,
+            separators=(",", ":"),
+            default=str,
+        ).encode("utf-8")
+    except (TypeError, ValueError, OverflowError):
+        return "Agent request could not be serialized safely. No provider request was sent."
+
+    estimated_tokens = (len(wire) + 2) // 3
+    if estimated_tokens <= parsed_limit:
+        return None
+    return (
+        f"Agent request is approximately {estimated_tokens} tokens, above the configured "
+        f"{parsed_limit}-token BYO AI turn-input guardrail. No provider request was sent. "
+        "Shorten the query, instructions, or attached tool context, or raise Turn Input "
+        "Tokens in Settings > LLM Configuration."
     )

@@ -47,7 +47,9 @@ from finagent_core.provider_policy import resolved_configuration_error
 from finagent_core.run_errors import explain_llm_error
 from finagent_core.input_budget import (
     DEFAULT_INPUT_MAX_CHARS,
+    DEFAULT_INPUT_MAX_TOKENS,
     input_budget_error as _input_budget_error,
+    request_budget_error as _request_budget_error,
 )
 
 # Timeout for discovery operations (seconds)
@@ -398,6 +400,11 @@ def main(args=None):
         )
         if input_error:
             return json.dumps({"success": False, "error": input_error})
+        request_error = _request_budget_error(
+            params, config, payload.get("input_max_tokens", DEFAULT_INPUT_MAX_TOKENS)
+        )
+        if request_error:
+            return json.dumps({"success": False, "error": request_error})
 
         if streaming:
             # In streaming mode, dispatch_action_streaming handles output

@@ -113,6 +113,14 @@ class CommunityPolicyTest : public QObject {
                  "Deep Agent and RD-Agent must not bypass the same per-turn output ceiling as AI Chat");
     }
 
+    void python_agents_receive_the_global_turn_input_ceiling() {
+        QFile source(QStringLiteral(FINCEPT_SOURCE_DIR "/src/services/agents/AgentService.cpp"));
+        QVERIFY2(source.open(QIODevice::ReadOnly), qPrintable(source.errorString()));
+        const QByteArray code = source.readAll();
+        QVERIFY(code.contains("kLlmPromptTokensKey"));
+        QVERIFY(code.contains("payload[\"input_max_tokens\"]"));
+    }
+
     void fincept_cloud_sync_is_disabled() {
         QCOMPARE(fincept::policy::fincept_cloud_sync_enabled(), false);
     }
