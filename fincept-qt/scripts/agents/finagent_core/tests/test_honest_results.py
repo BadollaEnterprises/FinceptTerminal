@@ -135,6 +135,31 @@ def test_runner_owns_replan_and_step_execution():
     assert AgenticRunner._execute_step is not ResumableTaskRunner._execute_step
 
 
+def test_agentic_skill_distillation_does_not_make_hidden_llm_call_by_default(tmp_path):
+    """Ambiguous plans may still use deterministic local learning, but a
+    completed task must not silently spend another provider call."""
+    from finagent_core.agentic.budget import BudgetGuard
+
+    events = []
+    runner = _runner(tmp_path, events)
+    runner._budget = BudgetGuard.from_config({})
+    plan = {
+        "name": "Reusable workflow",
+        "description": "",
+        "steps": [
+            {"name": "Fetch", "config": {"query": "fetch data"}},
+            {"name": "Compare", "config": {"query": "compare peers"}},
+            {"name": "Write", "config": {"query": "write report"}},
+        ],
+    }
+
+    with patch("finagent_core.core_agent.CoreAgent.run") as run:
+        runner._try_distill_skill("task-1", "research a company", plan, [], {})
+
+    run.assert_not_called()
+    assert ("skill_skipped", {"task_id": "task-1", "reason": "llm_distillation_disabled"}) in events
+
+
 # ── workflows (stock_analysis / portfolio_rebal / risk_assessment) ───────────
 
 class _FakeWorkflowAgent:

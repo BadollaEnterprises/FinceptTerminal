@@ -528,7 +528,10 @@ class AgenticRunner(ResumableTaskRunner):
         Every skip emits `skill_skipped` so observability into the decision is
         complete regardless of which path fires.
         """
-        if not bool(config.get("agentic", {}).get("distill_skills", True)):
+        agentic_config = config.get("agentic")
+        if not isinstance(agentic_config, dict):
+            agentic_config = {}
+        if not bool(agentic_config.get("distill_skills", True)):
             self._emit("skill_skipped",
                        {"task_id": task_id, "reason": "config_disabled"})
             return
@@ -590,6 +593,14 @@ class AgenticRunner(ResumableTaskRunner):
             return
 
         # score == 2 — ambiguous middle ground; let the LLM cast the deciding vote.
+        # This is post-answer enrichment, not work required to answer the user.
+        # Keep it opt-in so an ordinary task never hides one more paid provider
+        # call after its final synthesis. Structural (no-LLM) distillation above
+        # remains enabled by default.
+        if not bool(agentic_config.get("llm_distill_skills", False)):
+            self._emit("skill_skipped",
+                       {"task_id": task_id, "reason": "llm_distillation_disabled"})
+            return
 
         outline = "\n".join(
             f"- {s.get('name', '')}: {s.get('config', {}).get('query', '')}"
@@ -636,17 +647,12 @@ class AgenticRunner(ResumableTaskRunner):
             }
             # Distillation can route to a cheaper/faster model — same lever as
             # reflector_model. (Task #22, applied here too.)
-            distill_model = (config.get("agentic", {}) or {}).get("distill_model")
+            distill_model = agentic_config.get("distill_model")
             if distill_model:
                 critic_config["model"] = distill_model
             response = agent.run(prompt, critic_config)
             raw = (agent.get_response_content(response) or "").strip()
-            if self._budget is not None:
-                try:
-                    self._budget.record_llm_call(prompt, response)
-                except Exception as exc:
-                    logger.warning("LLM call could not be recorded in the budget task=%s error=%s",
-                                   task_id, type(exc).__name__)
+            self._record_llm_call(prompt, response)
 
             parsed = self._parse_distill_json(raw)
             if not parsed or not parsed.get("is_reusable"):
