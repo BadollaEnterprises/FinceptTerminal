@@ -952,6 +952,7 @@ QJsonObject AIQuantLabService::rd_status_json(const RdTask& t) const {
         {"best_ic", t.best_ic.isUndefined() ? QJsonValue() : t.best_ic},
         {"best_sharpe", t.best_sharpe.isUndefined() ? QJsonValue() : t.best_sharpe},
         {"elapsed_time", aiq_rd_elapsed(t.started_ms, t.finished_ms)},
+        {"usage", t.usage.isEmpty() ? QJsonValue() : QJsonValue(t.usage)},
         {"error", t.error.isEmpty() ? QJsonValue() : QJsonValue(t.error)},
     };
 }
@@ -1052,6 +1053,8 @@ bool AIQuantLabService::rd_spawn(const QString& task_id, const QJsonObject& llm_
     it->proc = proc;
     it->status = QStringLiteral("running");
     it->stop_requested = false;
+    it->usage = {};
+    it->usage_recorded = false;
     it->error.clear();
     it->started_ms = QDateTime::currentMSecsSinceEpoch();
     it->finished_ms = 0;
@@ -1112,6 +1115,7 @@ bool AIQuantLabService::rd_spawn(const QString& task_id, const QJsonObject& llm_
                               QString("[deep_agent/%1] failed: %2")
                                   .arg(task_id, privacy::redact_text(t->error).left(200)));
                 }
+                self->rd_record_usage(*t, false);
             });
     connect(proc, &QProcess::errorOccurred, this, [self, proc, task_id](QProcess::ProcessError e) {
         // Only a failed spawn ends without finished(); a crash is reported there.
@@ -1149,6 +1153,8 @@ void AIQuantLabService::rd_handle_line(const QString& task_id, const QByteArray&
     if (t == rd_tasks_.end())
         return;
     const QJsonObject ev = doc.object();
+    if (ev.value(QStringLiteral("usage")).isObject())
+        t->usage = ev.value(QStringLiteral("usage")).toObject();
     const QString event = ev.value(QStringLiteral("event")).toString();
     if (event == QLatin1String("progress")) {
         t->iterations_completed = ev.value(QStringLiteral("iterations_completed")).toInt(t->iterations_completed);
@@ -1171,16 +1177,32 @@ void AIQuantLabService::rd_handle_line(const QString& task_id, const QByteArray&
             if (!ev.value(QStringLiteral("best_sharpe")).isNull() &&
                 !ev.value(QStringLiteral("best_sharpe")).isUndefined())
                 t->best_sharpe = ev.value(QStringLiteral("best_sharpe"));
+            rd_record_usage(*t, true);
             LOG_INFO("AIQuantLab", QString("[deep_agent] RD-Agent task %1 completed").arg(task_id));
         } else {
             t->status = QStringLiteral("failed");
             t->error = ev.value(QStringLiteral("error")).toString(QStringLiteral("RD-Agent task failed"));
+            rd_record_usage(*t, false);
         }
     } else if (event == QLatin1String("error")) {
         t->finished_ms = QDateTime::currentMSecsSinceEpoch();
         t->status = QStringLiteral("failed");
         t->error = ev.value(QStringLiteral("error")).toString(QStringLiteral("RD-Agent task failed"));
+        rd_record_usage(*t, false);
     }
+}
+
+void AIQuantLabService::rd_record_usage(RdTask& task, bool success) {
+    if (task.usage_recorded || task.usage.isEmpty())
+        return;
+    const AiQuantLlmUsage usage =
+        parse_ai_quant_llm_usage(QJsonObject{{QStringLiteral("usage"), task.usage}});
+    if (!usage.reported)
+        return;
+    metrics::LocalUsageMetrics::record_llm(usage.provider, usage.prompt_tokens,
+                                           usage.completion_tokens, success,
+                                           usage.cached_prompt_tokens);
+    task.usage_recorded = true;
 }
 
 void AIQuantLabService::rd_agent_check_status() {

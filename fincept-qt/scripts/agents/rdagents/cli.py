@@ -39,6 +39,7 @@ sys.path.insert(0, str(_HERE.parent))
 from finagent_core.provider_policy import DEPRECATED_PROVIDERS
 from finagent_core.input_budget import DEFAULT_INPUT_MAX_CHARS, input_budget_error
 from finagent_core.run_errors import explain_llm_error
+from usage_tracker import reported_usage, reset_usage
 
 logging.basicConfig(
     stream=sys.stderr,
@@ -170,7 +171,11 @@ def cmd_run_task(params: dict[str, Any]) -> None:
     task_id = params.get("task_id") or f"{kind or 'task'}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
     def fail(msg: str, **extra: Any) -> None:
-        _out({"event": "error", "task_id": task_id, "error": msg, **extra})
+        failure = {"event": "error", "task_id": task_id, "error": msg, **extra}
+        usage = reported_usage()
+        if usage is not None:
+            failure["usage"] = usage
+        _out(failure)
         sys.exit(1)
 
     if kind not in _KINDS:
@@ -181,6 +186,7 @@ def cmd_run_task(params: dict[str, Any]) -> None:
     workspace_path = Path(workspace).resolve()
 
     llm_config = params.get("config") or {}
+    reset_usage(llm_config.get("llm_provider"))
     if policy_error := _provider_policy_error(llm_config):
         fail(policy_error)
     if budget_error := input_budget_error(

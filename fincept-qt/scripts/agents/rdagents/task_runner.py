@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List
 
 from loops import extract_factors_from_result, extract_models_from_result, save_checkpoint
+from usage_tracker import reported_usage
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +56,7 @@ def run_loop_sync(task_id: str, rd_loop: Any, loop_n: int, workspace: Path, emit
         if sharpe is not None:
             state["best_sharpe"] = sharpe if state["best_sharpe"] is None else max(state["best_sharpe"], sharpe)
         save_checkpoint(rd_loop, checkpoint_path)
-        emit({
+        progress = {
             "event": "progress",
             "task_id": task_id,
             "iterations_completed": state["completed"],
@@ -64,7 +65,11 @@ def run_loop_sync(task_id: str, rd_loop: Any, loop_n: int, workspace: Path, emit
             "current_step": f"iteration {state['completed']}/{loop_n} done",
             "best_ic": state["best_ic"],
             "best_sharpe": state["best_sharpe"],
-        })
+        }
+        usage = reported_usage()
+        if usage is not None:
+            progress["usage"] = usage
+        emit(progress)
 
     _hook_iteration_end(rd_loop, after_iteration)
 
@@ -89,6 +94,9 @@ def run_loop_sync(task_id: str, rd_loop: Any, loop_n: int, workspace: Path, emit
         "iterations_completed": state["completed"],
         "workspace": str(workspace),
     }
+    usage = reported_usage()
+    if usage is not None:
+        result["usage"] = usage
     if extra:
         result.update(extra)
     return result

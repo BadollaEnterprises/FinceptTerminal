@@ -14,6 +14,8 @@ from typing import Any
 
 from rdagent.oai.backend import LiteLLMAPIBackend
 
+from usage_tracker import record_completion
+
 
 class SingleAttemptLiteLLMBackend(LiteLLMAPIBackend):
     """Prevent hidden continuation calls and plaintext settings logging."""
@@ -42,11 +44,18 @@ class SingleAttemptLiteLLMBackend(LiteLLMAPIBackend):
         return complete_kwargs
 
     def _create_chat_completion_inner_function(
-        self, *args: Any, **kwargs: Any
+        self,
+        messages: list[dict[str, Any]],
+        response_format: Any = None,
+        *args: Any,
+        **kwargs: Any,
     ) -> tuple[str, str | None]:
         content, finish_reason = super()._create_chat_completion_inner_function(
-            *args, **kwargs
+            messages, response_format, *args, **kwargs
         )
+        # RD-Agent logs an estimate but drops the provider usage object. Keep a
+        # credential-free cumulative count for the terminal's local metrics.
+        record_completion(messages, content, os.environ.get("CHAT_MODEL", ""))
         if finish_reason == "length":
             # Any value other than the literal ``length`` stops RD-Agent's
             # six-call continuation loop. The content is intentionally left

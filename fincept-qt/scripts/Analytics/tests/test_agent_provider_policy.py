@@ -50,6 +50,7 @@ RDAGENT_CLI = MODULE.parent.parent / "rdagents" / "cli.py"
 RDAGENT_LOOPS = RDAGENT_CLI.with_name("loops.py")
 RDAGENT_CONFIG = RDAGENT_CLI.with_name("config.py")
 RDAGENT_BACKEND = RDAGENT_CLI.with_name("single_attempt_backend.py")
+RDAGENT_USAGE = RDAGENT_CLI.with_name("usage_tracker.py")
 
 
 def load_module():
@@ -1080,6 +1081,30 @@ class AgentProviderPolicyTest(unittest.TestCase):
             self.assertEqual(os.environ["XAI_API_KEY"], "xai-owned")
             config.clear_llm_config()
             self.assertNotIn("XAI_API_KEY", os.environ)
+
+    def test_rd_agent_tracks_cumulative_provider_usage_without_credentials(self):
+        usage = load_path("finagent_rdagent_usage", RDAGENT_USAGE)
+        usage.reset_usage("DeepSeek")
+        self.assertIsNone(usage.reported_usage())
+
+        usage.record_usage(120, 30, 20)
+        usage.record_usage(80, 10, 200)
+        snapshot = usage.reported_usage()
+        self.assertEqual(snapshot["provider"], "deepseek")
+        self.assertEqual(snapshot["prompt_tokens"], 200)
+        self.assertEqual(snapshot["completion_tokens"], 40)
+        self.assertEqual(snapshot["cached_prompt_tokens"], 100)
+        self.assertEqual(snapshot["requests"], 2)
+        self.assertTrue(snapshot["estimated"])
+
+        usage.reset_usage("deepseek")
+        self.assertIsNone(usage.reported_usage())
+
+        backend = RDAGENT_BACKEND.read_text(encoding="utf-8")
+        self.assertIn("record_completion", backend)
+        runner = RDAGENT_CLI.with_name("task_runner.py").read_text(encoding="utf-8")
+        self.assertIn('progress["usage"] = usage', runner)
+        self.assertIn('result["usage"] = usage', runner)
 
     def test_rd_agent_disables_hidden_length_continuation_calls(self):
         self.assertTrue(RDAGENT_BACKEND.exists())

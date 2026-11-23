@@ -282,10 +282,12 @@ class AIQuantLabService : public QObject {
         QJsonValue best_sharpe;
         QJsonArray factors;
         QJsonArray models;
+        QJsonObject usage;
         QString error;
         qint64 started_ms = 0;
         qint64 finished_ms = 0;
         bool stop_requested = false;
+        bool usage_recorded = false;
         QPointer<QProcess> proc;
     };
 
@@ -294,6 +296,7 @@ class AIQuantLabService : public QObject {
     bool rd_spawn(const QString& task_id, const QJsonObject& llm_config, const QString& resume_from,
                   QString* error_out);
     void rd_handle_line(const QString& task_id, const QByteArray& line);
+    void rd_record_usage(RdTask& task, bool success);
     QJsonObject rd_status_json(const RdTask& t) const;
     int rd_running_count() const;
     /// result_ready("deep_agent", command, data), queued so callers that connect
