@@ -1,4 +1,5 @@
 #include "storage/repositories/AgentConfigSecretPolicy.h"
+#include "services/agents/AgentCredentialPolicy.h"
 #include "storage/sqlite/migrations/MigrationRunner.h"
 
 #include <QJsonDocument>
@@ -14,6 +15,34 @@ class TestAgentConfigSecretPolicy : public QObject {
     Q_OBJECT
 
   private slots:
+    void agent_subprocess_only_receives_selected_provider_credentials() {
+        const QJsonObject keys{{QStringLiteral("deepseek"), QStringLiteral("deep-key")},
+                               {QStringLiteral("DEEPSEEK_API_KEY"), QStringLiteral("deep-key")},
+                               {QStringLiteral("openai"), QStringLiteral("openai-key")},
+                               {QStringLiteral("OPENAI_API_KEY"), QStringLiteral("openai-key")},
+                               {QStringLiteral("anthropic"), QStringLiteral("anthropic-key")},
+                               {QStringLiteral("TAVILY_API_KEY"), QStringLiteral("tool-key")}};
+        const QJsonObject config{
+            {QStringLiteral("knowledge_config"),
+             QJsonObject{{QStringLiteral("embedder"), QStringLiteral("openai")}}},
+            {QStringLiteral("tools"), QJsonArray{QStringLiteral("tavily")}}};
+
+        const QJsonObject scoped = fincept::agent_credential_policy::scope_api_keys(
+            keys, QStringLiteral("deepseek"), config);
+        QVERIFY(scoped.contains(QStringLiteral("deepseek")));
+        QVERIFY(scoped.contains(QStringLiteral("DEEPSEEK_API_KEY")));
+        QVERIFY(scoped.contains(QStringLiteral("openai")));
+        QVERIFY(scoped.contains(QStringLiteral("OPENAI_API_KEY")));
+        QVERIFY(scoped.contains(QStringLiteral("TAVILY_API_KEY")));
+        QVERIFY(!scoped.contains(QStringLiteral("anthropic")));
+
+        const QJsonObject unselected = fincept::agent_credential_policy::scope_api_keys(
+            keys, QStringLiteral("deepseek"), QJsonObject{});
+        QVERIFY(!unselected.contains(QStringLiteral("openai")));
+        QVERIFY(!unselected.contains(QStringLiteral("anthropic")));
+        QVERIFY(!unselected.contains(QStringLiteral("TAVILY_API_KEY")));
+    }
+
     void recursively_removes_credentials_and_runtime_capabilities() {
         const QString raw = QStringLiteral(
             R"({"model":{"provider":"deepseek","api_key":"model-secret","max_tokens":2048},)"

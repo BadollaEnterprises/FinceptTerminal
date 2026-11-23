@@ -141,6 +141,8 @@ class AgentProviderPolicyTest(unittest.TestCase):
         payload = service[service.index("QJsonObject AgentService::build_payload"):]
         self.assertIn('payload["input_max_chars"]', payload)
         self.assertIn("kLlmHistoryCharsKey", payload)
+        self.assertIn("agent_credential_policy::scope_api_keys", payload)
+        self.assertNotIn('payload["api_keys"] = build_api_keys()', payload)
 
     def test_agent_tool_catalog_has_a_cost_conscious_default_cap(self):
         service = AGENT_SERVICE.read_text(encoding="utf-8")

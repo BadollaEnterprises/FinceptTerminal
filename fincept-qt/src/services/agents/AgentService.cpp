@@ -9,6 +9,7 @@
 //   - AgentService_Execution.cpp    — run_agent, run_team, routing, agentic tasks
 //   - AgentService_Workflows.cpp    — workflows, plans, portfolio analysis
 #include "services/agents/AgentService.h"
+#include "services/agents/AgentCredentialPolicy.h"
 
 #include "auth/AuthManager.h"
 #include "core/config/AppConfig.h"
@@ -581,7 +582,6 @@ QJsonObject AgentService::build_payload(const QString& action, const QJsonObject
     const QJsonObject config = agent_svc_expand_config(config_in);
     QJsonObject payload;
     payload["action"] = action;
-    payload["api_keys"] = build_api_keys();
     ai_chat::LlmBudgetSettings input_budget;
     input_budget.history_chars =
         AppConfig::instance()
@@ -705,6 +705,14 @@ QJsonObject AgentService::build_payload(const QString& action, const QJsonObject
         payload["params"] = enriched_params;
     if (!enriched_config.isEmpty())
         payload["config"] = enriched_config;
+    const QJsonObject credential_context{{QStringLiteral("params"), enriched_params},
+                                         {QStringLiteral("config"), enriched_config}};
+    const QString active_provider = payload.value(QStringLiteral("active_llm"))
+                                        .toObject()
+                                        .value(QStringLiteral("provider"))
+                                        .toString();
+    payload["api_keys"] = agent_credential_policy::scope_api_keys(
+        build_api_keys(), active_provider, credential_context);
     return payload;
 }
 
