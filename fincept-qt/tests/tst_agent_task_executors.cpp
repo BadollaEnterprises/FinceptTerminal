@@ -384,6 +384,7 @@ class TestAgentTaskExecutors : public QObject {
     // ── LocalAgenticExecutor ─────────────────────────────────────────────────
     void local_payload_helpers();
     void local_happy_path();
+    void local_provider_calls_are_counted_without_token_metadata();
     void local_question_and_answer();
     void local_waiting_cancel_records_usage();
     void local_pause_before_task_id_then_resume();
@@ -1047,6 +1048,25 @@ void TestAgentTaskExecutors::local_happy_path() {
     // Another panel's task is not this run's.
     engine->emit_event(QStringLiteral("t9"), kDone);
     QCOMPARE(rec.finishes.size(), 1);
+}
+
+void TestAgentTaskExecutors::local_provider_calls_are_counted_without_token_metadata() {
+    fincept::metrics::LocalUsageMetrics::reset_for_test();
+    auto* engine = new FakeEngine;
+    LocalAgenticExecutor ex{std::unique_ptr<ILocalAgentEngine>(engine)};
+    Recorder rec(&ex);
+    const TaskRun run = local_run(QStringLiteral("loc-no-token-usage"));
+    ex.start(run, {});
+    engine->emit_event(QStringLiteral("t-no-token"),
+                       R"({"kind":"task_started","query":"Review AAPL"})",
+                       QStringLiteral("req-1"));
+    engine->emit_event(QStringLiteral("t-no-token"),
+                       R"({"kind":"budget_stop","breach":"steps","budget":{"tokens_used":0,"llm_calls":2,"steps_used":2,"max_steps":2}})");
+
+    QCOMPARE(rec.finishes.size(), 1);
+    const auto usage = fincept::metrics::LocalUsageMetrics::snapshot();
+    QCOMPARE(usage.llm_requests, 2);
+    QCOMPARE(usage.provider_tokens.value(QStringLiteral("openai")), 0);
 }
 
 void TestAgentTaskExecutors::local_question_and_answer() {

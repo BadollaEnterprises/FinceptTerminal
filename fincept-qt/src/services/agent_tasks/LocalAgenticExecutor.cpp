@@ -203,7 +203,11 @@ struct LocalAgenticExecutor::Impl final : ILocalAgentListener {
     }
 
     void record_usage(Run* r, bool success) {
-        if (!r->usage_recorded && r->tokens_total > 0 && !r->llm_provider.isEmpty()) {
+        // Some OpenAI-compatible gateways report a completed call but omit
+        // token usage. The request still happened (and may be billable), so do
+        // not make request accounting contingent on a positive token total.
+        if (!r->usage_recorded && (r->tokens_total > 0 || r->llm_calls_total > 0) &&
+            !r->llm_provider.isEmpty()) {
             metrics::LocalUsageMetrics::record_llm(r->llm_provider, r->prompt_tokens_total,
                                                    r->completion_tokens_total, success,
                                                    r->cached_prompt_tokens_total,
