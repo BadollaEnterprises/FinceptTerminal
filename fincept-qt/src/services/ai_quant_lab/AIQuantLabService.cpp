@@ -126,7 +126,8 @@ void AIQuantLabService::emit_done(const Tag& tag, const QString& module_id, cons
         if (usage.reported) {
             metrics::LocalUsageMetrics::record_llm(
                 usage.provider, usage.prompt_tokens, usage.completion_tokens,
-                data.value(QStringLiteral("success")).toBool(true), usage.cached_prompt_tokens);
+                data.value(QStringLiteral("success")).toBool(true), usage.cached_prompt_tokens,
+                usage.requests);
         }
     }
     const bool dataset_changed = (command == QLatin1String("build_dataset") ||
@@ -1201,7 +1202,7 @@ void AIQuantLabService::rd_record_usage(RdTask& task, bool success) {
         return;
     metrics::LocalUsageMetrics::record_llm(usage.provider, usage.prompt_tokens,
                                            usage.completion_tokens, success,
-                                           usage.cached_prompt_tokens);
+                                           usage.cached_prompt_tokens, usage.requests);
     task.usage_recorded = true;
 }
 

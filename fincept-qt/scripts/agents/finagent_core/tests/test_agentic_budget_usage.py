@@ -21,6 +21,7 @@ def test_budget_snapshot_preserves_input_output_and_cache_tokens():
     assert snapshot["prompt_tokens"] == 900
     assert snapshot["completion_tokens"] == 300
     assert snapshot["cached_prompt_tokens"] == 500
+    assert snapshot["llm_calls"] == 1
 
 
 def test_budget_usage_details_survive_resume_and_reject_invalid_cache_counts():
@@ -50,6 +51,7 @@ def test_budget_usage_details_survive_resume_and_reject_invalid_cache_counts():
     assert state["completion_tokens"] == 500
     # A provider cannot read more cached prompt tokens than it reports as input.
     assert state["cached_prompt_tokens"] == 1100
+    assert state["llm_calls"] == 2
 
 
 def test_legacy_budget_restore_keeps_total_accounted_as_input():

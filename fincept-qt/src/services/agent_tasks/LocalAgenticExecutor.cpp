@@ -99,6 +99,8 @@ struct LocalAgenticExecutor::Impl final : ILocalAgentListener {
         qint64 completion_tokens_total = 0;
         qint64 cached_prompt_tokens_seen = 0;
         qint64 cached_prompt_tokens_total = 0;
+        qint64 llm_calls_seen = 0;
+        qint64 llm_calls_total = 0;
         QString llm_provider;
         bool usage_recorded = false;
         bool ended = false;      ///< finished() / waiting(Paused) reported, or handed back to the service
@@ -204,7 +206,8 @@ struct LocalAgenticExecutor::Impl final : ILocalAgentListener {
         if (!r->usage_recorded && r->tokens_total > 0 && !r->llm_provider.isEmpty()) {
             metrics::LocalUsageMetrics::record_llm(r->llm_provider, r->prompt_tokens_total,
                                                    r->completion_tokens_total, success,
-                                                   r->cached_prompt_tokens_total);
+                                                   r->cached_prompt_tokens_total,
+                                                   qMax<qint64>(1, r->llm_calls_total));
             r->usage_recorded = true;
         }
     }
@@ -251,17 +254,20 @@ struct LocalAgenticExecutor::Impl final : ILocalAgentListener {
             prompt += used - (prompt + completion); // preserve unattributed legacy usage
         used = qMax(used, prompt + completion);
         qint64 cached = qMin(prompt, nonnegative(QLatin1StringView("cached_prompt_tokens")));
+        qint64 calls = nonnegative(QLatin1StringView("llm_calls"));
 
         // Provider metrics are accounting input, not trusted control data.
         // Cumulative counters may repeat or regress; neither can refund usage.
         prompt = qMax(prompt, r->prompt_tokens_seen);
         completion = qMax(completion, r->completion_tokens_seen);
         cached = qBound(r->cached_prompt_tokens_seen, cached, prompt);
+        calls = qMax(calls, r->llm_calls_seen);
         used = std::max({used, r->tokens_seen, prompt + completion});
 
         qint64 prompt_delta = prompt - r->prompt_tokens_seen;
         const qint64 completion_delta = completion - r->completion_tokens_seen;
         const qint64 cached_delta = cached - r->cached_prompt_tokens_seen;
+        const qint64 calls_delta = calls - r->llm_calls_seen;
         qint64 delta = used - r->tokens_seen;
         const qint64 detailed_delta = prompt_delta + completion_delta;
         if (delta > detailed_delta) {
@@ -272,17 +278,21 @@ struct LocalAgenticExecutor::Impl final : ILocalAgentListener {
             delta = detailed_delta;
             used = r->tokens_seen + delta;
         }
-        if (delta <= 0)
+        if (delta <= 0 && calls_delta <= 0)
             return;
-        r->tokens_seen = used;
-        r->tokens_total += delta;
-        r->prompt_tokens_seen = prompt;
-        r->prompt_tokens_total += prompt_delta;
-        r->completion_tokens_seen = completion;
-        r->completion_tokens_total += completion_delta;
-        r->cached_prompt_tokens_seen = cached;
-        r->cached_prompt_tokens_total += cached_delta;
-        emit q->usage(r->id, 0, static_cast<int>(delta)); // the user's own LLM: tokens, never credits
+        if (delta > 0) {
+            r->tokens_seen = used;
+            r->tokens_total += delta;
+            r->prompt_tokens_seen = prompt;
+            r->prompt_tokens_total += prompt_delta;
+            r->completion_tokens_seen = completion;
+            r->completion_tokens_total += completion_delta;
+            r->cached_prompt_tokens_seen = cached;
+            r->cached_prompt_tokens_total += cached_delta;
+            emit q->usage(r->id, 0, static_cast<int>(delta)); // the user's own LLM: tokens, never credits
+        }
+        r->llm_calls_seen = calls;
+        r->llm_calls_total += calls_delta;
     }
 
     void send_pending_controls(Run* r) {
@@ -408,6 +418,7 @@ struct LocalAgenticExecutor::Impl final : ILocalAgentListener {
             r->prompt_tokens_seen = 0;
             r->completion_tokens_seen = 0;
             r->cached_prompt_tokens_seen = 0;
+            r->llm_calls_seen = 0;
             r->resume_from = 0;
             emit q->event(id, lae_event(RunEventKind::Status, tr("The local agent is planning the task")));
             return;
@@ -438,6 +449,10 @@ struct LocalAgenticExecutor::Impl final : ILocalAgentListener {
                 qBound<qint64>(0, static_cast<qint64>(
                                       budget.value(QStringLiteral("cached_prompt_tokens")).toDouble()),
                                r->prompt_tokens_seen);
+            r->llm_calls_seen = budget.contains(QStringLiteral("llm_calls"))
+                                    ? qMax<qint64>(0, static_cast<qint64>(
+                                                           budget.value(QStringLiteral("llm_calls")).toDouble()))
+                                    : (r->tokens_seen > 0 ? 1 : 0);
             r->resume_from = std::max(0, ev.value(QStringLiteral("from_step")).toInt());
             r->last_ended_step = std::max(r->last_ended_step, r->resume_from - 1); // checkpointed before
             const bool with_answer = ev.value(QStringLiteral("with_user_input")).toBool();

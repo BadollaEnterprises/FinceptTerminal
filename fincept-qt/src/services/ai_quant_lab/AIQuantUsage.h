@@ -14,6 +14,7 @@ struct AiQuantLlmUsage {
     qint64 prompt_tokens = 0;
     qint64 completion_tokens = 0;
     qint64 cached_prompt_tokens = 0;
+    qint64 requests = 1;
     bool reported = false;
 };
 
@@ -42,6 +43,7 @@ inline AiQuantLlmUsage parse_ai_quant_llm_usage(const QJsonObject& response) {
     out.prompt_tokens = counter("prompt_tokens");
     out.completion_tokens = counter("completion_tokens");
     out.cached_prompt_tokens = qMin(out.prompt_tokens, counter("cached_prompt_tokens"));
+    out.requests = qMax<qint64>(1, counter("requests"));
     out.reported = true;
     return out;
 }

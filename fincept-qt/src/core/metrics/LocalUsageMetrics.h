@@ -54,25 +54,26 @@ class LocalUsageMetrics {
     }
 
     static void record_llm(QString provider, qint64 prompt_tokens, qint64 completion_tokens, bool success,
-                           qint64 cached_prompt_tokens = 0) {
+                           qint64 cached_prompt_tokens = 0, qint64 request_count = 1) {
         provider = provider.trimmed().toLower();
         if (provider.isEmpty())
             provider = QStringLiteral("unknown");
         const qint64 input = qMax<qint64>(0, prompt_tokens);
         const qint64 output = qMax<qint64>(0, completion_tokens);
         const qint64 cached = qBound<qint64>(0, cached_prompt_tokens, input);
+        const qint64 requests = qBound<qint64>(qint64{1}, request_count, qint64{1'000'000});
         QMutexLocker lock(&mutex());
         auto& value = data();
         roll_month_locked();
-        ++value.llm_requests;
-        value.successful_llm_requests += success ? 1 : 0;
+        value.llm_requests += requests;
+        value.successful_llm_requests += success ? requests : 0;
         value.prompt_tokens += input;
         value.completion_tokens += output;
         value.cached_prompt_tokens += cached;
         value.provider_tokens[provider] += input + output;
         value.provider_cached_prompt_tokens[provider] += cached;
-        ++value.monthly_llm_requests;
-        value.monthly_successful_llm_requests += success ? 1 : 0;
+        value.monthly_llm_requests += requests;
+        value.monthly_successful_llm_requests += success ? requests : 0;
         value.monthly_cached_prompt_tokens += cached;
         value.monthly_provider_tokens[provider] += input + output;
         value.monthly_provider_cached_prompt_tokens[provider] += cached;

@@ -155,14 +155,14 @@ class CommunityPolicyTest : public QObject {
     void local_usage_metrics_track_provider_tokens_and_local_calls() {
         using fincept::metrics::LocalUsageMetrics;
         LocalUsageMetrics::reset_for_test();
-        LocalUsageMetrics::record_llm(QStringLiteral("deepseek"), 120, 30, true, 90);
+        LocalUsageMetrics::record_llm(QStringLiteral("deepseek"), 120, 30, true, 90, 3);
         LocalUsageMetrics::record_llm(QStringLiteral("deepseek"), 20, 10, false);
         LocalUsageMetrics::record_local_quantlib();
         LocalUsageMetrics::record_public_data(QStringLiteral("gdelt"));
 
         const auto snapshot = LocalUsageMetrics::snapshot();
-        QCOMPARE(snapshot.llm_requests, 2);
-        QCOMPARE(snapshot.successful_llm_requests, 1);
+        QCOMPARE(snapshot.llm_requests, 4);
+        QCOMPARE(snapshot.successful_llm_requests, 3);
         QCOMPARE(snapshot.prompt_tokens, 140);
         QCOMPARE(snapshot.completion_tokens, 40);
         QCOMPARE(snapshot.cached_prompt_tokens, 90);
@@ -180,6 +180,7 @@ class CommunityPolicyTest : public QObject {
              QJsonObject{{QStringLiteral("provider"), QStringLiteral(" DeepSeek ")},
                          {QStringLiteral("prompt_tokens"), 150.0},
                          {QStringLiteral("completion_tokens"), 30.0},
+                         {QStringLiteral("requests"), 7.0},
                          {QStringLiteral("total_tokens"), 1.0},
                          {QStringLiteral("cached_prompt_tokens"), 999.0}}}};
 
@@ -189,6 +190,7 @@ class CommunityPolicyTest : public QObject {
         QCOMPARE(usage.prompt_tokens, qint64(150));
         QCOMPARE(usage.completion_tokens, qint64(30));
         QCOMPARE(usage.cached_prompt_tokens, qint64(150));
+        QCOMPARE(usage.requests, qint64(7));
     }
 
     void local_usage_metrics_persist_monthly_totals_and_provider_health() {

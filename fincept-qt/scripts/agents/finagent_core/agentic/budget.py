@@ -122,6 +122,7 @@ class BudgetGuard:
     prompt_tokens: int = 0
     completion_tokens: int = 0
     cached_prompt_tokens: int = 0
+    llm_calls: int = 0
     cost_used: float = 0.0
     steps_used: int = 0
     started_at: float = field(default_factory=time.time)
@@ -151,6 +152,7 @@ class BudgetGuard:
 
     def record_llm_call(self, prompt_text: str, response_obj: Any) -> None:
         """Pull tokens from Agno's RunResponse.metrics if available; else estimate."""
+        self.llm_calls += 1
         in_tok = out_tok = cached_tok = 0
         try:
             metrics = getattr(response_obj, "metrics", None) or {}
@@ -227,6 +229,8 @@ class BudgetGuard:
             _bounded_nonnegative_int(state.get("cached_prompt_tokens"), MAX_MAX_TOKENS),
             self.prompt_tokens,
         )
+        restored_calls = _bounded_nonnegative_int(state.get("llm_calls"), MAX_MAX_STEPS * 10)
+        self.llm_calls = max(restored_calls, 1 if self.tokens_used > 0 else 0)
         self.cost_used = _bounded_nonnegative_float(
             state.get("cost_used"), MAX_MAX_COST_USD
         )
@@ -245,6 +249,7 @@ class BudgetGuard:
             "prompt_tokens": self.prompt_tokens,
             "completion_tokens": self.completion_tokens,
             "cached_prompt_tokens": self.cached_prompt_tokens,
+            "llm_calls": self.llm_calls,
             "cost_used": self.cost_used,
             "wall_s": self.wall_elapsed_s(),
             "steps_used": self.steps_used,
@@ -275,6 +280,7 @@ class BudgetGuard:
             "prompt_tokens": self.prompt_tokens,
             "completion_tokens": self.completion_tokens,
             "cached_prompt_tokens": self.cached_prompt_tokens,
+            "llm_calls": self.llm_calls,
             "max_tokens": self.max_tokens,
             "cost_used": round(self.cost_used, 4),
             "max_cost_usd": self.max_cost_usd,

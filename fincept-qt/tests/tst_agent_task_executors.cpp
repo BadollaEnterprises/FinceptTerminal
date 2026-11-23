@@ -247,12 +247,12 @@ const char* kPlanReady = R"({"kind":"plan_ready","plan":{"id":"plan_1","name":"R
 const char* kStepStart0 = R"({"kind":"step_start","step_index":0,"step":{"id":"step_1","name":"Gather data","config":{"query":"Get the AAPL quote"}},
     "budget":{"tokens_used":0,"prompt_tokens":0,"completion_tokens":0,"cached_prompt_tokens":0,"max_tokens":1000000,"cost_used":0,"max_cost_usd":5.0,"wall_s":2,"max_wall_s":3600,"steps_used":0,"max_steps":50}})";
 const char* kStepEnd0 = R"({"kind":"step_end","step_index":0,"result":{"step":1,"id":"step_1","description":"Gather data","response":"AAPL trades at 231.4"},
-    "budget":{"tokens_used":1200,"prompt_tokens":900,"completion_tokens":300,"cached_prompt_tokens":500,"max_tokens":1000000,"cost_used":0.01,"max_cost_usd":5.0,"wall_s":20,"max_wall_s":3600,"steps_used":1,"max_steps":50}})";
+    "budget":{"tokens_used":1200,"prompt_tokens":900,"completion_tokens":300,"cached_prompt_tokens":500,"llm_calls":1,"max_tokens":1000000,"cost_used":0.01,"max_cost_usd":5.0,"wall_s":20,"max_wall_s":3600,"steps_used":1,"max_steps":50}})";
 const char* kReflection0 = R"({"kind":"reflection","step_index":0,"decision":{"decision":"continue","reason":"on track"}})";
 const char* kStepStart1 = R"({"kind":"step_start","step_index":1,"step":{"id":"step_2","name":"Analyse","config":{"query":"Compare with peers"}},
-    "budget":{"tokens_used":1200,"prompt_tokens":900,"completion_tokens":300,"cached_prompt_tokens":500,"max_tokens":1000000,"cost_used":0.01,"max_cost_usd":5.0,"wall_s":21,"max_wall_s":3600,"steps_used":1,"max_steps":50}})";
+    "budget":{"tokens_used":1200,"prompt_tokens":900,"completion_tokens":300,"cached_prompt_tokens":500,"llm_calls":1,"max_tokens":1000000,"cost_used":0.01,"max_cost_usd":5.0,"wall_s":21,"max_wall_s":3600,"steps_used":1,"max_steps":50}})";
 const char* kStepEnd1 = R"({"kind":"step_end","step_index":1,"result":{"step":2,"id":"step_2","description":"Analyse","response":"AAPL is fairly valued"},
-    "budget":{"tokens_used":2000,"prompt_tokens":1500,"completion_tokens":500,"cached_prompt_tokens":900,"max_tokens":1000000,"cost_used":0.02,"max_cost_usd":5.0,"wall_s":40,"max_wall_s":3600,"steps_used":2,"max_steps":50}})";
+    "budget":{"tokens_used":2000,"prompt_tokens":1500,"completion_tokens":500,"cached_prompt_tokens":900,"llm_calls":2,"max_tokens":1000000,"cost_used":0.02,"max_cost_usd":5.0,"wall_s":40,"max_wall_s":3600,"steps_used":2,"max_steps":50}})";
 const char* kDone = R"({"kind":"done","final":"Final answer: hold AAPL","steps_completed":2})";
 
 TaskRun local_run(const QString& id) {
@@ -1034,8 +1034,8 @@ void TestAgentTaskExecutors::local_happy_path() {
     QCOMPARE(rec.finishes[0].final_text, QStringLiteral("Final answer: hold AAPL"));
     QVERIFY(!rec.negative_usage);
     const auto usage = fincept::metrics::LocalUsageMetrics::snapshot();
-    QCOMPARE(usage.llm_requests, 1);
-    QCOMPARE(usage.successful_llm_requests, 1);
+    QCOMPARE(usage.llm_requests, 2);
+    QCOMPARE(usage.successful_llm_requests, 2);
     QCOMPARE(usage.provider_tokens.value(QStringLiteral("openai")), 2000);
     QCOMPARE(usage.prompt_tokens, 1500);
     QCOMPARE(usage.completion_tokens, 500);
@@ -1070,7 +1070,7 @@ void TestAgentTaskExecutors::local_question_and_answer() {
     QCOMPARE(engine->calls.last(), QStringLiteral("reply:t2:Growth"));
     // The reply process resumes from the checkpoint: step 1 stays done.
     engine->emit_event(QStringLiteral("t2"),
-                       R"({"kind":"task_resumed","from_step":1,"with_user_input":true,"budget":{"tokens_used":1200,"prompt_tokens":900,"completion_tokens":300,"cached_prompt_tokens":500}})",
+                       R"({"kind":"task_resumed","from_step":1,"with_user_input":true,"budget":{"tokens_used":1200,"prompt_tokens":900,"completion_tokens":300,"cached_prompt_tokens":500,"llm_calls":1}})",
                        QStringLiteral("req-2"));
     engine->emit_event(QStringLiteral("t2"), kPlanReady);
     QCOMPARE(rec.plans.last().size(), 2);
@@ -1143,7 +1143,7 @@ void TestAgentTaskExecutors::local_pause_before_task_id_then_resume() {
     ex.start(run, steps);
     QCOMPARE(engine->calls.last(), QStringLiteral("resume:t3"));
     engine->emit_event(QStringLiteral("t3"),
-                       R"({"kind":"task_resumed","from_step":1,"with_user_input":false,"budget":{"tokens_used":1200,"prompt_tokens":900,"completion_tokens":300,"cached_prompt_tokens":500}})",
+                       R"({"kind":"task_resumed","from_step":1,"with_user_input":false,"budget":{"tokens_used":1200,"prompt_tokens":900,"completion_tokens":300,"cached_prompt_tokens":500,"llm_calls":1}})",
                        QStringLiteral("req-2"));
     engine->emit_event(QStringLiteral("t3"), kPlanReady);
     QCOMPARE(rec.plans.last()[0].status, StepStatus::Done);

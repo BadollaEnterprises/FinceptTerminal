@@ -781,6 +781,7 @@ class AgentProviderPolicyTest(unittest.TestCase):
             "completion_tokens": 30,
             "total_tokens": 180,
             "cached_prompt_tokens": 90,
+            "requests": 2,
         })
 
     def test_ai_quant_agent_failures_redact_provider_credentials(self):

@@ -1082,12 +1082,15 @@ void QuantModulePanel::render_result(const QString& command, const QJsonObject& 
             static_cast<qint64>(usage.value(QStringLiteral("completion_tokens")).toDouble());
         const qint64 cached_tokens =
             static_cast<qint64>(usage.value(QStringLiteral("cached_prompt_tokens")).toDouble());
+        const qint64 requests = qMax<qint64>(
+            1, static_cast<qint64>(usage.value(QStringLiteral("requests")).toDouble(1)));
         if (prompt_tokens > 0 || completion_tokens > 0) {
             const QString provider = usage.value(QStringLiteral("provider")).toString().trimmed().toUpper();
+            const QString request_text = tr("%n provider request(s)", nullptr, static_cast<int>(requests));
             auto* usage_note = new QLabel(
-                tr("%1 tokens · %2 cache-read · billed to your %3 API key · 0 Fincept credits")
+                tr("%1 tokens · %2 · %3 cache-read · billed to your %4 API key · 0 Fincept credits")
                     .arg(QLocale().toString(prompt_tokens + completion_tokens),
-                         QLocale().toString(qMin(cached_tokens, prompt_tokens)),
+                         request_text, QLocale().toString(qMin(cached_tokens, prompt_tokens)),
                          provider.isEmpty() ? tr("BYO") : provider),
                 result_host_);
             usage_note->setWordWrap(true);

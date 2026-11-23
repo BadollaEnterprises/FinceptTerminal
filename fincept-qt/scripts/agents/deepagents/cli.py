@@ -236,12 +236,14 @@ def _format_result(raw: dict[str, Any], thread_id: str, provider: str = "") -> d
             elif isinstance(t, str):
                 todos.append({"id": f"todo-{i+1}", "task": t, "status": "completed", "subtasks": []})
 
-    prompt_tokens = completion_tokens = cached_prompt_tokens = 0
+    prompt_tokens = completion_tokens = cached_prompt_tokens = requests = 0
     for message in messages:
         prompt, completion, cached = _message_usage(message)
         prompt_tokens += prompt
         completion_tokens += completion
         cached_prompt_tokens += cached
+        if prompt > 0 or completion > 0 or cached > 0:
+            requests += 1
 
     return {
         "success":   True,
@@ -255,6 +257,7 @@ def _format_result(raw: dict[str, Any], thread_id: str, provider: str = "") -> d
             "completion_tokens": completion_tokens,
             "total_tokens": prompt_tokens + completion_tokens,
             "cached_prompt_tokens": cached_prompt_tokens,
+            "requests": requests,
         },
         "error":     None,
     }
