@@ -784,6 +784,22 @@ class AgentProviderPolicyTest(unittest.TestCase):
             "requests": 2,
         })
 
+    def test_deep_agent_counts_ai_rounds_when_provider_omits_token_usage(self):
+        cli = load_path("fincept_deepagent_cli_tokenless_usage", DEEPAGENT_CLI)
+        messages = [
+            types.SimpleNamespace(type="human", content="question"),
+            types.SimpleNamespace(type="ai", content="tool call", usage_metadata={}),
+            types.SimpleNamespace(type="tool", content="tool result"),
+            types.SimpleNamespace(type="ai", content="final", usage_metadata={}),
+        ]
+
+        result = cli._format_result(
+            {"messages": messages}, "thread-1", "deepseek"
+        )
+
+        self.assertEqual(result["usage"]["requests"], 2)
+        self.assertEqual(result["usage"]["total_tokens"], 0)
+
     def test_ai_quant_agent_failures_redact_provider_credentials(self):
         deepagents = DEEPAGENT_CLI.read_text(encoding="utf-8")
         execute = deepagents[

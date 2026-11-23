@@ -217,6 +217,21 @@ def _message_usage(message: Any) -> tuple[int, int, int]:
     return prompt, completion, min(cached, prompt)
 
 
+def _is_ai_message(message: Any) -> bool:
+    """Whether one transcript item represents a provider generation.
+
+    LangChain messages expose ``type == "ai"`` even when a gateway omits
+    usage metadata. Accept the serialized assistant spelling as well so a
+    restored graph state cannot make completed rounds disappear from local
+    request accounting.
+    """
+    if isinstance(message, dict):
+        kind = message.get("type") or message.get("role")
+    else:
+        kind = getattr(message, "type", None) or getattr(message, "role", None)
+    return str(kind or "").strip().lower() in {"ai", "assistant"}
+
+
 def _format_result(raw: dict[str, Any], thread_id: str, provider: str = "") -> dict[str, Any]:
     """Normalise a deepagents invoke() result to the standard output schema."""
     messages = raw.get("messages", [])
@@ -242,7 +257,7 @@ def _format_result(raw: dict[str, Any], thread_id: str, provider: str = "") -> d
         prompt_tokens += prompt
         completion_tokens += completion
         cached_prompt_tokens += cached
-        if prompt > 0 or completion > 0 or cached > 0:
+        if prompt > 0 or completion > 0 or cached > 0 or _is_ai_message(message):
             requests += 1
 
     return {
