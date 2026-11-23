@@ -989,11 +989,11 @@ void AIQuantLabService::rd_start(const QString& command, const QString& kind, co
     QJsonValue iteration_value = params.value(QStringLiteral("max_iterations"));
     if (iteration_value.isUndefined())
         iteration_value = params.value(QStringLiteral("iterations"));
-    const double requested_iterations = iteration_value.toDouble(10.0);
+    const double requested_iterations = iteration_value.toDouble(kDefaultRdIterations);
     t.max_iterations = std::isfinite(requested_iterations)
                            ? static_cast<int>(std::clamp(requested_iterations, 1.0,
                                                          static_cast<double>(kMaxRdIterations)))
-                           : 10;
+                           : kDefaultRdIterations;
     // Per-profile, writable workspace (the scripts dir is pruned in dev builds
     // and read-only in installs).
     t.workspace = AppPaths::data() + QStringLiteral("/rdagents/workspaces/") + t.id;

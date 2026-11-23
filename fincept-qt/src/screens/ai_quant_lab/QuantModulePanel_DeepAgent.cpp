@@ -462,8 +462,8 @@ QWidget* QuantModulePanel::build_rd_agent_tab(QComboBox* llm_combo) {
     fm_vl->addWidget(build_input_row(tr("Target Market"), fm_market, fm_w));
 
     auto* fm_iter = new QSpinBox(fm_w);
-    fm_iter->setRange(1, 100);
-    fm_iter->setValue(10);
+    fm_iter->setRange(1, AIQuantLabService::kMaxRdIterations);
+    fm_iter->setValue(AIQuantLabService::kDefaultRdIterations);
     fm_iter->setStyleSheet(spinbox_ss());
     fm_vl->addWidget(build_input_row(tr("Max Iterations"), fm_iter, fm_w));
 
@@ -530,8 +530,8 @@ QWidget* QuantModulePanel::build_rd_agent_tab(QComboBox* llm_combo) {
     mo_vl->addWidget(build_input_row(tr("Optimize For"), mo_target, mo_w));
 
     auto* mo_iter = new QSpinBox(mo_w);
-    mo_iter->setRange(1, 100);
-    mo_iter->setValue(10);
+    mo_iter->setRange(1, AIQuantLabService::kMaxRdIterations);
+    mo_iter->setValue(AIQuantLabService::kDefaultRdIterations);
     mo_iter->setStyleSheet(spinbox_ss());
     mo_vl->addWidget(build_input_row(tr("Max Iterations"), mo_iter, mo_w));
 
@@ -591,8 +591,8 @@ QWidget* QuantModulePanel::build_rd_agent_tab(QComboBox* llm_combo) {
     qr_vl->addWidget(build_input_row(tr("Target Market"), qr_market, qr_w));
 
     auto* qr_iter = new QSpinBox(qr_w);
-    qr_iter->setRange(1, 100);
-    qr_iter->setValue(15);
+    qr_iter->setRange(1, AIQuantLabService::kMaxRdIterations);
+    qr_iter->setValue(AIQuantLabService::kDefaultRdIterations);
     qr_iter->setStyleSheet(spinbox_ss());
     qr_vl->addWidget(build_input_row(tr("Max Iterations"), qr_iter, qr_w));
 

@@ -981,11 +981,11 @@ class AgentProviderPolicyTest(unittest.TestCase):
 
     def test_rd_agent_bounds_iterations_and_protects_key_endpoints(self):
         cli = load_path("finagent_rdagent_limits", RDAGENT_CLI)
-        self.assertEqual(cli._bounded_iterations(None), 10)
-        self.assertEqual(cli._bounded_iterations("bad"), 10)
+        self.assertEqual(cli._bounded_iterations(None), 3)
+        self.assertEqual(cli._bounded_iterations("bad"), 3)
         self.assertEqual(cli._bounded_iterations(0), 1)
         self.assertEqual(cli._bounded_iterations(17), 17)
-        self.assertEqual(cli._bounded_iterations(10**12), 100)
+        self.assertEqual(cli._bounded_iterations(10**12), 20)
         self.assertIsNone(cli._provider_policy_error({
             "llm_provider": "deepseek", "llm_base_url": "https://proxy.example/v1",
         }))
@@ -1003,6 +1003,18 @@ class AgentProviderPolicyTest(unittest.TestCase):
                            service.index("bool AIQuantLabService::rd_spawn")]
         self.assertIn("std::clamp", rd_start)
         self.assertIn("kMaxRdIterations", rd_start)
+
+        header = (MODULE.parents[3] / "src/services/ai_quant_lab/AIQuantLabService.h").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("kDefaultRdIterations = 3", header)
+        self.assertIn("kMaxRdIterations = 20", header)
+
+        panel = (MODULE.parents[3] / "src/screens/ai_quant_lab/QuantModulePanel_DeepAgent.cpp").read_text(
+            encoding="utf-8"
+        )
+        self.assertEqual(panel.count("setRange(1, AIQuantLabService::kMaxRdIterations)"), 3)
+        self.assertEqual(panel.count("setValue(AIQuantLabService::kDefaultRdIterations)"), 3)
 
     def test_rd_agent_forwards_profile_output_and_transport_settings(self):
         config = load_path("finagent_rdagent_config", RDAGENT_CONFIG)

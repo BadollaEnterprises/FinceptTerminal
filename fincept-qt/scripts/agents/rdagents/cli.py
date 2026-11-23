@@ -48,8 +48,12 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 _KINDS = ("factor_mining", "model_optimization", "quant_research")
-_DEFAULT_ITERATIONS = 10
-_MAX_ITERATIONS = 100
+# One RD-Agent iteration can make several provider requests while proposing,
+# coding, running and reviewing an experiment. Keep the unattended default
+# deliberately small and reject UI/API attempts to turn one approval into a
+# 100-iteration paid run.
+_DEFAULT_ITERATIONS = 3
+_MAX_ITERATIONS = 20
 
 
 def _bounded_iterations(value: Any) -> int:

@@ -130,6 +130,8 @@ class AIQuantLabService : public QObject {
     // Long tasks (start_* / resume) run as one child process per task, owned by
     // this service: progress streams back as JSON lines, status/results are
     // served from memory, stop = kill. They live for this app session only.
+    static constexpr int kDefaultRdIterations = 3;
+    static constexpr int kMaxRdIterations = 20;
     void rd_agent_check_status();
     void rd_agent_start_factor_mining(const QJsonObject& params);
     void rd_agent_start_model_optimization(const QJsonObject& params);
@@ -301,7 +303,6 @@ class AIQuantLabService : public QObject {
 
     static constexpr int kListTtlSec = 5 * 60;
     static constexpr int kMaxConcurrentRdTasks = 2;
-    static constexpr int kMaxRdIterations = 100;
 
     // Module ID → script mapping
     QHash<QString, QString> script_map_;
