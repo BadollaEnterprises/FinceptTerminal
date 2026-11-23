@@ -159,6 +159,10 @@ bool ArenaLlmClient::request_fits_input_budget(const ArenaLlmRequest& request, q
     return system_chars <= budget_chars && request.user_prompt.size() <= budget_chars - system_chars;
 }
 
+bool ArenaLlmClient::request_fits_turn_input_budget(const ArenaLlmRequest& request, int budget_tokens) {
+    return fincept::ai_chat::llm_request_fits_prompt_budget(build_body(request).size(), budget_tokens);
+}
+
 void ArenaLlmClient::complete(const ArenaLlmRequest& req, std::function<void(ArenaLlmResult)> cb) {
     const QString p = req.provider.trimmed().toLower();
     fincept::ai_chat::LlmBudgetSettings budget_settings;
@@ -166,13 +170,28 @@ void ArenaLlmClient::complete(const ArenaLlmRequest& req, std::function<void(Are
                                         .get(fincept::ai_chat::kLlmHistoryCharsKey,
                                              QVariant(fincept::ai_chat::kDefaultLlmHistoryChars))
                                         .toInt();
-    const qsizetype input_budget = fincept::ai_chat::validate_llm_budget_settings(budget_settings).history_chars;
+    budget_settings.prompt_tokens = fincept::AppConfig::instance()
+                                        .get(fincept::ai_chat::kLlmPromptTokensKey,
+                                             QVariant(fincept::ai_chat::kDefaultLlmPromptTokens))
+                                        .toInt();
+    const auto validated_budgets = fincept::ai_chat::validate_llm_budget_settings(budget_settings);
+    const qsizetype input_budget = validated_budgets.history_chars;
     if (!request_fits_input_budget(req, input_budget)) {
         ArenaLlmResult r;
         r.error = QStringLiteral("arena prompt is %1 characters, above the configured %2-character BYO AI "
                                  "request guardrail; no provider request was sent")
                       .arg(req.system_prompt.size() + req.user_prompt.size())
                       .arg(input_budget);
+        cb(r);
+        return;
+    }
+    const QByteArray request_body = build_body(req);
+    if (!request_fits_turn_input_budget(req, validated_budgets.prompt_tokens)) {
+        ArenaLlmResult r;
+        r.error = QStringLiteral("arena request is conservatively estimated at %1 input tokens, above the configured "
+                                 "%2-token Turn Input limit; no provider request was sent")
+                      .arg(fincept::ai_chat::budgeted_llm_tokens(0, request_body.size()))
+                      .arg(validated_budgets.prompt_tokens);
         cb(r);
         return;
     }
@@ -232,7 +251,7 @@ void ArenaLlmClient::complete(const ArenaLlmRequest& req, std::function<void(Are
     }
 
     const qint64 t0 = QDateTime::currentMSecsSinceEpoch();
-    QNetworkReply* reply = nam_->post(nr, build_body(req));
+    QNetworkReply* reply = nam_->post(nr, request_body);
     auto* timeout = new QTimer(reply);
     timeout->setSingleShot(true);
     QObject::connect(timeout, &QTimer::timeout, reply, &QNetworkReply::abort);

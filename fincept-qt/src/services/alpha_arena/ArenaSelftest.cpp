@@ -574,6 +574,10 @@ int run_arena_selftest() {
               ArenaLlmClient::request_fits_input_budget(rq, 12) &&
                   !ArenaLlmClient::request_fits_input_budget(rq, 11) &&
                   ArenaLlmClient::request_fits_input_budget(rq, 0));
+        check("llm: arena scheduled requests obey the turn token ceiling",
+              ArenaLlmClient::request_fits_turn_input_budget(rq, 1000) &&
+                  !ArenaLlmClient::request_fits_turn_input_budget(rq, 1) &&
+                  ArenaLlmClient::request_fits_turn_input_budget(rq, 0));
     }
 
     // ── Section 9: market data parsers ──────────────────────────────────────
