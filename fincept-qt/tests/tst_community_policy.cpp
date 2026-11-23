@@ -164,6 +164,20 @@ class CommunityPolicyTest : public QObject {
         }
     }
 
+    void markdown_renderer_owns_the_single_parser_link_path() {
+        QFile source(QStringLiteral(FINCEPT_SOURCE_DIR "/CMakeLists.txt"));
+        QVERIFY2(source.open(QIODevice::ReadOnly), qPrintable(source.errorString()));
+        const QByteArray cmake = source.readAll();
+        const qsizetype start = cmake.indexOf("target_link_libraries(FinceptTerminal PRIVATE");
+        const qsizetype end = cmake.indexOf("\n)", start);
+        QVERIFY(start >= 0 && end > start);
+        const QByteArray links = cmake.mid(start, end - start);
+        QVERIFY2(links.contains("\n    md4c-html\n"),
+                 "The HTML renderer must remain linked; it owns md4c transitively");
+        QVERIFY2(!links.contains("\n    md4c\n"),
+                 "Linking md4c directly as well as through md4c-html duplicates the static archive");
+    }
+
     void ai_quant_agents_obey_the_global_turn_output_ceiling() {
         QFile source(QStringLiteral(FINCEPT_SOURCE_DIR "/src/services/ai_quant_lab/AIQuantLabService.cpp"));
         QVERIFY2(source.open(QIODevice::ReadOnly), qPrintable(source.errorString()));

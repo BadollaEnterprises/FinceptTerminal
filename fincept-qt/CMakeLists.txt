@@ -4385,7 +4385,6 @@ target_link_libraries(FinceptTerminal PRIVATE
     Qt6::Multimedia
     QXlsx::QXlsx
     qgeoview
-    md4c
     md4c-html
     qtadvanceddocking-qt6
     OpenSSL::SSL
