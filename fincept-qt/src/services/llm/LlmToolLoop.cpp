@@ -395,8 +395,12 @@ std::optional<LlmResponse> LlmService::try_extract_and_execute_text_tool_calls(c
 
     LOG_DEBUG(kLlmToolLoopTag, QString("Detected %1 text-based tool call(s) in response").arg(calls.size()));
 
-    // Execute each detected tool call
+    // Execute each detected tool call. Results are encoded only after the
+    // whole batch is known so the shared per-round transcript ceiling applies;
+    // a per-result cap would multiply with the number of calls.
     QString tool_results;
+    std::vector<QString> result_names;
+    std::vector<mcp::ToolResult> results;
     for (const auto& tc : calls) {
         if (detail::cancel_requested())
             break;
@@ -409,33 +413,8 @@ std::optional<LlmResponse> LlmService::try_extract_and_execute_text_tool_calls(c
         call_clock.start();
         auto tr = mcp::McpService::instance().execute_openai_function(tc.name, tc.args);
         emit_tool_done(display, tc.args, tr, call_clock.elapsed());
-
-        // Shaped rather than clipped at a byte offset. Two reasons: `.left(4000)`
-        // cut the JSON mid-token, leaving the model to interpret a malformed
-        // fragment; and `tr.data.toObject()` silently rendered array payloads as
-        // "{}" — a whole result vanishing without a trace. shrink_json keeps the
-        // JSON valid and marks in-place what it dropped.
-        //
-        // No result_id handoff here: the follow-up request on this path attaches
-        // no tools, so pointing the model at ui_read would be a dead
-        // instruction. This path is the fallback for models without structured
-        // tool calls; the structured loop above is where the overflow store applies.
-        QString result_content;
-        if (!tr.message.isEmpty()) {
-            result_content = tr.message;
-        } else {
-            QJsonValue payload = (!tr.data.isNull() && !tr.data.isUndefined()) ? tr.data : QJsonValue(tr.to_json());
-            mcp::shrink_json(payload, 4000);
-            result_content = payload.isObject()
-                                 ? QString::fromUtf8(QJsonDocument(payload.toObject()).toJson(QJsonDocument::Compact))
-                             : payload.isArray()
-                                 ? QString::fromUtf8(QJsonDocument(payload.toArray()).toJson(QJsonDocument::Compact))
-                                 : payload.toVariant().toString();
-        }
-
-        int sep = tc.name.indexOf("__");
-        QString short_name = (sep >= 0) ? tc.name.mid(sep + 2) : tc.name;
-        tool_results += "\n**Tool: " + short_name + "**\n" + result_content + "\n";
+        result_names.push_back(display);
+        results.push_back(std::move(tr));
     }
 
     if (detail::cancel_requested()) {
@@ -445,6 +424,10 @@ std::optional<LlmResponse> LlmService::try_extract_and_execute_text_tool_calls(c
         cancelled_resp.error = "Request cancelled";
         return cancelled_resp;
     }
+
+    const auto encoded_results = detail::encode_tool_results_for_llm(result_names, results);
+    for (std::size_t k = 0; k < encoded_results.size(); ++k)
+        tool_results += "\n**Tool: " + result_names[k] + "**\n" + encoded_results[k] + "\n";
 
     if (tool_results.isEmpty())
         return std::nullopt;

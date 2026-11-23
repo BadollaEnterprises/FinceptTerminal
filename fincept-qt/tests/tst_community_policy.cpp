@@ -94,6 +94,15 @@ class CommunityPolicyTest : public QObject {
         QVERIFY(code.count("detail::encode_tool_results_for_llm(") >= 3);
     }
 
+    void text_tool_rounds_use_the_same_aggregate_result_budget() {
+        QFile source(QStringLiteral(FINCEPT_SOURCE_DIR "/src/services/llm/LlmToolLoop.cpp"));
+        QVERIFY2(source.open(QIODevice::ReadOnly), qPrintable(source.errorString()));
+        const QByteArray code = source.readAll();
+        QVERIFY2(!code.contains("mcp::shrink_json(payload, 4000)"),
+                 "Text/XML tool calls must not apply an independent per-result cap that multiplies across a round");
+        QVERIFY(code.count("detail::encode_tool_results_for_llm(") >= 2);
+    }
+
     void fincept_cloud_sync_is_disabled() {
         QCOMPARE(fincept::policy::fincept_cloud_sync_enabled(), false);
     }
