@@ -1,4 +1,8 @@
-from finagent_core.input_budget import apply_output_budget, request_budget_error
+from finagent_core.input_budget import (
+    apply_nested_output_budgets,
+    apply_output_budget,
+    request_budget_error,
+)
 
 
 def test_complete_agent_request_obeys_turn_input_token_budget():
@@ -27,4 +31,20 @@ def test_imported_agent_model_obeys_turn_output_budget():
 def test_zero_turn_output_budget_keeps_the_model_ceiling():
     config = {"model": {"max_tokens": 64_000}}
     assert apply_output_budget(config, 0) == 64_000
+
+
+def test_nested_team_member_models_obey_turn_output_budget():
+    payload = {
+        "team_config": {
+            "model": {"max_tokens": 64_000},
+            "members": [
+                {"model": {"max_tokens": 48_000}},
+                {"model": {"max_tokens": 8_000}},
+            ],
+        }
+    }
+    assert apply_nested_output_budgets(payload, 12_000) == 3
+    assert payload["team_config"]["model"]["max_tokens"] == 12_000
+    assert payload["team_config"]["members"][0]["model"]["max_tokens"] == 12_000
+    assert payload["team_config"]["members"][1]["model"]["max_tokens"] == 8_000
 

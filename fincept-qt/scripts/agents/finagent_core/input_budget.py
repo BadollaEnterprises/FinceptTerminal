@@ -123,3 +123,17 @@ def apply_output_budget(config: Any, limit_tokens: Any) -> int | None:
     resolved = min(requested, turn_limit) if turn_limit > 0 else requested
     model["max_tokens"] = resolved
     return resolved
+
+
+def apply_nested_output_budgets(value: Any, limit_tokens: Any) -> int:
+    """Clamp every nested agent/team ``model`` block; return blocks changed."""
+    count = 0
+    if isinstance(value, dict):
+        if apply_output_budget(value, limit_tokens) is not None:
+            count += 1
+        for item in value.values():
+            count += apply_nested_output_budgets(item, limit_tokens)
+    elif isinstance(value, (list, tuple)):
+        for item in value:
+            count += apply_nested_output_budgets(item, limit_tokens)
+    return count
