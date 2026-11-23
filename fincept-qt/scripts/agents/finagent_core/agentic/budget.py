@@ -119,6 +119,9 @@ class BudgetGuard:
     max_steps: int = DEFAULT_MAX_STEPS
 
     tokens_used: int = 0
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    cached_prompt_tokens: int = 0
     cost_used: float = 0.0
     steps_used: int = 0
     started_at: float = field(default_factory=time.time)
@@ -148,16 +151,22 @@ class BudgetGuard:
 
     def record_llm_call(self, prompt_text: str, response_obj: Any) -> None:
         """Pull tokens from Agno's RunResponse.metrics if available; else estimate."""
-        in_tok = out_tok = 0
+        in_tok = out_tok = cached_tok = 0
         try:
             metrics = getattr(response_obj, "metrics", None) or {}
             if isinstance(metrics, dict):
                 in_tok = int(metrics.get("input_tokens", 0) or 0)
                 out_tok = int(metrics.get("output_tokens", 0) or 0)
+                cached_tok = int(
+                    metrics.get("cache_read_tokens", metrics.get("cached_tokens", 0)) or 0
+                )
             else:
                 # Pydantic-style attrs.
                 in_tok = int(getattr(metrics, "input_tokens", 0) or 0)
                 out_tok = int(getattr(metrics, "output_tokens", 0) or 0)
+                cached_tok = int(
+                    getattr(metrics, "cache_read_tokens", getattr(metrics, "cached_tokens", 0)) or 0
+                )
         except Exception:
             pass
 
@@ -165,6 +174,7 @@ class BudgetGuard:
         # counts must never refund earlier usage or weaken a cumulative cap.
         in_tok = max(0, in_tok)
         out_tok = max(0, out_tok)
+        cached_tok = max(0, min(cached_tok, in_tok))
 
         if in_tok == 0 and out_tok == 0:
             # Best-effort estimation.
@@ -175,8 +185,12 @@ class BudgetGuard:
                 content = ""
             in_tok = _estimate_tokens(prompt_text)
             out_tok = _estimate_tokens(str(content))
+            cached_tok = 0
 
         self.tokens_used += in_tok + out_tok
+        self.prompt_tokens += in_tok
+        self.completion_tokens += out_tok
+        self.cached_prompt_tokens += cached_tok
         in_price, out_price = _price_for(self._model_id)
         self.cost_used += (in_tok / 1000.0) * in_price + (out_tok / 1000.0) * out_price
 
@@ -187,8 +201,31 @@ class BudgetGuard:
         """Restore cumulative spend from a prior process after pause/resume."""
         if not isinstance(state, dict):
             return
-        self.tokens_used = _bounded_nonnegative_int(
-            state.get("tokens_used"), MAX_MAX_TOKENS
+        restored_total = _bounded_nonnegative_int(state.get("tokens_used"), MAX_MAX_TOKENS)
+        has_details = "prompt_tokens" in state or "completion_tokens" in state
+        if has_details:
+            prompt = _bounded_nonnegative_int(state.get("prompt_tokens"), MAX_MAX_TOKENS)
+            completion = _bounded_nonnegative_int(state.get("completion_tokens"), MAX_MAX_TOKENS)
+            completion = min(completion, MAX_MAX_TOKENS - prompt)
+            detailed_total = prompt + completion
+            # Old writers may have persisted the total before the detailed
+            # counters. Keep every already-counted token by treating any gap as
+            # unattributed prompt usage; never let details inflate the hard cap.
+            if restored_total > detailed_total:
+                prompt += restored_total - detailed_total
+            self.tokens_used = max(restored_total, detailed_total)
+            self.prompt_tokens = prompt
+            self.completion_tokens = completion
+        else:
+            # Pre-detail checkpoints only know the aggregate. Assign it to the
+            # input side so a resumed run remains fully accounted instead of
+            # silently losing all historical usage from local metrics.
+            self.tokens_used = restored_total
+            self.prompt_tokens = restored_total
+            self.completion_tokens = 0
+        self.cached_prompt_tokens = min(
+            _bounded_nonnegative_int(state.get("cached_prompt_tokens"), MAX_MAX_TOKENS),
+            self.prompt_tokens,
         )
         self.cost_used = _bounded_nonnegative_float(
             state.get("cost_used"), MAX_MAX_COST_USD
@@ -205,6 +242,9 @@ class BudgetGuard:
         """Exact durable counters; unlike snapshot(), cost is not rounded."""
         return {
             "tokens_used": self.tokens_used,
+            "prompt_tokens": self.prompt_tokens,
+            "completion_tokens": self.completion_tokens,
+            "cached_prompt_tokens": self.cached_prompt_tokens,
             "cost_used": self.cost_used,
             "wall_s": self.wall_elapsed_s(),
             "steps_used": self.steps_used,
@@ -232,6 +272,9 @@ class BudgetGuard:
     def snapshot(self) -> Dict[str, Any]:
         return {
             "tokens_used": self.tokens_used,
+            "prompt_tokens": self.prompt_tokens,
+            "completion_tokens": self.completion_tokens,
+            "cached_prompt_tokens": self.cached_prompt_tokens,
             "max_tokens": self.max_tokens,
             "cost_used": round(self.cost_used, 4),
             "max_cost_usd": self.max_cost_usd,

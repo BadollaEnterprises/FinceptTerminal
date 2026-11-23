@@ -93,6 +93,12 @@ struct LocalAgenticExecutor::Impl final : ILocalAgentListener {
         int last_ended_step = -1;
         qint64 tokens_seen = 0;  ///< budget.tokens_used already reported for the current process
         qint64 tokens_total = 0; ///< aggregate across start/resume processes for persistent BYO accounting
+        qint64 prompt_tokens_seen = 0;
+        qint64 prompt_tokens_total = 0;
+        qint64 completion_tokens_seen = 0;
+        qint64 completion_tokens_total = 0;
+        qint64 cached_prompt_tokens_seen = 0;
+        qint64 cached_prompt_tokens_total = 0;
         QString llm_provider;
         bool usage_recorded = false;
         bool ended = false;      ///< finished() / waiting(Paused) reported, or handed back to the service
@@ -196,8 +202,9 @@ struct LocalAgenticExecutor::Impl final : ILocalAgentListener {
 
     void record_usage(Run* r, bool success) {
         if (!r->usage_recorded && r->tokens_total > 0 && !r->llm_provider.isEmpty()) {
-            metrics::LocalUsageMetrics::record_llm(r->llm_provider, r->tokens_total, 0,
-                                                   success);
+            metrics::LocalUsageMetrics::record_llm(r->llm_provider, r->prompt_tokens_total,
+                                                   r->completion_tokens_total, success,
+                                                   r->cached_prompt_tokens_total);
             r->usage_recorded = true;
         }
     }
@@ -228,12 +235,53 @@ struct LocalAgenticExecutor::Impl final : ILocalAgentListener {
     void report_tokens(Run* r, const QJsonObject& budget) {
         if (!budget.contains(QStringLiteral("tokens_used")))
             return;
-        const qint64 used = static_cast<qint64>(budget.value(QStringLiteral("tokens_used")).toDouble());
-        const qint64 delta = used - r->tokens_seen;
+        auto nonnegative = [&budget](QLatin1StringView key) {
+            return qMax<qint64>(0, static_cast<qint64>(budget.value(key).toDouble()));
+        };
+
+        qint64 used = nonnegative(QLatin1StringView("tokens_used"));
+        const bool has_details = budget.contains(QStringLiteral("prompt_tokens")) ||
+                                 budget.contains(QStringLiteral("completion_tokens"));
+        const qint64 legacy_delta = qMax<qint64>(0, used - r->tokens_seen);
+        qint64 prompt = has_details ? nonnegative(QLatin1StringView("prompt_tokens"))
+                                    : r->prompt_tokens_seen + legacy_delta;
+        qint64 completion = has_details ? nonnegative(QLatin1StringView("completion_tokens"))
+                                        : r->completion_tokens_seen;
+        if (prompt + completion < used)
+            prompt += used - (prompt + completion); // preserve unattributed legacy usage
+        used = qMax(used, prompt + completion);
+        qint64 cached = qMin(prompt, nonnegative(QLatin1StringView("cached_prompt_tokens")));
+
+        // Provider metrics are accounting input, not trusted control data.
+        // Cumulative counters may repeat or regress; neither can refund usage.
+        prompt = qMax(prompt, r->prompt_tokens_seen);
+        completion = qMax(completion, r->completion_tokens_seen);
+        cached = qBound(r->cached_prompt_tokens_seen, cached, prompt);
+        used = std::max({used, r->tokens_seen, prompt + completion});
+
+        qint64 prompt_delta = prompt - r->prompt_tokens_seen;
+        const qint64 completion_delta = completion - r->completion_tokens_seen;
+        const qint64 cached_delta = cached - r->cached_prompt_tokens_seen;
+        qint64 delta = used - r->tokens_seen;
+        const qint64 detailed_delta = prompt_delta + completion_delta;
+        if (delta > detailed_delta) {
+            // A legacy/partial producer supplied only a larger aggregate.
+            prompt_delta += delta - detailed_delta;
+            prompt += delta - detailed_delta;
+        } else if (detailed_delta > delta) {
+            delta = detailed_delta;
+            used = r->tokens_seen + delta;
+        }
         if (delta <= 0)
             return;
         r->tokens_seen = used;
         r->tokens_total += delta;
+        r->prompt_tokens_seen = prompt;
+        r->prompt_tokens_total += prompt_delta;
+        r->completion_tokens_seen = completion;
+        r->completion_tokens_total += completion_delta;
+        r->cached_prompt_tokens_seen = cached;
+        r->cached_prompt_tokens_total += cached_delta;
         emit q->usage(r->id, 0, static_cast<int>(delta)); // the user's own LLM: tokens, never credits
     }
 
@@ -357,6 +405,9 @@ struct LocalAgenticExecutor::Impl final : ILocalAgentListener {
 
         if (kind == QLatin1String("task_started")) {
             r->tokens_seen = 0;
+            r->prompt_tokens_seen = 0;
+            r->completion_tokens_seen = 0;
+            r->cached_prompt_tokens_seen = 0;
             r->resume_from = 0;
             emit q->event(id, lae_event(RunEventKind::Status, tr("The local agent is planning the task")));
             return;
@@ -370,6 +421,23 @@ struct LocalAgenticExecutor::Impl final : ILocalAgentListener {
                                  ? qMax<qint64>(0, static_cast<qint64>(
                                                         budget.value(QStringLiteral("tokens_used")).toDouble()))
                                  : 0; // old checkpoints had process-local budgets
+            const bool has_details = budget.contains(QStringLiteral("prompt_tokens")) ||
+                                     budget.contains(QStringLiteral("completion_tokens"));
+            r->prompt_tokens_seen = has_details
+                                        ? qMax<qint64>(0, static_cast<qint64>(
+                                                               budget.value(QStringLiteral("prompt_tokens")).toDouble()))
+                                        : r->tokens_seen;
+            r->completion_tokens_seen =
+                has_details ? qMax<qint64>(0, static_cast<qint64>(
+                                                 budget.value(QStringLiteral("completion_tokens")).toDouble()))
+                            : 0;
+            if (r->prompt_tokens_seen + r->completion_tokens_seen < r->tokens_seen)
+                r->prompt_tokens_seen += r->tokens_seen - r->prompt_tokens_seen - r->completion_tokens_seen;
+            r->tokens_seen = qMax(r->tokens_seen, r->prompt_tokens_seen + r->completion_tokens_seen);
+            r->cached_prompt_tokens_seen =
+                qBound<qint64>(0, static_cast<qint64>(
+                                      budget.value(QStringLiteral("cached_prompt_tokens")).toDouble()),
+                               r->prompt_tokens_seen);
             r->resume_from = std::max(0, ev.value(QStringLiteral("from_step")).toInt());
             r->last_ended_step = std::max(r->last_ended_step, r->resume_from - 1); // checkpointed before
             const bool with_answer = ev.value(QStringLiteral("with_user_input")).toBool();
@@ -438,6 +506,9 @@ struct LocalAgenticExecutor::Impl final : ILocalAgentListener {
             d["turn_end"] = true;
             d["credits_charged"] = 0;
             d["tokens_total"] = budget.value(QStringLiteral("tokens_used")).toDouble();
+            d["prompt_tokens"] = budget.value(QStringLiteral("prompt_tokens")).toDouble();
+            d["completion_tokens"] = budget.value(QStringLiteral("completion_tokens")).toDouble();
+            d["cached_prompt_tokens"] = budget.value(QStringLiteral("cached_prompt_tokens")).toDouble();
             emit q->event(id, lae_verbose(RunEventKind::Usage,
                                           tr("Step %1 finished · %2 tokens so far")
                                               .arg(idx + 1)
