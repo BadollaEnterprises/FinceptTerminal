@@ -66,6 +66,14 @@ inline int resolve_llm_output_tokens(int requested, int provider_cap, int fallba
     return resolved;
 }
 
+/// Apply the whole-turn output ceiling to a single provider request as well as
+/// to later tool-loop rounds. A non-positive turn budget is explicitly
+/// unlimited; provider/model ceilings always remain authoritative.
+inline int resolve_llm_turn_output_tokens(int requested, int provider_cap, int turn_budget, int fallback = 4096) {
+    const int resolved = resolve_llm_output_tokens(requested, provider_cap, fallback);
+    return turn_budget > 0 ? std::min(resolved, turn_budget) : resolved;
+}
+
 /// Value used only by the multi-round cost guard when a provider omits token
 /// metadata. Actual usage displays remain provider-measured. Three wire bytes
 /// per token is intentionally conservative for UTF-8 text and JSON framing.

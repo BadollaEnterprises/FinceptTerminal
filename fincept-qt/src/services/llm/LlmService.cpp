@@ -141,6 +141,14 @@ static QString llm_svc_request_budget_error(const QJsonObject& request) {
         .arg(budget);
 }
 
+static int llm_svc_turn_output_budget_tokens() {
+    LlmBudgetSettings settings;
+    settings.completion_tokens = AppConfig::instance()
+                                     .get(kLlmCompletionTokensKey, QVariant(kDefaultLlmCompletionTokens))
+                                     .toInt();
+    return validate_llm_budget_settings(settings).completion_tokens;
+}
+
 // Executor for chat_streaming() requests. A turn can hold its thread for minutes
 // (reasoning model + multi-round tool loop); on QThreadPool::globalInstance() that
 // starved every other QtConcurrent user. Threads never expire, so each keeps its
@@ -684,7 +692,8 @@ QJsonObject LlmService::resolved_config_json(const ChatRoute& route) const {
     out[QStringLiteral("base_url")] = cfg.base_url;
     out[QStringLiteral("temperature")] = cfg.temperature;
     const int catalog_cap = ModelCatalog::output_cap(cfg.provider, cfg.model);
-    out[QStringLiteral("max_tokens")] = resolve_llm_output_tokens(cfg.max_tokens, catalog_cap);
+    out[QStringLiteral("max_tokens")] =
+        resolve_llm_turn_output_tokens(cfg.max_tokens, catalog_cap, llm_svc_turn_output_budget_tokens());
     return out;
 }
 
@@ -745,7 +754,8 @@ QJsonObject LlmService::profile_to_json(const ResolvedLlmProfile& p) {
     // interactive chat. Python agents must not bypass the cost and validity
     // guardrails merely because their configuration crosses a JSON boundary.
     const int catalog_cap = ModelCatalog::output_cap(p.provider, p.model_id);
-    obj["max_tokens"] = resolve_llm_output_tokens(p.max_tokens, catalog_cap);
+    obj["max_tokens"] =
+        resolve_llm_turn_output_tokens(p.max_tokens, catalog_cap, llm_svc_turn_output_budget_tokens());
     obj["reasoning_effort"] = p.reasoning_effort;
     if (!p.system_prompt.isEmpty())
         obj["system_prompt"] = p.system_prompt;
@@ -755,7 +765,7 @@ QJsonObject LlmService::profile_to_json(const ResolvedLlmProfile& p) {
 int LlmService::resolved_max_tokens() const {
     // Called with mutex_ held.
     const int catalog_cap = ModelCatalog::output_cap(provider_, model_);
-    return resolve_llm_output_tokens(max_tokens_, catalog_cap);
+    return resolve_llm_turn_output_tokens(max_tokens_, catalog_cap, llm_svc_turn_output_budget_tokens());
 }
 
 QString LlmService::get_endpoint_url() const {
