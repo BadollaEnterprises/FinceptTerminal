@@ -20,6 +20,15 @@ inline int bounded_usage_count(qint64 value) {
     return static_cast<int>(std::clamp<qint64>(value, 0, std::numeric_limits<int>::max()));
 }
 
+/// Record a provider request even when its response contains no usable token
+/// metadata (HTTP error, malformed JSON, or a truncated stream). This keeps
+/// multi-round request accounting honest on failure paths without inventing
+/// token counts.
+template <typename Usage>
+inline void note_provider_request(Usage& usage) {
+    usage.provider_requests = bounded_usage_count(qint64(bounded_usage_count(usage.provider_requests)) + 1);
+}
+
 inline ProviderUsage normalize_provider_usage(ProviderUsage usage) {
     usage.prompt_tokens = bounded_usage_count(usage.prompt_tokens);
     usage.completion_tokens = bounded_usage_count(usage.completion_tokens);

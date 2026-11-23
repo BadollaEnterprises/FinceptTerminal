@@ -876,6 +876,7 @@ LlmResponse LlmService::do_request(const QString& user_message, const std::vecto
     auto http = blocking_post(url, req_body, hdr);
 
     if (!http.success) {
+        note_provider_request(resp);
         resp.error = http.error;
         if (http.cancelled)
             LOG_DEBUG(kLlmSvcTag, logf("Chat request cancelled", {{"provider", provider_}, {"model", model_}}));
@@ -889,6 +890,7 @@ LlmResponse LlmService::do_request(const QString& user_message, const std::vecto
 
     auto doc = QJsonDocument::fromJson(http.body);
     if (doc.isNull()) {
+        note_provider_request(resp);
         resp.error = "Failed to parse response JSON";
         LOG_ERROR(kLlmSvcTag, logf("Chat response is not valid JSON",
                                    {{"provider", provider_}, {"model", model_}, {"bytes", http.body.size()}}));
@@ -977,11 +979,13 @@ LlmResponse LlmService::do_request(const QString& user_message, const std::vecto
 
                 auto fu_http = blocking_post(url, fu, hdr);
                 if (!fu_http.success) {
+                    note_provider_request(ant_usage);
                     resp.error = "Anthropic tool follow-up failed: " + fu_http.error;
                     return resp;
                 }
                 auto fu_doc = QJsonDocument::fromJson(fu_http.body);
                 if (fu_doc.isNull()) {
+                    note_provider_request(ant_usage);
                     resp.error = "Anthropic tool follow-up parse error";
                     return resp;
                 }
@@ -1057,16 +1061,17 @@ LlmResponse LlmService::do_request(const QString& user_message, const std::vecto
                                           std::min(resolved_max_tokens(),
                                                    detail::tool_loop_summary_max_tokens())}};
                 auto summary_http = blocking_post(url, summary_body, hdr);
+                LlmResponse summary_usage;
+                note_provider_request(summary_usage);
                 if (summary_http.success) {
                     const QJsonDocument summary_doc = QJsonDocument::fromJson(summary_http.body);
                     if (!summary_doc.isNull()) {
                         const QJsonObject summary_json = summary_doc.object();
                         resp.content = extract_anthropic_content_text(summary_json["content"].toArray());
-                        LlmResponse summary_usage;
                         parse_usage(summary_usage, summary_json, provider_);
-                        add_provider_usage(ant_usage, summary_usage);
                     }
                 }
+                add_provider_usage(ant_usage, summary_usage);
                 if (resp.content.isEmpty())
                     resp.error = "Anthropic tool loop ended without an answer — " + ant_budget.exhaustion_note();
             }
@@ -1204,11 +1209,13 @@ LlmResponse LlmService::do_request(const QString& user_message, const std::vecto
 
                     auto fu = blocking_post(url, fu_body, hdr);
                     if (!fu.success) {
+                        note_provider_request(gem_usage);
                         resp.error = "Gemini tool follow-up failed: " + fu.error;
                         return resp;
                     }
                     auto fu_doc = QJsonDocument::fromJson(fu.body);
                     if (fu_doc.isNull()) {
+                        note_provider_request(gem_usage);
                         resp.error = "Gemini tool follow-up parse error";
                         return resp;
                     }
@@ -1255,6 +1262,8 @@ LlmResponse LlmService::do_request(const QString& user_message, const std::vecto
                                       std::min(resolved_max_tokens(),
                                                detail::tool_loop_summary_max_tokens())}}}};
                     auto summary_http = blocking_post(url, summary_body, hdr);
+                    LlmResponse summary_usage;
+                    note_provider_request(summary_usage);
                     if (summary_http.success) {
                         const QJsonDocument summary_doc = QJsonDocument::fromJson(summary_http.body);
                         if (!summary_doc.isNull()) {
@@ -1267,11 +1276,10 @@ LlmResponse LlmService::do_request(const QString& user_message, const std::vecto
                                         .toObject()["parts"]
                                         .toArray());
                             }
-                            LlmResponse summary_usage;
                             parse_usage(summary_usage, summary_json, provider_);
-                            add_provider_usage(gem_usage, summary_usage);
                         }
                     }
+                    add_provider_usage(gem_usage, summary_usage);
                 }
 
                 if (resp.content.isEmpty()) {
@@ -1798,7 +1806,7 @@ LlmResponse LlmService::do_streaming_request(const QString& user_message,
     resp.completion_tokens = observed_usage.completion_tokens;
     resp.total_tokens = observed_usage.total_tokens;
     resp.cached_prompt_tokens = observed_usage.cached_prompt_tokens;
-    resp.provider_requests = observed_usage.provider_requests;
+    resp.provider_requests = qMax(1, observed_usage.provider_requests);
     if (detail::cancel_requested() && !stream_completed) {
         // DEBUG: the request's outcome line (LLM request finished result=cancelled) follows.
         LOG_DEBUG(kLlmSvcTag, QString("Stream cancelled by user after %1 chars").arg(accumulated.size()));

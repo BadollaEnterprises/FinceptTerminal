@@ -15,6 +15,7 @@ class TestLlmUsage : public QObject {
     void malformed_usage_cannot_reduce_accounting();
     void cache_hit_percent_is_safe_for_display();
     void streamed_usage_survives_cancel_or_late_failure();
+    void provider_request_attempts_survive_missing_usage();
 };
 
 void TestLlmUsage::deepseek_cache_hits_are_preserved() {
@@ -132,6 +133,16 @@ void TestLlmUsage::streamed_usage_survives_cancel_or_late_failure() {
     QCOMPARE(openai.completion_tokens, 8);
     QCOMPARE(openai.total_tokens, 48);
     QCOMPARE(openai.provider_requests, 1);
+}
+
+void TestLlmUsage::provider_request_attempts_survive_missing_usage() {
+    ProviderUsage usage;
+    note_provider_request(usage);
+    note_provider_request(usage);
+
+    QCOMPARE(usage.provider_requests, 2);
+    QCOMPARE(usage.prompt_tokens, 0);
+    QCOMPARE(usage.completion_tokens, 0);
 }
 
 QTEST_GUILESS_MAIN(TestLlmUsage)

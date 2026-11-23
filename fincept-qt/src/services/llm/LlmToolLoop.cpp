@@ -120,12 +120,14 @@ LlmResponse LlmService::do_tool_loop(QJsonArray loop_messages, const QString& ur
 
         auto http = blocking_post(url, fu, headers);
         if (!http.success) {
+            note_provider_request(usage);
             resp.error = "Tool follow-up failed: " + http.error;
             return resp;
         }
 
         auto doc = QJsonDocument::fromJson(http.body);
         if (doc.isNull()) {
+            note_provider_request(usage);
             resp.error = "Parse error in tool follow-up";
             LOG_ERROR(kLlmToolLoopTag, logf("Tool follow-up response is not valid JSON",
                                             {{"provider", provider_},
@@ -303,26 +305,26 @@ LlmResponse LlmService::do_tool_loop(QJsonArray loop_messages, const QString& ur
             apply_deepseek_thinking(fu, detail::t_reasoning_effort);
 
         auto http = blocking_post(url, fu, headers);
+        LlmResponse round_usage;
+        note_provider_request(round_usage);
         if (http.success) {
             auto doc = QJsonDocument::fromJson(http.body);
             if (!doc.isNull()) {
                 QJsonObject rj = doc.object();
+                parse_usage(round_usage, rj, provider_);
                 QJsonArray choices = rj["choices"].toArray();
                 if (!choices.isEmpty()) {
                     QJsonObject msg = choices[0].toObject()["message"].toObject();
                     resp.content = strip_think_blocks(extract_openai_message_text(msg));
-                    LlmResponse round_usage;
-                    parse_usage(round_usage, rj, provider_);
-                    llm_tool_loop_add_usage(usage, round_usage);
                     resp.success = !resp.content.isEmpty();
                     LOG_DEBUG(kLlmToolLoopTag,
                               QString("TOOL LOOP: summary fallback produced %1 chars").arg(resp.content.length()));
-
-                    if (resp.success)
-                        return resp;
                 }
             }
         }
+        llm_tool_loop_add_usage(usage, round_usage);
+        if (resp.success)
+            return resp;
     }
     resp.error = "Tool call loop ended without an answer — " + exhaustion;
     return resp;
@@ -517,6 +519,7 @@ std::optional<LlmResponse> LlmService::try_extract_and_execute_text_tool_calls(c
 
     // No tools in follow-up to prevent infinite loop
     auto fu = blocking_post(url, follow_body, headers);
+    note_provider_request(resp);
     if (!fu.success)
         return raw_fallback(fu.error.isEmpty() ? QStringLiteral("follow-up request failed") : fu.error);
 
