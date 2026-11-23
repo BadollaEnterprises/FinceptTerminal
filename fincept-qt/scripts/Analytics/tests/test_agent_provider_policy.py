@@ -205,6 +205,32 @@ class AgentProviderPolicyTest(unittest.TestCase):
         self.assertGreaterEqual(guard.tokens_used, 100)
         self.assertGreaterEqual(guard.cost_used, 0.25)
 
+    def test_agentic_budget_usage_survives_pause_and_resume(self):
+        budget = load_path("finagent_budget_resume", AGENT_BUDGET)
+        guard = budget.BudgetGuard.from_config({"budget": {
+            "max_tokens": 1000,
+            "max_cost_usd": 2,
+            "max_wall_s": 120,
+            "max_steps": 10,
+        }})
+        guard.restore_usage({
+            "tokens_used": 700,
+            "cost_used": 1.25,
+            "wall_s": 40,
+            "steps_used": 4,
+        })
+        self.assertEqual(guard.tokens_used, 700)
+        self.assertEqual(guard.cost_used, 1.25)
+        self.assertEqual(guard.steps_used, 4)
+        self.assertGreaterEqual(guard.wall_elapsed_s(), 40)
+
+        state = TASK_STATE.read_text(encoding="utf-8")
+        runner = AGENTIC_RUNNER.read_text(encoding="utf-8")
+        self.assertIn("budget_json", state)
+        self.assertIn("def save_budget", state)
+        self.assertIn("self._budget.restore_usage", runner)
+        self.assertIn("self._persist_budget()", runner)
+
     def test_agentic_budget_accounts_for_every_internal_model_call(self):
         task_state = TASK_STATE.read_text(encoding="utf-8")
         planner = EXECUTION_PLANNER.read_text(encoding="utf-8")

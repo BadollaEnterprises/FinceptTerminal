@@ -17,6 +17,7 @@ Storage format (SQLite):
     config_json TEXT   -- agent config snapshot (policy only: no API keys, no
                           per-run bridge tokens — see agentic/runner.py)
     steps_json  TEXT   -- list of completed steps with results
+    budget_json TEXT   -- exact cumulative usage restored across processes
     status      TEXT   -- pending | running | completed | failed | paused
     current_step INT
     result      TEXT   -- final result when status=completed
@@ -43,6 +44,7 @@ CREATE TABLE IF NOT EXISTS agent_tasks (
     config_json  TEXT NOT NULL,
     plan_json    TEXT,
     steps_json   TEXT NOT NULL DEFAULT '[]',
+    budget_json  TEXT,
     status       TEXT NOT NULL DEFAULT 'pending',
     current_step INTEGER NOT NULL DEFAULT 0,
     result       TEXT,
@@ -82,6 +84,8 @@ class TaskStateManager:
                 conn.execute("ALTER TABLE agent_tasks ADD COLUMN pending_question TEXT")
             if "pending_answer" not in cols:
                 conn.execute("ALTER TABLE agent_tasks ADD COLUMN pending_answer TEXT")
+            if "budget_json" not in cols:
+                conn.execute("ALTER TABLE agent_tasks ADD COLUMN budget_json TEXT")
 
     # ── CRUD ─────────────────────────────────────────────────────────────────
 
@@ -135,6 +139,15 @@ class TaskStateManager:
             conn.execute(
                 "UPDATE agent_tasks SET plan_json = ?, updated_at = ? WHERE id = ?",
                 (json.dumps(plan), now, task_id)
+            )
+
+    def save_budget(self, task_id: str, budget: Dict[str, Any]):
+        """Persist cumulative usage so a new resume process cannot reset it."""
+        now = datetime.utcnow().isoformat()
+        with self._conn() as conn:
+            conn.execute(
+                "UPDATE agent_tasks SET budget_json = ?, updated_at = ? WHERE id = ?",
+                (json.dumps(budget), now, task_id),
             )
 
     def save_question(self, task_id: str, question: str):
@@ -247,6 +260,8 @@ class TaskStateManager:
         d["steps"] = json.loads(d.pop("steps_json", "[]"))
         plan_raw = d.pop("plan_json", None)
         d["plan"] = json.loads(plan_raw) if plan_raw else None
+        budget_raw = d.pop("budget_json", None)
+        d["budget"] = json.loads(budget_raw) if budget_raw else None
         # pending_question / pending_answer are nullable strings; keep them
         # as-is so the C++ layer can render the banner from get_task.
         d.setdefault("pending_question", None)

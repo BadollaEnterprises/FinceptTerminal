@@ -90,6 +90,7 @@ class AgenticRunner(ResumableTaskRunner):
         # BudgetGuard is constructed per-run inside _run_loop; this is the
         # active instance the overridden _execute_step records against.
         self._budget: Optional[BudgetGuard] = None
+        self._active_task_id: Optional[str] = None
         # Reflector is shared across steps within one run.
         self._reflector = Reflector(api_keys=api_keys)
         # Skill library: shared across runs. Same DB file as the tasks table.
@@ -120,9 +121,17 @@ class AgenticRunner(ResumableTaskRunner):
             return
         try:
             self._budget.record_llm_call(prompt, response)
+            self._persist_budget()
         except Exception as exc:
             logger.warning("LLM call could not be recorded in the budget error=%s",
                            type(exc).__name__)
+
+    def _persist_budget(self) -> None:
+        if self._budget is None or not self._active_task_id:
+            return
+        self.state_mgr.save_budget(
+            self._active_task_id, self._budget.usage_state()
+        )
 
     def _stop_if_budget_breached(
         self, task_id: str, at_step: int
@@ -132,6 +141,7 @@ class AgenticRunner(ResumableTaskRunner):
         breach = self._budget.breach()
         if breach is None:
             return None
+        self._persist_budget()
         self.state_mgr.update_status(task_id, "failed_budget")
         self._emit(
             "budget_stop",
@@ -205,10 +215,14 @@ class AgenticRunner(ResumableTaskRunner):
     ) -> Dict[str, Any]:
         # One BudgetGuard per run; survives across step boundaries so the
         # _execute_step override can record tokens against it.
+        self._active_task_id = task_id
         self._budget = BudgetGuard.from_config(config)
-        # Resume scenario: pre-pay the steps_used counter so we don't grant a
-        # fresh budget every time the user clicks Resume.
-        self._budget.steps_used = len(completed_steps)
+        persisted_task = self.state_mgr.get_task(task_id) or {}
+        self._budget.restore_usage(persisted_task.get("budget"))
+        # Old checkpoints predate budget_json; completed steps are still a
+        # trustworthy lower bound for cumulative step usage.
+        self._budget.steps_used = max(self._budget.steps_used, len(completed_steps))
+        self._persist_budget()
         running_step: Optional[int] = None  # global index of the step in flight
         try:
             if saved_plan and saved_plan.get("steps"):
@@ -282,6 +296,7 @@ class AgenticRunner(ResumableTaskRunner):
                 step_result = self._execute_step(effective_step, query, config, global_idx, all_results)
                 running_step = None
                 self._budget.record_step()
+                self._persist_budget()
                 self.state_mgr.save_checkpoint(task_id, global_idx, step_result)
                 all_results.append(step_result)
                 self._emit(

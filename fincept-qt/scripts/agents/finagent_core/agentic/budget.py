@@ -71,6 +71,24 @@ def _bounded_positive_float(value: Any, default: float, maximum: float) -> float
     return min(parsed, maximum)
 
 
+def _bounded_nonnegative_int(value: Any, maximum: int) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError, OverflowError):
+        return 0
+    return max(0, min(parsed, maximum))
+
+
+def _bounded_nonnegative_float(value: Any, maximum: float) -> float:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return 0.0
+    if not math.isfinite(parsed):
+        return 0.0
+    return max(0.0, min(parsed, maximum))
+
+
 def _price_for(model_id: str) -> Tuple[float, float]:
     if not model_id:
         return _PRICING_PER_1K["default"]
@@ -159,6 +177,33 @@ class BudgetGuard:
 
     def record_step(self) -> None:
         self.steps_used += 1
+
+    def restore_usage(self, state: Any) -> None:
+        """Restore cumulative spend from a prior process after pause/resume."""
+        if not isinstance(state, dict):
+            return
+        self.tokens_used = _bounded_nonnegative_int(
+            state.get("tokens_used"), MAX_MAX_TOKENS
+        )
+        self.cost_used = _bounded_nonnegative_float(
+            state.get("cost_used"), MAX_MAX_COST_USD
+        )
+        self.steps_used = _bounded_nonnegative_int(
+            state.get("steps_used"), MAX_MAX_STEPS
+        )
+        elapsed = _bounded_nonnegative_int(
+            state.get("wall_s"), MAX_MAX_WALL_S
+        )
+        self.started_at = time.time() - elapsed
+
+    def usage_state(self) -> Dict[str, Any]:
+        """Exact durable counters; unlike snapshot(), cost is not rounded."""
+        return {
+            "tokens_used": self.tokens_used,
+            "cost_used": self.cost_used,
+            "wall_s": self.wall_elapsed_s(),
+            "steps_used": self.steps_used,
+        }
 
     # ── Checks ───────────────────────────────────────────────────────────────
 
