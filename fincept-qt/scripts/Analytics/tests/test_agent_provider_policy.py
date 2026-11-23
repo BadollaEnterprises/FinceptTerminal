@@ -748,6 +748,52 @@ class AgentProviderPolicyTest(unittest.TestCase):
         create = create[create.index("def create_model(") :]
         self.assertIn("cls.deepseek_thinking_policy", create)
 
+    def test_saved_deepseek_effort_reaches_every_agent_runtime(self):
+        repository_header = LLM_PROFILE_HEADER.read_text(encoding="utf-8")
+        repository = LLM_PROFILE_HEADER.with_suffix(".cpp").read_text(encoding="utf-8")
+        llm_service = LLM_SERVICE_SOURCE.read_text(encoding="utf-8")
+        quant = AI_QUANT_SERVICE.read_text(encoding="utf-8")
+        agent_main = AGENT_MAIN.read_text(encoding="utf-8")
+
+        resolved = repository_header[
+            repository_header.index("struct ResolvedLlmProfile") :
+            repository_header.index("};", repository_header.index("struct ResolvedLlmProfile"))
+        ]
+        self.assertIn("QString reasoning_effort", resolved)
+
+        profile_to_resolved = repository[
+            repository.index("ResolvedLlmProfile LlmProfileRepository::profile_to_resolved") :
+            repository.index("ResolvedLlmProfile LlmProfileRepository::legacy_fallback")
+        ]
+        self.assertIn("r.reasoning_effort = p.reasoning_effort", profile_to_resolved)
+
+        profile_json = llm_service[
+            llm_service.index("QJsonObject LlmService::profile_to_json") :
+            llm_service.index("int LlmService::resolved_max_tokens")
+        ]
+        self.assertIn('obj["reasoning_effort"] = p.reasoning_effort', profile_json)
+
+        quant_config = quant[
+            quant.index("QJsonObject AIQuantLabService::agent_llm_config") :
+            quant.index("// ── Qlib core")
+        ]
+        self.assertGreaterEqual(quant_config.count('QStringLiteral("llm_reasoning_effort")'), 2)
+
+        active_llm = agent_main[
+            agent_main.index('config["model"]["provider"]') :
+            agent_main.index("# Enable streaming in params")
+        ]
+        self.assertIn('config["model"]["reasoning_effort"]', active_llm)
+
+        profiles_ui = (
+            MODULE.parents[3]
+            / "src/screens/settings/LlmConfigSection_Profiles.cpp"
+        ).read_text(encoding="utf-8")
+        self.assertIn("lph_is_deepseek_effort_provider", profiles_ui)
+        self.assertIn("lph_fill_deepseek_efforts", profiles_ui)
+        self.assertIn("is_harness || is_deepseek", profiles_ui)
+        self.assertIn("profile.reasoning_effort = effort->currentData().toString()", profiles_ui)
+
     def test_agent_registries_disable_native_sdk_retries(self):
         models = load_path("finagent_models_registry_retries", MODEL_REGISTRY).ModelsRegistry
         embedders = load_path(

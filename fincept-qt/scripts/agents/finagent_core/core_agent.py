@@ -694,6 +694,7 @@ class CoreAgent:
             temperature=model_config.get("temperature"),
             max_tokens=model_config.get("max_tokens"),
             base_url=model_config.get("base_url") or None,
+            reasoning_effort=model_config.get("reasoning_effort"),
         )
 
     def _create_agent(self, config: Dict[str, Any]) -> Any:
@@ -905,6 +906,7 @@ class CoreAgent:
                         temperature=reasoning_model_config.get("temperature", 0.3),
                         max_tokens=reasoning_model_config.get("max_tokens"),
                         base_url=reasoning_model_config.get("base_url") or None,
+                        reasoning_effort=reasoning_model_config.get("reasoning_effort"),
                     )
                     agent_kwargs["reasoning_model"] = reasoning_model
 

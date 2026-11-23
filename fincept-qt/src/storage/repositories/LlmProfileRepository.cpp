@@ -366,6 +366,7 @@ ResolvedLlmProfile LlmProfileRepository::profile_to_resolved(const LlmProfile& p
     r.temperature = p.temperature;
     r.max_tokens = p.max_tokens;
     r.system_prompt = p.system_prompt;
+    r.reasoning_effort = p.reasoning_effort;
     return r;
 }
 

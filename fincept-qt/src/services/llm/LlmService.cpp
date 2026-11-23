@@ -732,6 +732,7 @@ QJsonObject LlmService::profile_to_json(const ResolvedLlmProfile& p) {
     // guardrails merely because their configuration crosses a JSON boundary.
     const int catalog_cap = ModelCatalog::output_cap(p.provider, p.model_id);
     obj["max_tokens"] = resolve_llm_output_tokens(p.max_tokens, catalog_cap);
+    obj["reasoning_effort"] = p.reasoning_effort;
     if (!p.system_prompt.isEmpty())
         obj["system_prompt"] = p.system_prompt;
     return obj;

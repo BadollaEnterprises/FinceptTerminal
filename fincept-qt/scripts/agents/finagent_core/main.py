@@ -377,6 +377,9 @@ def main(args=None):
             config["model"]["base_url"]    = raw_base_url
             config["model"]["temperature"] = active_llm.get("temperature", config["model"].get("temperature", 0.7))
             config["model"]["max_tokens"]  = active_llm.get("max_tokens",  config["model"].get("max_tokens", 4096))
+            config["model"]["reasoning_effort"] = active_llm.get(
+                "reasoning_effort", config["model"].get("reasoning_effort", "")
+            )
             # 0 / negative means "no limit set" on the host side — never a valid
             # request value (providers reject or truncate max_tokens: 0).
             if not isinstance(config["model"]["max_tokens"], (int, float)) or config["model"]["max_tokens"] <= 0:

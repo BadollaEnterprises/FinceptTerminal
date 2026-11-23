@@ -12,7 +12,9 @@
 //
 // Harness profiles (provider "harness:<id>", e.g. "harness:claude"): a CLI agent
 // harness answering terminal AI — model_id is the harness's model, effort in
-// reasoning_effort, never an API key. They are chosen through ModelRouter
+// reasoning_effort, never an API key. API profiles may also use reasoning_effort
+// for an explicit provider-supported opt-in (currently DeepSeek). Harnesses are
+// chosen through ModelRouter
 // (AI Chat, Quick Chat, Quick Ask, the tool picker, Chat Mode) and are NOT
 // usable by the Python agent runtime: list_profiles() and resolve_for_context()
 // leave them out, so Agent Studio, teams, workflows, node editors and AI Quant
@@ -38,7 +40,7 @@ struct LlmProfile {
     bool is_default = false;
     QString created_at;
     QString updated_at;
-    QString reasoning_effort; // harness profiles: "" = the CLI's default
+    QString reasoning_effort; // "" = provider default; DeepSeek agents treat it as non-thinking
 
     /// provider is "harness:<id>".
     bool is_harness() const { return provider.startsWith(QLatin1String("harness:"), Qt::CaseInsensitive); }
@@ -68,6 +70,7 @@ struct ResolvedLlmProfile {
     double temperature = 0.7;
     int max_tokens = 4096;
     QString system_prompt;
+    QString reasoning_effort;
 };
 
 // ── Repository ────────────────────────────────────────────────────────────────

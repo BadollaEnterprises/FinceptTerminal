@@ -40,6 +40,7 @@ def _make_model(api_keys: Dict[str, str], model_config: Optional[Dict] = None):
         api_keys=api_keys,
         temperature=cfg.get("temperature"),
         max_tokens=cfg.get("max_tokens"),
+        reasoning_effort=cfg.get("reasoning_effort"),
     )
 
 

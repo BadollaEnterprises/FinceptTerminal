@@ -77,6 +77,10 @@ bool lph_is_harness(const QString& provider) {
     return ai_chat::ProviderCatalog::is_harness(provider);
 }
 
+bool lph_is_deepseek_effort_provider(const QString& provider) {
+    return provider.trimmed().compare(QLatin1String("deepseek"), Qt::CaseInsensitive) == 0;
+}
+
 /// "harness:<id>" of every harness that can answer terminal AI, registration order.
 QStringList lph_harness_providers() {
     QStringList out;
@@ -137,6 +141,21 @@ void lph_fill_efforts(QComboBox* combo, const QString& harness_id, const QString
 bool lph_has_effort(const QString& harness_id) {
     const harness::IHarnessAdapter* a = harness::HarnessRegistry::instance().adapter(harness_id);
     return a && a->descriptor().caps.effort;
+}
+
+void lph_fill_deepseek_efforts(QComboBox* combo, const QString& current) {
+    if (!combo)
+        return;
+    const QSignalBlocker block(combo);
+    combo->clear();
+    combo->addItem(LlmConfigSection::tr("Off (cost conscious)"), QStringLiteral("none"));
+    combo->addItem(LlmConfigSection::tr("High"), QStringLiteral("high"));
+    combo->addItem(LlmConfigSection::tr("Maximum"), QStringLiteral("max"));
+    QString normalized = current.trimmed().toLower();
+    if (normalized == QLatin1String("xhigh"))
+        normalized = QStringLiteral("high");
+    const int idx = combo->findData(normalized);
+    combo->setCurrentIndex(idx < 0 ? 0 : idx);
 }
 
 } // namespace llm_profiles_harness_detail
@@ -289,7 +308,7 @@ QWidget* LlmConfigSection::build_profile_form_panel() {
     profile_model_combo_->setStyleSheet(QString("QComboBox{%1}QComboBox::drop-down{border:none;}").arg(field_style()));
     vl->addWidget(profile_model_combo_);
 
-    // Harness profiles only: reasoning effort, and what such a profile is.
+    // Harness profiles and DeepSeek API profiles: explicit reasoning effort.
     auto* effort_lbl = lbl(tr("REASONING EFFORT"));
     effort_lbl->setObjectName(QString::fromLatin1(llm_profiles_harness_detail::kLphEffortLabel));
     effort_lbl->setVisible(false);
@@ -438,6 +457,9 @@ void LlmConfigSection::load_profiles() {
             } else {
                 const QString displayed_model = policy::normalize_llm_model(p.provider, p.model_id);
                 display += QString("  [%1 / %2]").arg(p.provider, displayed_model);
+                if (llm_profiles_harness_detail::lph_is_deepseek_effort_provider(p.provider) &&
+                    !p.reasoning_effort.isEmpty() && p.reasoning_effort != QLatin1String("none"))
+                    display += QStringLiteral(" · ") + p.reasoning_effort;
             }
             auto* item = new QListWidgetItem(display);
             item->setData(Qt::UserRole, p.id);
@@ -484,6 +506,11 @@ void LlmConfigSection::populate_profile_form(const LlmProfile& p) {
         profile_model_combo_->clear();
         profile_model_combo_->addItems(fallback_models(p.provider));
         profile_model_combo_->setCurrentText(policy::normalize_llm_model(p.provider, p.model_id));
+        if (llm_profiles_harness_detail::lph_is_deepseek_effort_provider(p.provider)) {
+            if (auto* effort =
+                    findChild<QComboBox*>(QString::fromLatin1(llm_profiles_harness_detail::kLphEffortCombo)))
+                llm_profiles_harness_detail::lph_fill_deepseek_efforts(effort, p.reasoning_effort);
+        }
     }
 
     profile_api_key_edit_->setText(is_harness ? QString() : p.api_key);
@@ -557,11 +584,12 @@ void LlmConfigSection::on_profile_selected(int row) {
 void LlmConfigSection::on_profile_provider_changed(const QString& provider) {
     namespace lph = llm_profiles_harness_detail;
     const bool is_harness = lph::lph_is_harness(provider);
+    const bool is_deepseek = lph::lph_is_deepseek_effort_provider(provider);
     auto* effort_combo = findChild<QComboBox*>(QString::fromLatin1(lph::kLphEffortCombo));
     auto* effort_lbl = findChild<QLabel*>(QString::fromLatin1(lph::kLphEffortLabel));
     auto* harness_hint = findChild<QLabel*>(QString::fromLatin1(lph::kLphHint));
     const QString harness_id = ai_chat::ProviderCatalog::harness_id(provider);
-    const bool show_effort = is_harness && lph::lph_has_effort(harness_id);
+    const bool show_effort = (is_harness && lph::lph_has_effort(harness_id)) || is_deepseek;
     if (effort_combo)
         effort_combo->setVisible(show_effort);
     if (effort_lbl)
@@ -591,6 +619,9 @@ void LlmConfigSection::on_profile_provider_changed(const QString& provider) {
         profile_default_btn_->setEnabled(false);
         return;
     }
+
+    if (is_deepseek)
+        lph::lph_fill_deepseek_efforts(effort_combo, QStringLiteral("none"));
 
     llm_profiles_apply_tokens_cap(profile_tokens_spin_, provider);
 
@@ -628,6 +659,7 @@ void LlmConfigSection::on_save_profile() {
     }
     QString provider = profile_provider_combo_->currentData().toString().trimmed();
     const bool is_harness = llm_profiles_harness_detail::lph_is_harness(provider);
+    const bool is_deepseek = llm_profiles_harness_detail::lph_is_deepseek_effort_provider(provider);
     // A harness may run its CLI's default model ("CLI default" = empty).
     QString model = is_harness ? llm_profiles_harness_detail::lph_model_of(profile_model_combo_)
                                : profile_model_combo_->currentText().trimmed();
@@ -693,7 +725,7 @@ void LlmConfigSection::on_save_profile() {
     profile.max_tokens = profile_tokens_spin_->value();
     profile.system_prompt = profile_prompt_edit_->toPlainText().trimmed();
     profile.is_default = was_default && !is_harness;
-    if (is_harness) {
+    if (is_harness || is_deepseek) {
         if (auto* effort =
                 findChild<QComboBox*>(QString::fromLatin1(llm_profiles_harness_detail::kLphEffortCombo));
             effort && !effort->isHidden())

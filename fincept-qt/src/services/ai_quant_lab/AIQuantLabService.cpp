@@ -262,6 +262,7 @@ QJsonObject AIQuantLabService::agent_llm_config(const QJsonObject& params) const
                                  {QStringLiteral("llm_api_key"), p.api_key},
                                  {QStringLiteral("llm_model"), p.model_id},
                                  {QStringLiteral("llm_base_url"), p.base_url},
+                                 {QStringLiteral("llm_reasoning_effort"), p.reasoning_effort},
                                  {QStringLiteral("llm_max_tokens"), p.max_tokens}};
     }
 
@@ -288,6 +289,7 @@ QJsonObject AIQuantLabService::agent_llm_config(const QJsonObject& params) const
                                         {QStringLiteral("llm_api_key"), p.api_key},
                                         {QStringLiteral("llm_model"), p.model_id},
                                         {QStringLiteral("llm_base_url"), p.base_url},
+                                        {QStringLiteral("llm_reasoning_effort"), p.reasoning_effort},
                                         {QStringLiteral("llm_max_tokens"), p.max_tokens}});
     }
     // No BYO profile yet: fail visibly for a missing user key instead of
