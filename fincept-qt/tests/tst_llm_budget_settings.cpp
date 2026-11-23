@@ -11,6 +11,7 @@ class TestLlmBudgetSettings : public QObject {
     void values_are_clamped_to_runtime_bounds();
     void config_map_round_trip_uses_stable_keys();
     void output_limit_respects_defaults_and_provider_caps();
+    void missing_provider_usage_gets_a_budget_only_estimate();
 };
 
 void TestLlmBudgetSettings::defaults_are_cost_conscious() {
@@ -54,6 +55,14 @@ void TestLlmBudgetSettings::output_limit_respects_defaults_and_provider_caps() {
     QCOMPARE(resolve_llm_output_tokens(12000, 2048), 2048);
     QCOMPARE(resolve_llm_output_tokens(3000000, 0), 131072);
     QCOMPARE(resolve_llm_output_tokens(-1, 0), 4096);
+}
+
+void TestLlmBudgetSettings::missing_provider_usage_gets_a_budget_only_estimate() {
+    QCOMPARE(budgeted_llm_tokens(25, 300), 25);
+    QCOMPARE(budgeted_llm_tokens(0, 12), 4);
+    QCOMPARE(budgeted_llm_tokens(0, 10), 4);
+    QCOMPARE(budgeted_llm_tokens(-1, 0), 0);
+    QCOMPARE(budgeted_llm_tokens(0, qint64(kMaxLlmTurnTokens) * 6), kMaxLlmTurnTokens);
 }
 
 QTEST_GUILESS_MAIN(TestLlmBudgetSettings)

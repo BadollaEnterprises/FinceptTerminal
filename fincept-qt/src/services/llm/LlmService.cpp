@@ -958,8 +958,9 @@ LlmResponse LlmService::do_request(const QString& user_message, const std::vecto
             const int kMaxRounds = active_max_tool_rounds();
             // Rounds cap the token spend; the deadline caps the wait. See ToolLoopBudget.
             detail::ToolLoopBudget ant_budget(kMaxRounds);
-            ant_budget.note_prompt_tokens(ant_usage.prompt_tokens);
-            ant_budget.note_completion_tokens(ant_usage.completion_tokens);
+            ant_budget.note_prompt_tokens(budgeted_llm_tokens(
+                ant_usage.prompt_tokens, QJsonDocument(req_body).toJson(QJsonDocument::Compact).size()));
+            ant_budget.note_completion_tokens(budgeted_llm_tokens(ant_usage.completion_tokens, http.body.size()));
             for (int round = 0; !ant_budget.exhausted(); ++round) {
                 if (detail::cancel_requested()) {
                     resp.cancelled = true;
@@ -994,8 +995,10 @@ LlmResponse LlmService::do_request(const QString& user_message, const std::vecto
                 LlmResponse round_usage;
                 parse_usage(round_usage, frj, provider_);
                 add_provider_usage(ant_usage, round_usage);
-                ant_budget.note_prompt_tokens(round_usage.prompt_tokens);
-                ant_budget.note_completion_tokens(round_usage.completion_tokens);
+                ant_budget.note_prompt_tokens(budgeted_llm_tokens(
+                    round_usage.prompt_tokens, QJsonDocument(fu).toJson(QJsonDocument::Compact).size()));
+                ant_budget.note_completion_tokens(
+                    budgeted_llm_tokens(round_usage.completion_tokens, fu_http.body.size()));
 
                 if (frj["stop_reason"].toString() != "tool_use") {
                     resp.content = extract_anthropic_content_text(fcontent); // final answer
@@ -1105,8 +1108,10 @@ LlmResponse LlmService::do_request(const QString& user_message, const std::vecto
                 LlmResponse gem_usage;
                 parse_usage(gem_usage, rj, provider_);
                 ProviderUsageScope preserve_usage(resp, gem_usage);
-                gem_budget.note_prompt_tokens(gem_usage.prompt_tokens);
-                gem_budget.note_completion_tokens(gem_usage.completion_tokens);
+                gem_budget.note_prompt_tokens(budgeted_llm_tokens(
+                    gem_usage.prompt_tokens, QJsonDocument(req_body).toJson(QJsonDocument::Compact).size()));
+                gem_budget.note_completion_tokens(
+                    budgeted_llm_tokens(gem_usage.completion_tokens, http.body.size()));
 
                 // Constant conversation prefix: prior history + the user turn.
                 QJsonArray fu_contents;
@@ -1223,8 +1228,10 @@ LlmResponse LlmService::do_request(const QString& user_message, const std::vecto
                     LlmResponse round_usage;
                     parse_usage(round_usage, fu_json, provider_);
                     add_provider_usage(gem_usage, round_usage);
-                    gem_budget.note_prompt_tokens(round_usage.prompt_tokens);
-                    gem_budget.note_completion_tokens(round_usage.completion_tokens);
+                    gem_budget.note_prompt_tokens(budgeted_llm_tokens(
+                        round_usage.prompt_tokens, QJsonDocument(fu_body).toJson(QJsonDocument::Compact).size()));
+                    gem_budget.note_completion_tokens(
+                        budgeted_llm_tokens(round_usage.completion_tokens, fu.body.size()));
                     const QJsonArray fu_cands = fu_json["candidates"].toArray();
                     const QJsonArray resp_parts = fu_cands.isEmpty()
                                                       ? QJsonArray{}
@@ -1380,7 +1387,8 @@ LlmResponse LlmService::do_request(const QString& user_message, const std::vecto
 
                 LlmResponse r1;
                 parse_usage(r1, rj, provider_);
-                resp = do_tool_loop(loop_msgs, url, hdr, r1.prompt_tokens, r1.completion_tokens);
+                resp = do_tool_loop(loop_msgs, url, hdr, r1.prompt_tokens, r1.completion_tokens,
+                                    QJsonDocument(req_body).toJson(QJsonDocument::Compact).size(), http.body.size());
                 // do_tool_loop sums the follow-up rounds; add round 1 instead of
                 // overwriting the total with it.
                 add_provider_usage(resp, r1);

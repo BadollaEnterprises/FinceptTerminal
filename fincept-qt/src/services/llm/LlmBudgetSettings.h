@@ -66,6 +66,17 @@ inline int resolve_llm_output_tokens(int requested, int provider_cap, int fallba
     return resolved;
 }
 
+/// Value used only by the multi-round cost guard when a provider omits token
+/// metadata. Actual usage displays remain provider-measured. Three wire bytes
+/// per token is intentionally conservative for UTF-8 text and JSON framing.
+inline int budgeted_llm_tokens(int reported_tokens, qint64 payload_bytes) {
+    if (reported_tokens > 0)
+        return std::min(reported_tokens, kMaxLlmTurnTokens);
+    const qint64 bytes = std::max<qint64>(0, payload_bytes);
+    const qint64 estimate = (bytes + 2) / 3;
+    return static_cast<int>(std::min<qint64>(estimate, kMaxLlmTurnTokens));
+}
+
 inline QVariantMap llm_budget_settings_to_config_map(LlmBudgetSettings settings) {
     settings = validate_llm_budget_settings(settings);
     return {{QString::fromLatin1(kLlmHistoryCharsKey), settings.history_chars},

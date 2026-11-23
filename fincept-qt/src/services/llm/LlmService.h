@@ -385,7 +385,8 @@ class LlmService : public QObject {
     // every round — the catalogue is the ten core tools plus any external
     // servers', so there is nothing to discover mid-turn.
     LlmResponse do_tool_loop(QJsonArray loop_messages, const QString& url, const QMap<QString, QString>& headers,
-                             int initial_prompt_tokens, int initial_completion_tokens);
+                             int initial_prompt_tokens, int initial_completion_tokens, qint64 initial_prompt_bytes,
+                             qint64 initial_response_bytes);
 
     /// Returns nullopt if the content had no text/XML tool calls.
     std::optional<LlmResponse> try_extract_and_execute_text_tool_calls(const QString& content,

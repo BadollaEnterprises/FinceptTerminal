@@ -66,7 +66,8 @@ void emit_tool_done(const QString& display, const QJsonObject& args, const mcp::
 
 LlmResponse LlmService::do_tool_loop(QJsonArray loop_messages, const QString& url,
                                      const QMap<QString, QString>& headers, int initial_prompt_tokens,
-                                     int initial_completion_tokens) {
+                                     int initial_completion_tokens, qint64 initial_prompt_bytes,
+                                     qint64 initial_response_bytes) {
     LlmResponse resp;
     LlmResponse usage; // summed over every round of this loop
     ProviderUsageScope preserve_usage(resp, usage);
@@ -77,8 +78,8 @@ LlmResponse LlmService::do_tool_loop(QJsonArray loop_messages, const QString& ur
     // long-polls a background job can take 30 s, so MAX_ROUNDS alone leaves the
     // turn unbounded in wall-clock terms.
     detail::ToolLoopBudget budget(MAX_ROUNDS);
-    budget.note_prompt_tokens(initial_prompt_tokens);
-    budget.note_completion_tokens(initial_completion_tokens);
+    budget.note_prompt_tokens(budgeted_llm_tokens(initial_prompt_tokens, initial_prompt_bytes));
+    budget.note_completion_tokens(budgeted_llm_tokens(initial_completion_tokens, initial_response_bytes));
     LOG_DEBUG(kLlmToolLoopTag, QString("TOOL LOOP: starting (max %1 rounds, %2 s deadline, %3 input-token budget, "
                                       "%4 output-token budget, model=%5)")
                                    .arg(MAX_ROUNDS)
@@ -141,8 +142,9 @@ LlmResponse LlmService::do_tool_loop(QJsonArray loop_messages, const QString& ur
             LlmResponse round_usage;
             parse_usage(round_usage, rj, provider_);
             llm_tool_loop_add_usage(usage, round_usage);
-            budget.note_prompt_tokens(round_usage.prompt_tokens);
-            budget.note_completion_tokens(round_usage.completion_tokens);
+            budget.note_prompt_tokens(budgeted_llm_tokens(
+                round_usage.prompt_tokens, QJsonDocument(fu).toJson(QJsonDocument::Compact).size()));
+            budget.note_completion_tokens(budgeted_llm_tokens(round_usage.completion_tokens, http.body.size()));
         }
 
         QJsonArray choices = rj["choices"].toArray();
