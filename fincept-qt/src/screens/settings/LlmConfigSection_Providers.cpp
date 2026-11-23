@@ -510,7 +510,7 @@ QWidget* LlmConfigSection::build_global_panel() {
                        ai_chat::kMaxLlmTurnTokens, 1000, QStringLiteral("llmPromptBudgetSpin"));
     prompt_budget_spin_->setSpecialValueText(tr("Unlimited"));
     add_budget_control(completion_budget_lbl_, completion_budget_spin_, tr("Turn Output Tokens"), 0,
-                       ai_chat::kMaxLlmTurnTokens, 1000, QStringLiteral("llmCompletionBudgetSpin"));
+                       ai_chat::kMaxLlmOutputTokens, 1000, QStringLiteral("llmCompletionBudgetSpin"));
     completion_budget_spin_->setSpecialValueText(tr("Unlimited"));
     add_budget_control(summary_context_budget_lbl_, summary_context_budget_spin_, tr("Summary Context Bytes"),
                        ai_chat::kMinLlmSummaryContextBytes, ai_chat::kMaxLlmSummaryContextBytes, 1024,

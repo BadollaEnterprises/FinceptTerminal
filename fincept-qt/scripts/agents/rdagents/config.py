@@ -44,7 +44,7 @@ _DYNAMIC_API_KEY_NAMES: set[str] = set()
 # Default embedding model
 _DEFAULT_EMBEDDING = "text-embedding-3-small"
 _DEFAULT_OUTPUT_TOKENS = 4096
-_MAX_OUTPUT_TOKENS = 2_000_000
+_MAX_OUTPUT_TOKENS = 131_072
 _SINGLE_ATTEMPT_BACKEND = "single_attempt_backend.SingleAttemptLiteLLMBackend"
 
 

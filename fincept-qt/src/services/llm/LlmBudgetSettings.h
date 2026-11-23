@@ -19,6 +19,10 @@ inline constexpr int kDefaultLlmSummaryContextBytes = 12000;
 inline constexpr int kDefaultLlmSummaryOutputTokens = 1024;
 
 inline constexpr int kMaxLlmTurnTokens = 2000000;
+// The largest published interactive output cap in ModelCatalog is 131,072.
+// Keep larger prompt/history imports possible without allowing a malformed or
+// stale profile to request millions of paid completion tokens in one call.
+inline constexpr int kMaxLlmOutputTokens = 131072;
 inline constexpr int kMinLlmSummaryContextBytes = 1024;
 inline constexpr int kMaxLlmSummaryContextBytes = 64000;
 inline constexpr int kMinLlmSummaryOutputTokens = 128;
@@ -42,7 +46,7 @@ inline bool operator==(const LlmBudgetSettings& lhs, const LlmBudgetSettings& rh
 inline LlmBudgetSettings validate_llm_budget_settings(LlmBudgetSettings settings) {
     settings.history_chars = std::clamp(settings.history_chars, 0, kMaxLlmTurnTokens);
     settings.prompt_tokens = std::clamp(settings.prompt_tokens, 0, kMaxLlmTurnTokens);
-    settings.completion_tokens = std::clamp(settings.completion_tokens, 0, kMaxLlmTurnTokens);
+    settings.completion_tokens = std::clamp(settings.completion_tokens, 0, kMaxLlmOutputTokens);
     settings.summary_context_bytes = std::clamp(settings.summary_context_bytes, kMinLlmSummaryContextBytes,
                                                 kMaxLlmSummaryContextBytes);
     settings.summary_output_tokens = std::clamp(settings.summary_output_tokens, kMinLlmSummaryOutputTokens,
@@ -54,9 +58,9 @@ inline LlmBudgetSettings validate_llm_budget_settings(LlmBudgetSettings settings
 /// cost-conscious default, then both the absolute runtime ceiling and the
 /// provider/model ceiling are applied.
 inline int resolve_llm_output_tokens(int requested, int provider_cap, int fallback = 4096) {
-    const int safe_fallback = std::clamp(fallback, 1, kMaxLlmTurnTokens);
+    const int safe_fallback = std::clamp(fallback, 1, kMaxLlmOutputTokens);
     int resolved = requested > 0 ? requested : safe_fallback;
-    resolved = std::clamp(resolved, 1, kMaxLlmTurnTokens);
+    resolved = std::clamp(resolved, 1, kMaxLlmOutputTokens);
     if (provider_cap > 0)
         resolved = std::min(resolved, provider_cap);
     return resolved;

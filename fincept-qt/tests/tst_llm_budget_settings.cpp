@@ -25,12 +25,15 @@ void TestLlmBudgetSettings::defaults_are_cost_conscious() {
 
 void TestLlmBudgetSettings::values_are_clamped_to_runtime_bounds() {
     const LlmBudgetSettings settings = validate_llm_budget_settings({-1, 3000000, -20, 1, 9000});
+    const LlmBudgetSettings high_output =
+        validate_llm_budget_settings({48000, 32000, 3000000, 12000, 1024});
 
     QCOMPARE(settings.history_chars, 0);
     QCOMPARE(settings.prompt_tokens, 2000000);
     QCOMPARE(settings.completion_tokens, 0);
     QCOMPARE(settings.summary_context_bytes, 1024);
     QCOMPARE(settings.summary_output_tokens, 8192);
+    QCOMPARE(high_output.completion_tokens, 131072);
 }
 
 void TestLlmBudgetSettings::config_map_round_trip_uses_stable_keys() {
@@ -49,7 +52,7 @@ void TestLlmBudgetSettings::output_limit_respects_defaults_and_provider_caps() {
     QCOMPARE(resolve_llm_output_tokens(0, 65536), 4096);
     QCOMPARE(resolve_llm_output_tokens(12000, 65536), 12000);
     QCOMPARE(resolve_llm_output_tokens(12000, 2048), 2048);
-    QCOMPARE(resolve_llm_output_tokens(3000000, 0), 2000000);
+    QCOMPARE(resolve_llm_output_tokens(3000000, 0), 131072);
     QCOMPARE(resolve_llm_output_tokens(-1, 0), 4096);
 }
 

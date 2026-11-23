@@ -688,7 +688,7 @@ class AgentProviderPolicyTest(unittest.TestCase):
         models = load_deepagent_models()
         self.assertEqual(models.output_token_limit({}), 4096)
         self.assertEqual(models.output_token_limit({"llm_max_tokens": 0}), 4096)
-        self.assertEqual(models.output_token_limit({"llm_max_tokens": 3000000}), 2000000)
+        self.assertEqual(models.output_token_limit({"llm_max_tokens": 3000000}), 131072)
         self.assertEqual(models.recursion_limit({}), 24)
         self.assertEqual(models.recursion_limit({"recursion_limit": 1}), 8)
         self.assertEqual(models.recursion_limit({"recursion_limit": 1000}), 64)
@@ -754,7 +754,7 @@ class AgentProviderPolicyTest(unittest.TestCase):
         self.assertEqual(models.output_token_limit(0), 4096)
         self.assertEqual(models.output_token_limit("bad"), 4096)
         self.assertEqual(models.output_token_limit(777), 777)
-        self.assertEqual(models.output_token_limit(10**12), 2_000_000)
+        self.assertEqual(models.output_token_limit(10**12), 131_072)
 
         source = MODEL_REGISTRY.read_text(encoding="utf-8")
         create = source[source.index("def create_model(") :]
@@ -964,7 +964,7 @@ class AgentProviderPolicyTest(unittest.TestCase):
             values = config.apply_llm_config({
                 "llm_provider": "deepseek", "llm_api_key": "owned", "llm_max_tokens": 10**12,
             })
-            self.assertEqual(values["CHAT_MAX_TOKENS"], "2000000")
+            self.assertEqual(values["CHAT_MAX_TOKENS"], "131072")
 
         with mock.patch.dict(os.environ, {}, clear=True):
             values = config.apply_llm_config({

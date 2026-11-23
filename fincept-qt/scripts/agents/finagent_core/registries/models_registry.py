@@ -267,7 +267,7 @@ class ModelsRegistry:
 
     _loaded_models: Dict[str, Any] = {}
     _DEFAULT_OUTPUT_TOKENS = 4096
-    _MAX_OUTPUT_TOKENS = 2_000_000
+    _MAX_OUTPUT_TOKENS = 131_072
 
     @classmethod
     def output_token_limit(cls, value: Any) -> int:
