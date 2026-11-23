@@ -271,6 +271,10 @@ class ResumableTaskRunner:
         self.api_keys = api_keys
         self.state_mgr = TaskStateManager(db_path)
 
+    def _record_llm_call(self, prompt: str, response: Any) -> None:
+        """Hook for runners that maintain a cumulative provider budget."""
+        return None
+
     def _plan_steps(self, query: str, config: Dict[str, Any]) -> Dict[str, Any]:
         """
         Generate a structured ExecutionPlan dict for the query via the shared
@@ -280,7 +284,12 @@ class ResumableTaskRunner:
         from finagent_core.execution_planner import generate_dynamic_plan
         from finagent_core.run_errors import RunFailed
 
-        result = generate_dynamic_plan(query, api_keys=self.api_keys, caller_config=config)
+        result = generate_dynamic_plan(
+            query,
+            api_keys=self.api_keys,
+            caller_config=config,
+            on_llm_call=self._record_llm_call,
+        )
         if not result.get("success"):
             # No usable model (or planning failed outright): the task fails
             # with that reason. It used to continue on a canned plan and end
@@ -399,6 +408,7 @@ Synthesize all of the above into a single comprehensive, well-structured final a
 
         agent = CoreAgent(api_keys=self.api_keys)
         response = agent.run(prompt, synthesis_config)
+        self._record_llm_call(prompt, response)
         from finagent_core.run_errors import content_or_raise
         return content_or_raise(response, agent.get_response_content)
 

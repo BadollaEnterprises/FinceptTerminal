@@ -298,7 +298,7 @@ with section("S9: planner-prompt injection of skills/memory/lessons"):
     captured = []
     import finagent_core.execution_planner as ep_mod
     real_fn = ep_mod.generate_dynamic_plan
-    def spy(q, api_keys=None, caller_config=None):
+    def spy(q, api_keys=None, caller_config=None, on_llm_call=None):
         captured.append(q)
         return {"success": True, "plan": {
             "id": "t", "name": "T", "description": q,

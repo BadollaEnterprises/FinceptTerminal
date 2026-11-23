@@ -18,7 +18,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 
 _CRITIC_SYSTEM_PROMPT = """You are a critical reviewer of an autonomous AI agent's progress on a financial task.
@@ -83,6 +83,7 @@ class Reflector:
         prior_results: List[Dict[str, Any]],
         config: Dict[str, Any],
         budget_snapshot: Optional[Dict[str, Any]] = None,
+        on_llm_call: Optional[Callable[[str, Any], None]] = None,
     ) -> ReflectorDecision:
         # ── Layer 1: deterministic structural signals (model-agnostic) ──────
         # Pattern-match the step output for cues NO model should miss. Fires
@@ -156,6 +157,8 @@ class Reflector:
             from finagent_core.core_agent import CoreAgent
             agent = CoreAgent(api_keys=self.api_keys)
             response = agent.run(prompt, critic_config)
+            if on_llm_call is not None:
+                on_llm_call(prompt, response)
             from finagent_core.run_errors import run_error_text
             if run_error_text(response):
                 # The critic's model failed; its error text is not a verdict.

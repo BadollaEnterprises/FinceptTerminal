@@ -27,6 +27,10 @@ LLM_SERVICE_SOURCE = LLM_SERVICE_HEADER.with_suffix(".cpp")
 LLM_MODELS_API = LLM_SERVICE_HEADER.with_name("LlmModelsApi.cpp")
 AGENT_MAIN = MODULE.with_name("main.py")
 AGENT_BUDGET = MODULE.parent / "agentic" / "budget.py"
+AGENTIC_RUNNER = MODULE.parent / "agentic" / "runner.py"
+AGENT_REFLECTOR = MODULE.parent / "agentic" / "reflector.py"
+TASK_STATE = MODULE.parent / "task_state.py"
+EXECUTION_PLANNER = MODULE.parent / "execution_planner.py"
 INPUT_BUDGET = MODULE.parent / "input_budget.py"
 DEEPAGENT_CLI = MODULE.parent.parent / "deepagents" / "cli.py"
 AI_QUANT_SERVICE = MODULE.parents[3] / "src" / "services" / "ai_quant_lab" / "AIQuantLabService.cpp"
@@ -200,6 +204,38 @@ class AgentProviderPolicyTest(unittest.TestCase):
         guard.record_llm_call("prompt", Response())
         self.assertGreaterEqual(guard.tokens_used, 100)
         self.assertGreaterEqual(guard.cost_used, 0.25)
+
+    def test_agentic_budget_accounts_for_every_internal_model_call(self):
+        task_state = TASK_STATE.read_text(encoding="utf-8")
+        planner = EXECUTION_PLANNER.read_text(encoding="utf-8")
+        runner = AGENTIC_RUNNER.read_text(encoding="utf-8")
+        reflector = AGENT_REFLECTOR.read_text(encoding="utf-8")
+
+        plan_method = task_state[
+            task_state.index("def _plan_steps") : task_state.index("def _fallback_step")
+        ]
+        synth_method = task_state[
+            task_state.index("def _synthesize") : task_state.index("# ─── Module-level")
+        ]
+        self.assertIn("on_llm_call=self._record_llm_call", plan_method)
+        self.assertIn("self._record_llm_call(prompt, response)", synth_method)
+        self.assertIn("on_llm_call: Optional", planner)
+        self.assertIn("on_llm_call(prompt, response)", planner)
+        self.assertIn("on_llm_call=self._record_llm_call", runner)
+        self.assertIn("on_llm_call(prompt, response)", reflector)
+
+    def test_agentic_budget_stops_before_post_step_hidden_calls(self):
+        runner = AGENTIC_RUNNER.read_text(encoding="utf-8")
+        loop = runner[runner.index("def _run_loop") : runner.index("def _compose_skill_hints")]
+        record_step = loop.index("self._budget.record_step()")
+        reflector = loop.index("self._reflector.assess(")
+        synthesize = loop.index("self._synthesize(")
+        checks = [
+            pos for pos in range(len(loop))
+            if loop.startswith("self._stop_if_budget_breached(", pos)
+        ]
+        self.assertTrue(any(record_step < pos < reflector for pos in checks))
+        self.assertTrue(any(reflector < pos < synthesize for pos in checks))
 
     def test_deepseek_wins_over_legacy_and_other_keys(self):
         policy = load_module()

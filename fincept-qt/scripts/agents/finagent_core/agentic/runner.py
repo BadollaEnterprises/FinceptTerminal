@@ -114,6 +114,32 @@ class AgenticRunner(ResumableTaskRunner):
             return status
         return None
 
+    def _record_llm_call(self, prompt: str, response: Any) -> None:
+        """Charge every internal model call to the active task budget."""
+        if self._budget is None:
+            return
+        try:
+            self._budget.record_llm_call(prompt, response)
+        except Exception as exc:
+            logger.warning("LLM call could not be recorded in the budget error=%s",
+                           type(exc).__name__)
+
+    def _stop_if_budget_breached(
+        self, task_id: str, at_step: int
+    ) -> Optional[Dict[str, Any]]:
+        if self._budget is None:
+            return None
+        breach = self._budget.breach()
+        if breach is None:
+            return None
+        self.state_mgr.update_status(task_id, "failed_budget")
+        self._emit(
+            "budget_stop",
+            {"task_id": task_id, "at_step": at_step, "breach": breach,
+             "budget": self._budget.snapshot()},
+        )
+        return {"success": False, "task_id": task_id, "budget_stop": breach}
+
     # ── Public lifecycle ─────────────────────────────────────────────────────
 
     def start_task(self, query: str, config: Dict[str, Any]) -> Dict[str, Any]:
@@ -221,15 +247,8 @@ class AgenticRunner(ResumableTaskRunner):
                 if i >= len(steps):
                     break
 
-                breach = self._budget.breach()
-                if breach is not None:
-                    self.state_mgr.update_status(task_id, "failed_budget")
-                    self._emit(
-                        "budget_stop",
-                        {"task_id": task_id, "at_step": global_idx, "breach": breach,
-                         "budget": self._budget.snapshot()},
-                    )
-                    return {"success": False, "task_id": task_id, "budget_stop": breach}
+                if stopped := self._stop_if_budget_breached(task_id, global_idx):
+                    return stopped
 
                 ctrl = self._check_control(task_id)
                 if ctrl == "cancel_requested":
@@ -271,12 +290,18 @@ class AgenticRunner(ResumableTaskRunner):
                      "budget": self._budget.snapshot()},
                 )
 
+                # A step can consume the remaining allowance. Do not spend one
+                # more hidden critic call before the next loop iteration sees it.
+                if stopped := self._stop_if_budget_breached(task_id, global_idx + 1):
+                    return stopped
+
                 # Reflector decides whether to continue, re-plan, ask, or finish.
                 if reflector_enabled:
                     decision = self._reflector.assess(
                         query=query, plan=plan, step=step, step_result=step_result,
                         prior_results=all_results, config=config,
                         budget_snapshot=self._budget.snapshot(),
+                        on_llm_call=self._record_llm_call,
                     )
                     # Persist the verdict to the Reflexion store. Only
                     # interesting decisions (replan/question/done) are
@@ -296,6 +321,10 @@ class AgenticRunner(ResumableTaskRunner):
                         {"task_id": task_id, "step_index": global_idx,
                          "decision": decision.to_dict()},
                     )
+                    # The critic itself is billable. If it crossed a ceiling,
+                    # do not follow it with a replan or final synthesis call.
+                    if stopped := self._stop_if_budget_breached(task_id, global_idx + 1):
+                        return stopped
                     if decision.decision == "done":
                         break
                     if decision.decision == "replan":
@@ -328,6 +357,11 @@ class AgenticRunner(ResumableTaskRunner):
                 i += 1
                 global_idx += 1
 
+            # Resume can enter with every saved step already complete, so the
+            # loop body (and its checks) may not run at all. Never let that
+            # bypass the cumulative step ceiling before final synthesis.
+            if stopped := self._stop_if_budget_breached(task_id, global_idx):
+                return stopped
             final = self._synthesize(query, all_results, config)
             self.state_mgr.complete_task(task_id, final)
 

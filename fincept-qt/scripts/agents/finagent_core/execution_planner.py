@@ -673,7 +673,12 @@ Rules:
 - Return ONLY valid JSON, no markdown fences, no extra text"""
 
 
-def generate_dynamic_plan(query: str, api_keys: Dict[str, str] = None, caller_config: Dict[str, Any] = None) -> Dict[str, Any]:
+def generate_dynamic_plan(
+    query: str,
+    api_keys: Dict[str, str] = None,
+    caller_config: Dict[str, Any] = None,
+    on_llm_call: Optional[Callable[[str, Any], None]] = None,
+) -> Dict[str, Any]:
     """
     Use an LLM to dynamically generate an execution plan from a natural language query.
     Returns an ExecutionPlan dict ready for display and execution.
@@ -711,6 +716,8 @@ def generate_dynamic_plan(query: str, api_keys: Dict[str, str] = None, caller_co
         )
 
         response = agent.run(prompt, config)
+        if on_llm_call is not None:
+            on_llm_call(prompt, response)
     except Exception as e:
         # Model construction/connection errors are failures, never a
         # substitute plan.
