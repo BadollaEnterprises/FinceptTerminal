@@ -8,10 +8,8 @@
 //   tool call     → tool_stream_prefix() + label + "\n"           (start line)
 //   tool result   → tool_stream_prefix() + encode_tool_done() + "\n" (completion record)
 
-#include "core/config/AppConfig.h"
 #include "core/logging/Logger.h"
 #include "services/harness/HarnessChatBackend.h"
-#include "services/llm/LlmBudgetSettings.h"
 #include "services/llm/LlmRequestPolicy.h"
 #include "services/llm/LlmService.h"
 #include "services/llm/LlmToolActivity.h"
@@ -20,10 +18,8 @@
 
 #include <QElapsedTimer>
 #include <QHash>
-#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
-#include <QVariant>
 
 #include <limits>
 #include <memory>
@@ -40,33 +36,6 @@ int lhb_timeout_ms(const QString& feature) {
     if (feature == QLatin1String(kFeatureQuickAsk))
         return 5 * 60 * 1000;
     return 10 * 60 * 1000;
-}
-
-QString lhb_request_budget_error(const harness::HarnessChatRequest& req) {
-    QJsonArray history;
-    for (const harness::ChatTurn& turn : req.history) {
-        history.append(QJsonObject{{QStringLiteral("role"), turn.role},
-                                   {QStringLiteral("content"), turn.content}});
-    }
-    const QJsonObject request{{QStringLiteral("system_prompt"), req.system_prompt},
-                              {QStringLiteral("user_message"), req.user_message},
-                              {QStringLiteral("history"), history},
-                              {QStringLiteral("json_schema"), req.json_schema},
-                              {QStringLiteral("model"), req.model},
-                              {QStringLiteral("effort"), req.effort}};
-    const qint64 bytes = QJsonDocument(request).toJson(QJsonDocument::Compact).size();
-
-    LlmBudgetSettings settings;
-    settings.prompt_tokens =
-        AppConfig::instance().get(kLlmPromptTokensKey, QVariant(kDefaultLlmPromptTokens)).toInt();
-    const int budget = validate_llm_budget_settings(settings).prompt_tokens;
-    if (llm_request_fits_prompt_budget(bytes, budget))
-        return {};
-    return QStringLiteral("This complete AI request is conservatively estimated at %1 input tokens, above the "
-                          "configured %2-token Turn Input limit. No external model process was started. Shorten "
-                          "the system prompt/message or raise Turn Input Tokens in Settings → LLM Configuration.")
-        .arg(budgeted_llm_tokens(0, bytes))
-        .arg(budget);
 }
 
 struct LhbToolStart {
@@ -99,14 +68,6 @@ LlmResponse LlmService::do_harness_request(const QString& user_message, const st
         req.tools = detail::should_hide_navigation() ? harness::ChatTools::NoNavigation : harness::ChatTools::All;
     req.require_api_key_source = harness_require_key_source_;
     req.timeout_ms = lhb_timeout_ms(route_feature_);
-
-    if (const QString error = lhb_request_budget_error(req); !error.isEmpty()) {
-        LlmResponse resp;
-        resp.error = error;
-        resp.provider = provider_;
-        resp.model = model_;
-        return resp;
-    }
 
     // ── Channels → chunks ──
     auto tools = std::make_shared<QHash<QString, LhbToolStart>>();

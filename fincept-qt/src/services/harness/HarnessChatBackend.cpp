@@ -2,10 +2,12 @@
 
 #include "services/harness/HarnessChatBackend.h"
 
+#include "core/config/AppConfig.h"
 #include "core/config/AppPaths.h"
 #include "core/logging/Logger.h"
 #include "core/process/HostExec.h"
 #include "mcp/server/McpHttpServer.h"
+#include "services/harness/HarnessChatBudget.h"
 #include "services/harness/HarnessChatRun.h"
 #include "services/harness/HarnessEligibility.h"
 #include "services/harness/HarnessLaunch.h"
@@ -19,6 +21,7 @@
 #include <QPointer>
 #include <QSemaphore>
 #include <QThread>
+#include <QVariant>
 
 #include <atomic>
 #include <memory>
@@ -192,6 +195,18 @@ HarnessChatResult HarnessChatBackend::complete(const HarnessChatRequest& req, co
         r.failure = FailureKind::Other;
         r.error = QStringLiteral("Internal error: a harness call was made on the GUI thread.");
         LOG_ERROR(kHcbTag, "complete() called on the GUI thread — refused");
+        return r;
+    }
+    ai_chat::LlmBudgetSettings budget_settings;
+    budget_settings.prompt_tokens =
+        AppConfig::instance()
+            .get(ai_chat::kLlmPromptTokensKey, QVariant(ai_chat::kDefaultLlmPromptTokens))
+            .toInt();
+    const int prompt_token_budget = ai_chat::validate_llm_budget_settings(budget_settings).prompt_tokens;
+    if (const QString error = harness_chat_request_budget_error(req, prompt_token_budget); !error.isEmpty()) {
+        r.failure = FailureKind::Other;
+        r.error = error;
+        LOG_WARN(kHcbTag, QStringLiteral("Harness request refused by the Turn Input guardrail"));
         return r;
     }
     QElapsedTimer clock;

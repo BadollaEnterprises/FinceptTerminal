@@ -124,12 +124,12 @@ class CommunityPolicyTest : public QObject {
     }
 
     void harness_chat_obeys_the_global_turn_input_ceiling() {
-        QFile source(QStringLiteral(FINCEPT_SOURCE_DIR "/src/services/llm/LlmHarnessBridge.cpp"));
+        QFile source(QStringLiteral(FINCEPT_SOURCE_DIR "/src/services/harness/HarnessChatBackend.cpp"));
         QVERIFY2(source.open(QIODevice::ReadOnly), qPrintable(source.errorString()));
         const QByteArray code = source.readAll();
         QVERIFY2(code.contains("kLlmPromptTokensKey"),
                  "Harness-backed chat must read the same complete-input budget as direct API providers");
-        QVERIFY2(code.contains("llm_request_fits_prompt_budget("),
+        QVERIFY2(code.contains("harness_chat_request_budget_error("),
                  "Harness-backed chat must reject an oversized request before launching an external model process");
     }
 

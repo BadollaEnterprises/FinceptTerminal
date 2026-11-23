@@ -15,6 +15,7 @@
 // refused before any output, and the process pool.
 
 #include "services/harness/HarnessChatRun.h"
+#include "services/harness/HarnessChatBudget.h"
 #include "services/harness/HarnessEligibility.h"
 #include "services/harness/HarnessProcessPool.h"
 #include "services/harness/IHarnessAdapter.h"
@@ -299,6 +300,7 @@ class TestHarnessChat : public QObject {
     void claude_chat_refuses_old_version_and_writes();
     void codex_chat_argv();
     void flatten_prompt_and_system_prompt();
+    void request_budget_covers_complete_payload();
     void claude_stream_maps_to_chat_channels();
     void codex_stream_maps_to_chat_channels();
     void failure_before_output_falls_back();
@@ -431,6 +433,17 @@ void TestHarnessChat::flatten_prompt_and_system_prompt() {
     QVERIFY(!prompt.contains(QStringLiteral("Node instructions."))); // system turns go to the system prompt
     QCOMPARE(chat_system_prompt(r.system_prompt, r.history), QStringLiteral("You are Fincept AI.\n\nNode instructions."));
     QCOMPARE(flatten_chat_prompt({}, QStringLiteral("just this")), QStringLiteral("just this"));
+}
+
+void TestHarnessChat::request_budget_covers_complete_payload() {
+    HarnessChatRequest req = thc_request(QStringLiteral("claude"));
+    QVERIFY(harness_chat_request_budget_error(req, 32000).isEmpty());
+    req.json_schema = QString(1000, QLatin1Char('x'));
+    const qint64 bytes = harness_chat_request_payload_bytes(req);
+    QVERIFY(bytes > 1000);
+    QVERIFY(harness_chat_request_budget_error(req, 0).isEmpty());
+    QVERIFY(!harness_chat_request_budget_error(req, 1).isEmpty());
+    QCOMPARE(harness_chat_request_budget_error(req, static_cast<int>((bytes + 2) / 3 + 1)), QString());
 }
 
 void TestHarnessChat::claude_stream_maps_to_chat_channels() {
