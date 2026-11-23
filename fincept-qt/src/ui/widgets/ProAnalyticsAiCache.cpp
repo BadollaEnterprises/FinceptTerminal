@@ -87,15 +87,22 @@ void prune_cache(const QString& directory, int max_entries) {
 } // namespace
 
 QString explanation_cache_key(const QString& prompt, const QString& provider, const QString& model,
-                              int prompt_version) {
+                              int prompt_version, const QString& route_identity) {
     QByteArray material = QByteArray::number(prompt_version);
     material += '\0';
     material += provider.trimmed().toLower().toUtf8();
     material += '\0';
     material += model.trimmed().toUtf8();
     material += '\0';
+    material += route_identity.trimmed().toUtf8();
+    material += '\0';
     material += prompt.toUtf8();
     return QString::fromLatin1(QCryptographicHash::hash(material, QCryptographicHash::Sha256).toHex());
+}
+
+bool explanation_response_is_cacheable(bool success, bool cancelled, const QString& explanation,
+                                       const QString& fallback_notice) {
+    return success && !cancelled && !explanation.trimmed().isEmpty() && fallback_notice.isEmpty();
 }
 
 std::optional<CachedExplanation> load_explanation_cache(const QString& directory, const QString& key,

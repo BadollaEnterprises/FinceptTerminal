@@ -85,12 +85,14 @@ void prune_cache(const QString& directory, int max_entries) {
 } // namespace
 
 QString draft_cache_key(const QString& system, const QString& user, const QString& provider,
-                        const QString& model, int prompt_version) {
+                        const QString& model, int prompt_version, const QString& route_identity) {
     QByteArray material = QByteArray::number(prompt_version);
     material += '\0';
     material += provider.trimmed().toLower().toUtf8();
     material += '\0';
     material += model.trimmed().toUtf8();
+    material += '\0';
+    material += route_identity.trimmed().toUtf8();
     material += '\0';
     material += system.toUtf8();
     material += '\0';

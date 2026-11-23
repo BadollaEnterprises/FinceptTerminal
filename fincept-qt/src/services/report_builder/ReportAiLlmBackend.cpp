@@ -58,7 +58,8 @@ void ReportAiLlmBackend::start(quint64 id, const QString& system, const QString&
     const QString sid = session_id_for(id);
     const ai_chat::ModelChoice choice =
         ai_chat::ModelRouter::instance().resolve(QString::fromLatin1(kReportDraftFeature));
-    const QString cache_key = report_ai_cache::draft_cache_key(system, user, choice.provider_id(), choice.model);
+    const QString cache_key =
+        report_ai_cache::draft_cache_key(system, user, choice.provider_id(), choice.model, 1, choice.profile_id);
     Pending p;
     p.id = id;
     p.cache_key = cache_key;

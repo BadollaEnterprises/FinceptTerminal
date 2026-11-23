@@ -27,6 +27,10 @@ void TestReportAiCache::key_is_prompt_and_route_specific() {
                                    QStringLiteral("deepseek"), QStringLiteral("deepseek-flash")));
     QVERIFY(key != draft_cache_key(QStringLiteral("rules"), QStringLiteral("draft this"),
                                    QStringLiteral("openai"), QStringLiteral("gpt-5")));
+    QVERIFY(draft_cache_key(QStringLiteral("rules"), QStringLiteral("draft this"), QStringLiteral("deepseek"),
+                            QStringLiteral("deepseek-flash"), 1, QStringLiteral("profile-a")) !=
+            draft_cache_key(QStringLiteral("rules"), QStringLiteral("draft this"), QStringLiteral("deepseek"),
+                            QStringLiteral("deepseek-flash"), 1, QStringLiteral("profile-b")));
 }
 
 void TestReportAiCache::round_trip_and_expiry() {

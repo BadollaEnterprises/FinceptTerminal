@@ -12,6 +12,7 @@ class TestProAnalyticsAiCache : public QObject {
 
   private slots:
     void key_is_prompt_and_route_specific();
+    void fallback_answers_are_not_cacheable_under_the_primary_route();
     void round_trip_and_expiry();
     void rejects_empty_and_corrupt_entries();
     void retention_removes_the_oldest_entry();
@@ -27,6 +28,19 @@ void TestProAnalyticsAiCache::key_is_prompt_and_route_specific() {
                                        QStringLiteral("gpt-5")));
     QVERIFY(a != explanation_cache_key(QStringLiteral("report-a"), QStringLiteral("deepseek"),
                                        QStringLiteral("deepseek-reasoner")));
+    QVERIFY(explanation_cache_key(QStringLiteral("report-a"), QStringLiteral("deepseek"),
+                                  QStringLiteral("deepseek-chat"), 1, QStringLiteral("profile-a")) !=
+            explanation_cache_key(QStringLiteral("report-a"), QStringLiteral("deepseek"),
+                                  QStringLiteral("deepseek-chat"), 1, QStringLiteral("profile-b")));
+}
+
+void TestProAnalyticsAiCache::fallback_answers_are_not_cacheable_under_the_primary_route() {
+    QVERIFY(explanation_response_is_cacheable(true, false, QStringLiteral("A useful explanation."), {}));
+    QVERIFY(!explanation_response_is_cacheable(false, false, QStringLiteral("partial"), {}));
+    QVERIFY(!explanation_response_is_cacheable(true, true, QStringLiteral("partial"), {}));
+    QVERIFY(!explanation_response_is_cacheable(true, false, QStringLiteral("  "), {}));
+    QVERIFY(!explanation_response_is_cacheable(true, false, QStringLiteral("fallback answer"),
+                                               QStringLiteral("Primary unavailable")));
 }
 
 void TestProAnalyticsAiCache::round_trip_and_expiry() {

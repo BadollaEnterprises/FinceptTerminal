@@ -638,7 +638,8 @@ void ProAnalyticsPanel::run_ai_explanation(const QJsonObject& report, const QJso
     const QString prompt = pro_ai::explanation_prompt(pro::title(request_.kind), report, meta);
     const ai_chat::ModelChoice choice =
         ai_chat::ModelRouter::instance().resolve(QString::fromLatin1(ai_chat::kFeatureProAnalyticsExplain));
-    const QString cache_key = pro_ai::explanation_cache_key(prompt, choice.provider_id(), choice.model);
+    const QString cache_key =
+        pro_ai::explanation_cache_key(prompt, choice.provider_id(), choice.model, 1, choice.profile_id);
     const QString cache_dir = AppPaths::cache() + QStringLiteral("/pro_analytics_ai");
     const bool bypass_cache = button->property("proAnalyticsBypassCache").toBool();
     if (!bypass_cache) {
@@ -672,7 +673,8 @@ void ProAnalyticsPanel::run_ai_explanation(const QJsonObject& report, const QJso
         route.feature = QString::fromLatin1(ai_chat::kFeatureProAnalyticsExplain);
         const ai_chat::LlmResponse response = ai_chat::LlmService::instance().chat(prompt, {}, false, route);
         const auto explanation = response.success ? pro_ai::clean_explanation(response.content) : std::nullopt;
-        if (explanation) {
+        if (explanation && pro_ai::explanation_response_is_cacheable(
+                               response.success, response.cancelled, *explanation, response.fallback_notice)) {
             pro_ai::CachedExplanation entry;
             entry.text = *explanation;
             entry.route_label = response.route_label;

@@ -1,6 +1,6 @@
 #pragma once
 // Device-local cache for successful Report Builder AI drafts. Cache keys bind
-// the exact prompt to the selected provider/model; API keys are never stored.
+// the exact prompt to the selected provider/model/profile; API keys are never stored.
 
 #include <QString>
 
@@ -18,7 +18,8 @@ struct DraftCacheEntry {
 };
 
 QString draft_cache_key(const QString& system, const QString& user, const QString& provider,
-                        const QString& model, int prompt_version = 1);
+                        const QString& model, int prompt_version = 1,
+                        const QString& route_identity = {});
 
 std::optional<DraftCacheEntry> load_draft_cache(const QString& directory, const QString& key,
                                                 qint64 now_ms, qint64 max_age_ms = kDraftCacheMaxAgeMs);

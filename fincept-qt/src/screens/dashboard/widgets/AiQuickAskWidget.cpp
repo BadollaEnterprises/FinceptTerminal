@@ -207,7 +207,8 @@ void AiQuickAskWidget::on_ask() {
     answer_->clear();
 
     pending_cache_key_ = QStringLiteral("ai:quick_ask:") +
-                         quick_ask_answer_cache_key(question, choice.provider_id(), choice.model);
+                         quick_ask_answer_cache_key(question, choice.provider_id(), choice.model, 1,
+                                                    choice.profile_id);
     if (const auto cached = CacheManager::instance().try_get(pending_cache_key_)) {
         pending_cache_key_.clear();
         stream_buffer_ = cached->trimmed();

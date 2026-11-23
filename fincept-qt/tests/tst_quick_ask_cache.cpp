@@ -29,6 +29,10 @@ void TestQuickAskCache::key_is_question_and_route_specific() {
     QVERIFY(key != quick_ask_answer_cache_key(QStringLiteral("Explain VaR"),
                                               QStringLiteral("deepseek"),
                                               QStringLiteral("deepseek-reasoner")));
+    QVERIFY(quick_ask_answer_cache_key(QStringLiteral("Explain VaR"), QStringLiteral("deepseek"),
+                                       QStringLiteral("deepseek-chat"), 1, QStringLiteral("profile-a")) !=
+            quick_ask_answer_cache_key(QStringLiteral("Explain VaR"), QStringLiteral("deepseek"),
+                                       QStringLiteral("deepseek-chat"), 1, QStringLiteral("profile-b")));
 }
 
 void TestQuickAskCache::successful_primary_answers_only() {
