@@ -27,6 +27,7 @@ from finagent_core.agentic.budget import BudgetGuard
 from finagent_core.agentic.reflector import Reflector, ReflectorDecision
 from finagent_core.agentic.reflexion_store import ReflexionStore
 from finagent_core.agentic.skill_library import SkillLibrary
+from finagent_core.persistence_policy import sanitize_persisted_config
 from finagent_core.run_errors import explain_llm_error
 from finagent_core.task_state import ResumableTaskRunner
 
@@ -52,11 +53,7 @@ def persistable_config(config: Dict[str, Any]) -> Dict[str, Any]:
     """The agent config as it may be stored in agent_tasks.config_json: per-run
     bridge wiring removed, and no credential (the model block keeps provider /
     model id but loses api_key; main.py injects a live key on every run)."""
-    out = {k: v for k, v in (config or {}).items() if k not in _RUNTIME_CONFIG_KEYS}
-    model = out.get("model")
-    if isinstance(model, dict) and "api_key" in model:
-        out["model"] = {k: v for k, v in model.items() if k != "api_key"}
-    return out
+    return sanitize_persisted_config(config or {})
 
 
 def overlay_runtime_config(stored: Dict[str, Any], live: Optional[Dict[str, Any]]) -> Dict[str, Any]:

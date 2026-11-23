@@ -28,6 +28,10 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
 from finagent_core.paths import agent_tasks_db_path
+from finagent_core.persistence_policy import (
+    sanitize_persisted_config,
+    scrub_persisted_config_rows,
+)
 
 
 # Shared agentic DB in the per-profile agent data dir — see finagent_core/paths.py.
@@ -69,6 +73,7 @@ class ScheduledTaskStore:
         with self._conn() as conn:
             conn.execute(_CREATE_TABLE)
             conn.execute(_CREATE_INDEX)
+            scrub_persisted_config_rows(conn, "agent_scheduled_tasks")
 
     # ── CRUD ─────────────────────────────────────────────────────────────────
 
@@ -92,7 +97,7 @@ class ScheduledTaskStore:
                 "INSERT INTO agent_scheduled_tasks "
                 "(id, name, query, config_json, schedule_expr, enabled, next_run_at, created_at) "
                 "VALUES (?, ?, ?, ?, ?, 1, ?, ?)",
-                (sid, name.strip(), query, json.dumps(config or {}),
+                (sid, name.strip(), query, json.dumps(sanitize_persisted_config(config or {})),
                  schedule_expr.strip(), next_run.isoformat(), now.isoformat()),
             )
         return sid

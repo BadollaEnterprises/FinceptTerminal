@@ -33,6 +33,10 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from finagent_core.paths import agent_tasks_db_path
+from finagent_core.persistence_policy import (
+    sanitize_persisted_config,
+    scrub_persisted_config_rows,
+)
 
 
 # ─── Schema ──────────────────────────────────────────────────────────────────
@@ -86,6 +90,7 @@ class TaskStateManager:
                 conn.execute("ALTER TABLE agent_tasks ADD COLUMN pending_answer TEXT")
             if "budget_json" not in cols:
                 conn.execute("ALTER TABLE agent_tasks ADD COLUMN budget_json TEXT")
+            scrub_persisted_config_rows(conn, "agent_tasks")
 
     # ── CRUD ─────────────────────────────────────────────────────────────────
 
@@ -97,7 +102,7 @@ class TaskStateManager:
             conn.execute(
                 "INSERT INTO agent_tasks (id, query, config_json, steps_json, status, current_step, created_at, updated_at) "
                 "VALUES (?, ?, ?, '[]', 'pending', 0, ?, ?)",
-                (task_id, query, json.dumps(config), now, now)
+                (task_id, query, json.dumps(sanitize_persisted_config(config)), now, now)
             )
         return task_id
 
