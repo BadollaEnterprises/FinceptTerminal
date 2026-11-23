@@ -79,6 +79,25 @@ def recursion_limit(config: dict[str, Any]) -> int:
     )
 
 
+def deepseek_thinking_policy(config: dict[str, Any]) -> dict[str, Any]:
+    """Make background DeepSeek work non-thinking unless explicitly requested."""
+    requested = str(
+        config.get("llm_reasoning_effort")
+        or config.get("reasoning_effort")
+        or ""
+    ).strip().lower()
+    if requested in {"high", "xhigh"}:
+        effort, thinking_type = "high", "enabled"
+    elif requested == "max":
+        effort, thinking_type = "max", "enabled"
+    else:
+        effort, thinking_type = "none", "disabled"
+    return {
+        "reasoning_effort": effort,
+        "extra_body": {"thinking": {"type": thinking_type}},
+    }
+
+
 def provider_policy_error(config: dict[str, Any]) -> str | None:
     """Return a user-facing error for routes this product must never execute."""
     provider = str(config.get("llm_provider") or "").lower().strip()
@@ -181,13 +200,16 @@ def create_model(config: dict[str, Any]):
         url = base_url or _OPENAI_COMPAT[provider]
         if url is None:
             raise ValueError(f"llm_base_url is required for provider '{provider}'")
-        return ChatOpenAI(
+        kwargs = dict(
             api_key=api_key,
             model=model or "default",
             base_url=url,
             max_tokens=max_tokens,
             max_retries=0,
         )
+        if provider == "deepseek":
+            kwargs.update(deepseek_thinking_policy(config))
+        return ChatOpenAI(**kwargs)
 
     raise ValueError(
         f"Unknown llm_provider '{provider}'. "

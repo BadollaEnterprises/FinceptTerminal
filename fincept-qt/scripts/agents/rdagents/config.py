@@ -58,6 +58,15 @@ def _bounded_output_tokens(value: Any) -> int:
     return min(parsed, _MAX_OUTPUT_TOKENS)
 
 
+def _deepseek_reasoning_effort(value: Any) -> str:
+    requested = str(value or "").strip().lower()
+    if requested in {"high", "xhigh"}:
+        return "high"
+    if requested == "max":
+        return "max"
+    return "none"
+
+
 def apply_llm_config(config: dict[str, Any]) -> dict[str, str]:
     """
     Translate Fincept LLM config dict into rdagent env vars.
@@ -154,6 +163,21 @@ def apply_llm_config(config: dict[str, Any]) -> dict[str, str]:
         env_vars[name] = _SINGLE_ATTEMPT_BACKEND
         os.environ[name] = _SINGLE_ATTEMPT_BACKEND
 
+    # RD-Agent's settings type cannot represent DeepSeek's non-thinking
+    # ``none`` effort. Pass a small Fincept-only marker to our backend so it
+    # can add both provider fields immediately before LiteLLM dispatch.
+    fincept_effort = (
+        _deepseek_reasoning_effort(config.get("llm_reasoning_effort"))
+        if provider == "deepseek"
+        else ""
+    )
+    for name, value in (
+        ("FINCEPT_LLM_PROVIDER", provider),
+        ("FINCEPT_REASONING_EFFORT", fincept_effort),
+    ):
+        env_vars[name] = value
+        os.environ[name] = value
+
     # --- Embedding model ---
     embedding_model = config.get("llm_embedding_model", _DEFAULT_EMBEDDING)
     env_vars["EMBEDDING_MODEL"] = embedding_model
@@ -168,6 +192,7 @@ def clear_llm_config() -> None:
                 "CHAT_OPENAI_BASE_URL", "OPENAI_API_BASE", "CHAT_MAX_TOKENS",
                 "LITELLM_CHAT_MAX_TOKENS", "MAX_RETRY", "LITELLM_MAX_RETRY",
                 "BACKEND", "LITELLM_BACKEND",
+                "FINCEPT_LLM_PROVIDER", "FINCEPT_REASONING_EFFORT",
                 "EMBEDDING_MODEL", *_PROVIDER_API_KEY_NAMES, *_DYNAMIC_API_KEY_NAMES):
         os.environ.pop(key, None)
     _DYNAMIC_API_KEY_NAMES.clear()

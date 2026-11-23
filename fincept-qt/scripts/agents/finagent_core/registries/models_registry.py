@@ -316,6 +316,16 @@ class ModelsRegistry:
             loopback = len(octets) == 4 and all(part.isdigit() and 0 <= int(part) <= 255 for part in octets)
         return bool(host) and (scheme == "https" or (scheme == "http" and loopback))
 
+    @staticmethod
+    def deepseek_thinking_policy(effort: Any) -> Dict[str, Any]:
+        """Translate terminal effort levels without inheriting costly defaults."""
+        requested = str(effort or "").strip().lower()
+        if requested in {"high", "xhigh"}:
+            return {"reasoning_effort": "high", "use_thinking": True}
+        if requested == "max":
+            return {"reasoning_effort": "max", "use_thinking": True}
+        return {"reasoning_effort": "none", "use_thinking": False}
+
     @classmethod
     def create_model(
         cls,
@@ -494,6 +504,13 @@ class ModelsRegistry:
                 model_kwargs["max_tokens"] = max_tok
             if "max_completion_tokens" in kwargs:
                 model_kwargs["max_completion_tokens"] = kwargs.pop("max_completion_tokens")
+
+            if provider_lower == "deepseek":
+                requested_effort = kwargs.pop("reasoning_effort", None)
+                requested_thinking = kwargs.pop("use_thinking", None)
+                if requested_effort is None and requested_thinking is True:
+                    requested_effort = "high"
+                model_kwargs.update(cls.deepseek_thinking_policy(requested_effort))
 
             # Add remaining kwargs (filter out None values)
             for k, v in kwargs.items():

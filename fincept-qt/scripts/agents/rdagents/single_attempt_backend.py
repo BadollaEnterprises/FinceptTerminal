@@ -9,6 +9,7 @@ auto-continuation loop stops after one provider request.
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from rdagent.oai.backend import LiteLLMAPIBackend
@@ -24,6 +25,21 @@ class SingleAttemptLiteLLMBackend(LiteLLMAPIBackend):
         # the user's DeepSeek credential to the RD-Agent log.
         self.__class__._has_logged_settings = True
         super().__init__(*args, **kwargs)
+
+    def get_complete_kwargs(self) -> dict[str, Any]:
+        """Attach DeepSeek thinking controls that RD-Agent cannot represent."""
+        complete_kwargs = super().get_complete_kwargs()
+        if os.environ.get("FINCEPT_LLM_PROVIDER", "").strip().lower() == "deepseek":
+            requested = os.environ.get("FINCEPT_REASONING_EFFORT", "none").strip().lower()
+            if requested in {"high", "xhigh"}:
+                effort, thinking_type = "high", "enabled"
+            elif requested == "max":
+                effort, thinking_type = "max", "enabled"
+            else:
+                effort, thinking_type = "none", "disabled"
+            complete_kwargs["reasoning_effort"] = effort
+            complete_kwargs["thinking"] = {"type": thinking_type}
+        return complete_kwargs
 
     def _create_chat_completion_inner_function(
         self, *args: Any, **kwargs: Any

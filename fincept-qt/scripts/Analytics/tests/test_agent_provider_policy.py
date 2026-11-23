@@ -544,6 +544,37 @@ class AgentProviderPolicyTest(unittest.TestCase):
                 retry_key = "retries" if provider == "google" else "max_retries"
                 self.assertEqual(model.kwargs[retry_key], 0)
 
+    def test_deep_agents_disable_implicit_deepseek_thinking(self):
+        models = load_deepagent_models()
+
+        class FakeModel:
+            def __init__(self, **kwargs):
+                self.kwargs = kwargs
+
+        fake_module = types.ModuleType("langchain_openai")
+        fake_module.ChatOpenAI = FakeModel
+        with mock.patch.dict(sys.modules, {"langchain_openai": fake_module}):
+            default = models.create_model({
+                "llm_provider": "deepseek",
+                "llm_api_key": "owned",
+                "llm_model": "deepseek-flash",
+            })
+            deliberate = models.create_model({
+                "llm_provider": "deepseek",
+                "llm_api_key": "owned",
+                "llm_model": "deepseek-v4-pro",
+                "llm_reasoning_effort": "xhigh",
+            })
+
+        self.assertEqual(default.kwargs["reasoning_effort"], "none")
+        self.assertEqual(
+            default.kwargs["extra_body"], {"thinking": {"type": "disabled"}}
+        )
+        self.assertEqual(deliberate.kwargs["reasoning_effort"], "high")
+        self.assertEqual(
+            deliberate.kwargs["extra_body"], {"thinking": {"type": "enabled"}}
+        )
+
     def test_deep_agents_reject_adapters_without_an_enforceable_output_ceiling(self):
         models = load_deepagent_models()
         self.assertFalse(models.supports_tool_calling({"llm_provider": "cohere"}))
@@ -613,6 +644,29 @@ class AgentProviderPolicyTest(unittest.TestCase):
         self.assertIn('max_tok = cls.output_token_limit(kwargs.pop("max_tokens", None))', create)
         self.assertIn('model_kwargs["max_retries"] = 0', create)
         self.assertIn('"max_retries": 0', create)
+
+    def test_agent_model_registry_disables_implicit_deepseek_thinking(self):
+        models = load_path("finagent_models_registry_thinking", MODEL_REGISTRY).ModelsRegistry
+        self.assertEqual(
+            models.deepseek_thinking_policy(None),
+            {"reasoning_effort": "none", "use_thinking": False},
+        )
+        self.assertEqual(
+            models.deepseek_thinking_policy("medium"),
+            {"reasoning_effort": "none", "use_thinking": False},
+        )
+        self.assertEqual(
+            models.deepseek_thinking_policy("xhigh"),
+            {"reasoning_effort": "high", "use_thinking": True},
+        )
+        self.assertEqual(
+            models.deepseek_thinking_policy("max"),
+            {"reasoning_effort": "max", "use_thinking": True},
+        )
+
+        create = MODEL_REGISTRY.read_text(encoding="utf-8")
+        create = create[create.index("def create_model(") :]
+        self.assertIn("cls.deepseek_thinking_policy", create)
 
     def test_agent_registries_disable_native_sdk_retries(self):
         models = load_path("finagent_models_registry_retries", MODEL_REGISTRY).ModelsRegistry
@@ -719,6 +773,8 @@ class AgentProviderPolicyTest(unittest.TestCase):
             self.assertEqual(values["DEEPSEEK_API_KEY"], "owned")
             self.assertEqual(values["MAX_RETRY"], "1")
             self.assertEqual(values["LITELLM_MAX_RETRY"], "1")
+            self.assertEqual(values["FINCEPT_LLM_PROVIDER"], "deepseek")
+            self.assertEqual(values["FINCEPT_REASONING_EFFORT"], "none")
             self.assertEqual(
                 values["BACKEND"],
                 "single_attempt_backend.SingleAttemptLiteLLMBackend",
@@ -730,6 +786,16 @@ class AgentProviderPolicyTest(unittest.TestCase):
             self.assertNotIn("MAX_RETRY", os.environ)
             self.assertNotIn("LITELLM_MAX_RETRY", os.environ)
             self.assertNotIn("BACKEND", os.environ)
+            self.assertNotIn("FINCEPT_LLM_PROVIDER", os.environ)
+            self.assertNotIn("FINCEPT_REASONING_EFFORT", os.environ)
+
+        with mock.patch.dict(os.environ, {}, clear=True):
+            values = config.apply_llm_config({
+                "llm_provider": "deepseek",
+                "llm_api_key": "owned",
+                "llm_reasoning_effort": "high",
+            })
+            self.assertEqual(values["FINCEPT_REASONING_EFFORT"], "high")
 
         with mock.patch.dict(os.environ, {}, clear=True):
             values = config.apply_llm_config({
@@ -765,6 +831,9 @@ class AgentProviderPolicyTest(unittest.TestCase):
         self.assertIn("super()._create_chat_completion_inner_function", source)
         self.assertIn('finish_reason == "length"', source)
         self.assertIn("fincept_length_limit", source)
+        self.assertIn("def get_complete_kwargs", source)
+        self.assertIn('complete_kwargs["reasoning_effort"] = effort', source)
+        self.assertIn('complete_kwargs["thinking"]', source)
 
     def test_agent_payload_uses_one_resolved_api_config_not_mixed_active_fields(self):
         service = AGENT_SERVICE.read_text(encoding="utf-8")
