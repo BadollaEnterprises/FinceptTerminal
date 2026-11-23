@@ -1212,15 +1212,17 @@ def dispatch_action_streaming(
             # Use StreamingCoreAgent for real streaming
             stream_error = None
             notes = []
+            streaming_agent = StreamingCoreAgent(
+                api_keys=api_keys,
+                user_id=params.get("user_id"),
+                stream_callback=lambda ct, c, m=None: stream_print(ct, c),
+            )
+            # run_streaming already simulates streaming for providers without a
+            # native stream. Never replay a failed stream as a second ordinary
+            # request: an exception can arrive after the provider accepted and
+            # billed the first request, even before the first visible token.
+            resp_content = ""
             try:
-                streaming_agent = StreamingCoreAgent(
-                    api_keys=api_keys,
-                    user_id=params.get("user_id"),
-                    stream_callback=lambda ct, c, m=None: stream_print(ct, c),
-                )
-                # run_streaming returns a generator — must be iterated to drive
-                # the stream_callback and emit TOKEN lines to stdout.
-                resp_content = ""
                 for chunk in streaming_agent.run_streaming(query, full_config, session_id):
                     if not isinstance(chunk, dict):
                         continue
@@ -1232,28 +1234,9 @@ def dispatch_action_streaming(
                         stream_error = chunk.get("content") or "Agent run failed"
                     elif chunk.get("type") == "warning":
                         notes.append(chunk.get("content", ""))
-            except Exception:
-                # Fallback to regular run with simulated streaming
-                resp_content = ""
-                stream_error = None
-                try:
-                    response = core_agent.run(query, full_config, session_id, stream=False)
-                    notes = list(core_agent.last_warnings)
-                    fallback_run_err = _run_error_text(response)
-                    if fallback_run_err:
-                        raise RuntimeError(fallback_run_err)
-                    resp_content = core_agent.get_response_content(response) or ""
-                    if resp_content:
-                        words = resp_content.split()
-                        chunk_size = 5
-                        for i in range(0, len(words), chunk_size):
-                            chunk = ' '.join(words[i:i+chunk_size])
-                            # Leading space between chunks (the host keeps one leading
-                            # space of a token) so concatenated tokens read as words.
-                            stream_print("token", (" " if i else "") + chunk)
-                except Exception as fallback_err:
-                    stream_error = str(fallback_err)
-                    stream_print("error", stream_error)
+            except Exception as stream_exc:
+                stream_error = str(stream_exc) or "Agent stream failed"
+                stream_print("error", stream_error)
 
             if core_agent._tracing:
                 core_agent.end_trace()
