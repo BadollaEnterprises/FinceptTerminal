@@ -44,9 +44,11 @@ _DEPRECATED_PROVIDERS = {"fincept", "ollama", "codex", "harness:codex"}
 
 _DEFAULT_OUTPUT_TOKENS = 4096
 _MAX_OUTPUT_TOKENS = 131_072
-_DEFAULT_RECURSION_LIMIT = 24
+# LangGraph counts model and tool nodes, so this still permits a substantial
+# research loop while bounding the default worst-case generated output to 64K.
+_DEFAULT_RECURSION_LIMIT = 16
 _MIN_RECURSION_LIMIT = 8
-_MAX_RECURSION_LIMIT = 64
+_MAX_RECURSION_LIMIT = 32
 
 
 def _bounded_int(value: Any, default: int, minimum: int, maximum: int) -> int:

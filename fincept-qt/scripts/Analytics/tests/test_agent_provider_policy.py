@@ -74,7 +74,19 @@ def load_path(name, path):
     spec = importlib.util.spec_from_file_location(name, path)
     module = importlib.util.module_from_spec(spec)
     assert spec and spec.loader
-    spec.loader.exec_module(module)
+    # dataclasses resolves postponed annotations through sys.modules while the
+    # class decorator runs. Mirror normal import semantics instead of executing
+    # an anonymous module that dataclasses cannot resolve.
+    previous = sys.modules.get(name)
+    sys.modules[name] = module
+    try:
+        spec.loader.exec_module(module)
+    except Exception:
+        if previous is None:
+            sys.modules.pop(name, None)
+        else:
+            sys.modules[name] = previous
+        raise
     return module
 
 
@@ -720,9 +732,16 @@ class AgentProviderPolicyTest(unittest.TestCase):
         self.assertEqual(models.output_token_limit({}), 4096)
         self.assertEqual(models.output_token_limit({"llm_max_tokens": 0}), 4096)
         self.assertEqual(models.output_token_limit({"llm_max_tokens": 3000000}), 131072)
-        self.assertEqual(models.recursion_limit({}), 24)
+        # The default graph envelope is a coarse worst-case output guard. One
+        # ordinary research request must not silently permit more than 64K of
+        # generated text across recursive model/tool turns.
+        self.assertLessEqual(
+            models.recursion_limit({}) * models.output_token_limit({}),
+            65_536,
+        )
+        self.assertEqual(models.recursion_limit({}), 16)
         self.assertEqual(models.recursion_limit({"recursion_limit": 1}), 8)
-        self.assertEqual(models.recursion_limit({"recursion_limit": 1000}), 64)
+        self.assertEqual(models.recursion_limit({"recursion_limit": 1000}), 32)
 
         cli = (DEEPAGENT_MODELS.parent / "cli.py").read_text(encoding="utf-8")
         execute = cli[cli.index("def _execute_with_deepagents") : cli.index("def _format_result")]
