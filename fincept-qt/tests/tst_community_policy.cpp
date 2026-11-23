@@ -1,5 +1,6 @@
 #include "core/policy/CommunityPolicy.h"
 #include "core/metrics/LocalUsageMetrics.h"
+#include "services/ai_quant_lab/AIQuantCachePolicy.h"
 #include "services/ai_quant_lab/AIQuantUsage.h"
 #include "services/llm/LlmEndpointPolicy.h"
 #include "services/llm/ModelRouter.h"
@@ -191,6 +192,16 @@ class CommunityPolicyTest : public QObject {
         QCOMPARE(usage.completion_tokens, qint64(30));
         QCOMPARE(usage.cached_prompt_tokens, qint64(150));
         QCOMPARE(usage.requests, qint64(7));
+    }
+
+    void ai_quant_cache_never_persists_failure_envelopes() {
+        using fincept::services::quant::is_cacheable_ai_quant_result;
+        QVERIFY(is_cacheable_ai_quant_result(
+            QJsonObject{{QStringLiteral("success"), true}, {QStringLiteral("models"), QJsonArray{}}}));
+        QVERIFY(is_cacheable_ai_quant_result(QJsonObject{{QStringLiteral("models"), QJsonArray{}}}));
+        QVERIFY(!is_cacheable_ai_quant_result(
+            QJsonObject{{QStringLiteral("success"), false},
+                        {QStringLiteral("error"), QStringLiteral("package not installed")}}));
     }
 
     void local_usage_metrics_persist_monthly_totals_and_provider_health() {

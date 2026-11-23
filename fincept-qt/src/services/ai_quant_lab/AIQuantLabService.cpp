@@ -10,6 +10,7 @@
 #include "core/privacy/LogRedact.h"
 #include "core/process/ProcessTree.h"
 #include "python/PythonRunner.h"
+#include "services/ai_quant_lab/AIQuantCachePolicy.h"
 #include "services/ai_quant_lab/AIQuantUsage.h"
 #include "services/llm/LlmBudgetSettings.h"
 #include "services/llm/ModelCatalog.h"
@@ -174,9 +175,9 @@ void AIQuantLabService::run_python(const QString& script, const QStringList& arg
             }
             auto json_str = python::extract_json(result.output);
             auto doc = QJsonDocument::fromJson(json_str.toUtf8());
-            if (doc.isNull()) {
+            if (!doc.isObject()) {
                 LOG_ERROR("AIQuantLab", QString("[%1/%2] Invalid JSON").arg(module_id, command));
-                self->emit_failed(tag, module_id, "Invalid JSON response");
+                self->emit_failed(tag, module_id, "Invalid JSON object response");
                 return;
             }
             // A successful command may have created / deleted / trained something that a
@@ -196,11 +197,14 @@ void AIQuantLabService::run_python_cached(const QString& script, const QStringLi
     const QVariant cached = fincept::CacheManager::instance().get(cache_key);
     if (!cached.isNull()) {
         auto doc = QJsonDocument::fromJson(cached.toString().toUtf8());
-        if (!doc.isNull()) {
+        if (doc.isObject() && is_cacheable_ai_quant_result(doc.object())) {
             LOG_DEBUG("AIQuantLab", QString("[%1/%2] Cache hit").arg(module_id, command));
             emit_done(tag, module_id, command, doc.object());
             return;
         }
+        // Discard corrupt entries and failure envelopes written by an older
+        // release so a repaired package/dataset is re-probed immediately.
+        fincept::CacheManager::instance().remove(cache_key);
     }
 
     QPointer<AIQuantLabService> self = this;
@@ -222,14 +226,16 @@ void AIQuantLabService::run_python_cached(const QString& script, const QStringLi
             }
             auto json_str = python::extract_json(result.output);
             auto doc = QJsonDocument::fromJson(json_str.toUtf8());
-            if (doc.isNull()) {
+            if (!doc.isObject()) {
                 LOG_ERROR("AIQuantLab", QString("[%1/%2] Invalid JSON").arg(module_id, command));
-                self->emit_failed(tag, module_id, "Invalid JSON response");
+                self->emit_failed(tag, module_id, "Invalid JSON object response");
                 return;
             }
-            fincept::CacheManager::instance().put(
-                cache_key, QVariant(QString::fromUtf8(QJsonDocument(doc.object()).toJson(QJsonDocument::Compact))),
-                ttl_sec, "ai_quant_lab");
+            if (is_cacheable_ai_quant_result(doc.object())) {
+                fincept::CacheManager::instance().put(
+                    cache_key, QVariant(QString::fromUtf8(QJsonDocument(doc.object()).toJson(QJsonDocument::Compact))),
+                    ttl_sec, "ai_quant_lab");
+            }
             LOG_DEBUG("AIQuantLab", QString("[%1/%2] Result ready").arg(module_id, command));
             self->emit_done(tag, module_id, command, doc.object());
         });
