@@ -162,10 +162,16 @@ def test_nested_team_member_models_obey_turn_output_budget():
                 {"model": {"max_tokens": 48_000}},
                 {"model": {"max_tokens": 8_000}},
             ],
-        }
+        },
+        "agentic": {
+            "reflector_model": {"max_tokens": 32_000},
+            "distill_model": {"max_tokens": 24_000},
+        },
     }
-    assert apply_nested_output_budgets(payload, 12_000) == 3
+    assert apply_nested_output_budgets(payload, 12_000) == 5
     assert payload["team_config"]["model"]["max_tokens"] == 12_000
     assert payload["team_config"]["members"][0]["model"]["max_tokens"] == 12_000
     assert payload["team_config"]["members"][1]["model"]["max_tokens"] == 8_000
+    assert payload["agentic"]["reflector_model"]["max_tokens"] == 12_000
+    assert payload["agentic"]["distill_model"]["max_tokens"] == 12_000
 

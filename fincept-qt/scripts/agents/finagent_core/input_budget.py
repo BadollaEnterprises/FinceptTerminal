@@ -131,7 +131,14 @@ def apply_nested_output_budgets(value: Any, limit_tokens: Any) -> int:
     if isinstance(value, dict):
         if apply_output_budget(value, limit_tokens) is not None:
             count += 1
-        for item in value.values():
+        for key, item in value.items():
+            # Agentic Mode swaps these model blocks into critic_config["model"]
+            # only after the ordinary config has been prepared. Clamp the
+            # source blocks now so hidden reflector/distillation calls cannot
+            # regain a larger completion allowance.
+            if key in {"reflector_model", "distill_model"} and isinstance(item, dict):
+                if apply_output_budget({"model": item}, limit_tokens) is not None:
+                    count += 1
             count += apply_nested_output_budgets(item, limit_tokens)
     elif isinstance(value, (list, tuple)):
         for item in value:
