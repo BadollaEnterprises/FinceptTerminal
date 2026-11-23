@@ -5,6 +5,69 @@ from finagent_core.input_budget import (
 )
 
 
+def test_registry_agent_card_is_expanded_before_main_request_budget(monkeypatch):
+    import io
+    import json
+    from finagent_core import main as main_module
+
+    payload = {
+        "action": "run",
+        "config": {"agent_id": "card"},
+        "params": {"query": "ok"},
+        "input_max_chars": 0,
+        "input_max_tokens": 64,
+    }
+    monkeypatch.setattr(
+        main_module,
+        "_apply_agent_card",
+        lambda config: ({**config, "instructions": "x" * 1000}, "Large card"),
+    )
+    dispatched = []
+    monkeypatch.setattr(main_module, "dispatch_action", lambda *args: dispatched.append(args) or {"success": True})
+    monkeypatch.setattr(main_module.sys, "stdin", io.StringIO(json.dumps(payload)))
+
+    result = json.loads(main_module.main([]))
+
+    assert result["success"] is False
+    assert "turn-input guardrail" in result["error"]
+    assert dispatched == []
+
+
+def test_registry_agent_card_models_are_clamped_before_dispatch(monkeypatch):
+    import io
+    import json
+    from finagent_core import main as main_module
+
+    payload = {
+        "action": "run",
+        "config": {"agent_id": "card"},
+        "params": {"query": "ok"},
+        "input_max_chars": 0,
+        "input_max_tokens": 0,
+        "output_max_tokens": 12000,
+    }
+    monkeypatch.setattr(
+        main_module,
+        "_apply_agent_card",
+        lambda config: (
+            {**config, "model": {"max_tokens": 64000}, "team": {"model": {"max_tokens": 48000}}},
+            "Costly card",
+        ),
+    )
+    captured = {}
+
+    def fake_dispatch(action, api_keys, params, config):
+        captured.update(config)
+        return {"success": True}
+
+    monkeypatch.setattr(main_module, "dispatch_action", fake_dispatch)
+    monkeypatch.setattr(main_module.sys, "stdin", io.StringIO(json.dumps(payload)))
+
+    assert json.loads(main_module.main([]))["success"] is True
+    assert captured["model"]["max_tokens"] == 12000
+    assert captured["team"]["model"]["max_tokens"] == 12000
+
+
 def test_complete_agent_request_obeys_turn_input_token_budget():
     # Three UTF-8 wire bytes per token is the same conservative estimate used
     # by the native provider path. Structured tool/config data must count too.

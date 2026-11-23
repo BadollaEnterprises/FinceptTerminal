@@ -240,6 +240,9 @@ def _setup_agent_modules(agent, config: Dict[str, Any], params: Dict[str, Any]):
 # whole config with the card's (the previous behaviour) silently dropped the
 # terminal tools for every card-based agent.
 _RUN_CONFIG_KEYS = ("model", "agent_id", "user_id", "tools_dry_run", "agent_data_dir")
+_CARD_RESOLVED_KEY = "__fincept_agent_card_resolved"
+_CARD_NAME_KEY = "__fincept_agent_card_name"
+_CARD_ACTIONS = frozenset({"run", "agentic_start_task"})
 
 
 def _apply_agent_card(config: Dict[str, Any]):
@@ -269,6 +272,26 @@ def _apply_agent_card(config: Dict[str, Any]):
         if key in _RUN_CONFIG_KEYS or key.startswith("terminal_"):
             merged[key] = value
     return merged, card.name
+
+
+def _prepare_agent_card_for_budget(action: str, config: Dict[str, Any]) -> Dict[str, Any]:
+    """Expand registry-card content before request/output guardrails run."""
+    if action not in _CARD_ACTIONS:
+        return config
+    prepared, name = _apply_agent_card(config)
+    prepared = dict(prepared)
+    prepared[_CARD_RESOLVED_KEY] = True
+    if name:
+        prepared[_CARD_NAME_KEY] = name
+    return prepared
+
+
+def _take_prepared_agent_card(config: Dict[str, Any]):
+    """Consume a preflighted card, retaining direct dispatch_action compatibility."""
+    prepared = dict(config)
+    if prepared.pop(_CARD_RESOLVED_KEY, False):
+        return prepared, prepared.pop(_CARD_NAME_KEY, None)
+    return _apply_agent_card(prepared)
 
 
 def main(args=None):
@@ -390,6 +413,12 @@ def main(args=None):
             if not isinstance(config["model"]["max_tokens"], (int, float)) or config["model"]["max_tokens"] <= 0:
                 config["model"]["max_tokens"] = 4096
 
+        # A registry agent card can add instructions, tools, team members and
+        # model blocks. Resolve it before both guardrails; resolving inside the
+        # dispatcher let that material bypass complete-input accounting and
+        # nested output ceilings.
+        config = _prepare_agent_card_for_budget(action, config)
+
         output_limit = payload.get("output_max_tokens", DEFAULT_OUTPUT_MAX_TOKENS)
         _apply_nested_output_budgets(config, output_limit)
         _apply_nested_output_budgets(params, output_limit)
@@ -466,7 +495,7 @@ def dispatch_action(
             return {"success": False, "error": "Missing 'query' in params"}
 
         # Load selected agent's card config (instructions, tools, persona)
-        config, _card_name = _apply_agent_card(config)
+        config, _card_name = _take_prepared_agent_card(config)
 
         # Create agent with API keys and user context
         agent = CoreAgent(api_keys=api_keys, user_id=params.get("user_id"))
@@ -1201,7 +1230,7 @@ def dispatch_action_streaming(
         # letting active_llm/model still override the model provider.
         # The card is the base; the resolved model (active_llm) and this run's
         # terminal-bridge wiring stay on top (see _apply_agent_card).
-        config, card_name = _apply_agent_card(config)
+        config, card_name = _take_prepared_agent_card(config)
         if card_name:
             stream_print("thinking", f"Using agent: {card_name}")
 
@@ -1340,7 +1369,7 @@ def dispatch_action_streaming(
             stream_print("error", "Missing 'query' in params")
             return {"success": False, "error": "Missing 'query' in params"}
 
-        config, _card_name = _apply_agent_card(config)
+        config, _card_name = _take_prepared_agent_card(config)
         runner = AgenticRunner(api_keys=api_keys, emit=make_emitter())
         result = runner.start_task(query, config)
         stream_print("done", "completed")
