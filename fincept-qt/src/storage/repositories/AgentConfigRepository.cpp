@@ -1,40 +1,9 @@
 #include "storage/repositories/AgentConfigRepository.h"
+#include "storage/repositories/AgentConfigSecretPolicy.h"
 
 #include "storage/sync/SyncOutbox.h"
 
-#include <QJsonDocument>
-#include <QJsonObject>
-
 namespace fincept {
-
-namespace {
-/// Agent configs once snapshotted the resolved LLM profile into
-/// `config_json.model`, `api_key` included. That row lives in plain SQLite, is
-/// pushed to cloud sync and is returned by MCP list tools — a provider key must
-/// not travel with it (the live key is re-resolved from the agent's profile at
-/// run time; the stored `model` snapshot is ignored). This is the central choke
-/// point: save() strips it for every writer, and reads strip it for older rows
-/// that have not been re-saved yet. A config without the key is returned
-/// byte-for-byte unchanged.
-QString agentcfg_strip_model_api_key(const QString& config_json) {
-    if (!config_json.contains(QLatin1String("api_key")))
-        return config_json; // cheap pre-check: nothing to do for the common case
-    QJsonParseError err;
-    const QJsonDocument doc = QJsonDocument::fromJson(config_json.toUtf8(), &err);
-    if (err.error != QJsonParseError::NoError || !doc.isObject())
-        return config_json;
-    QJsonObject obj = doc.object();
-    QJsonValue model_val = obj.value(QLatin1String("model"));
-    if (!model_val.isObject())
-        return config_json;
-    QJsonObject model = model_val.toObject();
-    if (!model.contains(QLatin1String("api_key")))
-        return config_json;
-    model.remove(QLatin1String("api_key"));
-    obj.insert(QLatin1String("model"), model);
-    return QString::fromUtf8(QJsonDocument(obj).toJson(QJsonDocument::Compact));
-}
-} // namespace
 
 AgentConfigRepository& AgentConfigRepository::instance() {
     static AgentConfigRepository s;
@@ -45,7 +14,7 @@ AgentConfig AgentConfigRepository::map_row(QSqlQuery& q) {
     return {q.value(0).toString(),
             q.value(1).toString(),
             q.value(2).toString(),
-            agentcfg_strip_model_api_key(q.value(3).toString()),
+            agent_config_secret_policy::sanitize_json(q.value(3).toString()),
             q.value(4).toString(),
             q.value(5).toBool(),
             q.value(6).toBool(),
@@ -78,7 +47,7 @@ Result<void> AgentConfigRepository::save(const AgentConfig& c) {
         exec_write("INSERT OR REPLACE INTO agent_configs "
                    "(id, name, description, config_json, category, is_default, is_active, updated_at) "
                    "VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))",
-                   {c.id, c.name, c.description, agentcfg_strip_model_api_key(c.config_json), c.category,
+                   {c.id, c.name, c.description, agent_config_secret_policy::sanitize_json(c.config_json), c.category,
                     c.is_default ? 1 : 0, c.is_active ? 1 : 0});
     if (r.is_ok())
         SyncOutbox::record_unique("agent_config", c.id, "upsert");

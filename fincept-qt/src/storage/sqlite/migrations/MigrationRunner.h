@@ -211,6 +211,7 @@ void register_migration_v063(); // Chat Mode artefacts / templates / schedules (
 void register_migration_v064(); // M&A saved cases + Alt Investments funds / flows / holdings / DD checklists
 void register_migration_v065(); // Derivatives position book + saved strategies
 void register_migration_v066(); // Notes board: status / order / review rows, named boards, wall layout
+void register_migration_v067(); // Remove credentials and runtime capabilities from saved agent configs
 
 /// The FTS5 search index over news_articles (news_fts plus its three sync
 /// triggers). v013 creates it when the SQLite library has FTS5 and skips it

@@ -1104,6 +1104,7 @@ set(STORAGE_SOURCES
     src/storage/repositories/DerivBookRepository.cpp
     # Notes board: status / order / review rows, named boards, wall layout (v065 is Derivatives').
     src/storage/sqlite/migrations/v066_notes_board.cpp
+    src/storage/sqlite/migrations/v067_agent_config_secrets.cpp
     src/storage/repositories/NoteBoardRepository.cpp
     # Symbol system WP2: the local instrument index (repository, bundled seed, async service).
     src/storage/repositories/SymbolMasterRepository.cpp
@@ -3781,11 +3782,12 @@ set_source_files_properties(
     PROPERTIES SKIP_UNITY_BUILD_INCLUSION TRUE
 )
 
-# Notes board storage (v066 + its repository) and the shared dense-screen bars (ui::ScreenCommandBar,
-# ui::ScreenStatusBar). File-scope helpers are uniquely prefixed (nbr_, v066, cb_, sbar_), but new files
-# joining a unity batch would re-batch every source after them.
+# Notes board storage (v066 + its repository), the v067 agent-config scrub, and the shared dense-screen bars
+# (ui::ScreenCommandBar, ui::ScreenStatusBar). File-scope helpers are uniquely prefixed, but new files joining a
+# unity batch would re-batch every source after them.
 set_source_files_properties(
     src/storage/sqlite/migrations/v066_notes_board.cpp
+    src/storage/sqlite/migrations/v067_agent_config_secrets.cpp
     src/storage/repositories/NoteBoardRepository.cpp
     src/ui/widgets/ScreenCommandBar.cpp
     src/ui/widgets/ScreenStatusBar.cpp

@@ -119,6 +119,17 @@ target_compile_definitions(tst_community_policy PRIVATE FINCEPT_SOURCE_DIR="${PR
 fincept_add_test(tst_ai_chat_effort_policy
     tst_ai_chat_effort_policy.cpp)
 
+# Agent and team configs live in plain SQLite and can be cloud-synced. Their
+# JSON policy may be retained, but provider credentials and run-scoped bridge
+# capabilities must be removed recursively at the repository boundary.
+fincept_add_test(tst_agent_config_secret_policy
+    tst_agent_config_secret_policy.cpp
+    "${PROJECT_SOURCE_DIR}/src/storage/sqlite/migrations/MigrationRunner.cpp"
+    "${PROJECT_SOURCE_DIR}/src/storage/sqlite/migrations/v067_agent_config_secrets.cpp"
+    "${PROJECT_SOURCE_DIR}/src/storage/sqlite/SqliteSupport.cpp"
+    "${PROJECT_SOURCE_DIR}/src/core/logging/Logger.cpp")
+target_link_libraries(tst_agent_config_secret_policy PRIVATE Qt6::Sql)
+
 # AI Chat request history keeps the newest complete turns inside a shared
 # history + current-message budget, preventing long sessions from multiplying
 # BYO provider input tokens on every send.

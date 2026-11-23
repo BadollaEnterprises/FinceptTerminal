@@ -1374,6 +1374,7 @@ int main(int argc, char* argv[]) {
     fincept::register_migration_v064(); // M&A saved cases, Alt Investments fund book / holdings / DD
     fincept::register_migration_v065(); // Derivatives position book + saved strategies
     fincept::register_migration_v066(); // Notes board (v065 is the Derivatives position book)
+    fincept::register_migration_v067(); // Scrub credentials from durable agent configs
 
     // ── Open the main database ────────────────────────────────────────────────
     // The terminal never runs without its database. Every failure ends in a

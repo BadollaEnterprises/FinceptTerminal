@@ -116,7 +116,7 @@ bool remove_empty_root(const QString& dir) {
 
 // Highest migration register_known_migrations() registers. Checked against the
 // registry once main() has registered everything (see adopt_legacy_root()).
-constexpr int kKnownHighestMigration = 66;
+constexpr int kKnownHighestMigration = 67;
 
 void register_known_migrations() {
     // MigrationRunner::inspect() compares a file with the schema this build's
@@ -146,6 +146,7 @@ void register_known_migrations() {
         &register_migration_v061, &register_migration_v062, &register_migration_v063, &register_migration_v064,
         &register_migration_v065, // Derivatives position book + saved strategies
         &register_migration_v066, // Notes board (v065: Derivatives)
+        &register_migration_v067, // Saved agent config credential scrub
     };
     for (Fn f : kAll)
         f();
