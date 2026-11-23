@@ -805,10 +805,14 @@ FetchContent_Declare(
     GIT_SHALLOW    TRUE
     UPDATE_DISCONNECTED TRUE
 )
-set(ADS_VERSION "4.5.0" CACHE STRING "" FORCE)   # skip git_describe() in qtads CMakeLists
-# qtads src/CMakeLists.txt does include(Versioning) unconditionally but only adds
-# cmake/modules to CMAKE_MODULE_PATH inside the if(NOT ADS_VERSION) branch.
-# Pre-set the path so the include succeeds regardless of which branch ran.
+set(ADS_VERSION "4.5.0" CACHE STRING "" FORCE)
+# QtADS' nested src/CMakeLists includes Versioning unconditionally. Its module
+# ignores ADS_VERSION and probes CMAKE_SOURCE_DIR with `git describe`, producing
+# false fatal diagnostics for tagless Fincept archives and empty Windows
+# resource versions. Prefer our deterministic shim while this dependency is
+# configured, then restore the caller's module path.
+set(_fincept_module_path_before_qtads "${CMAKE_MODULE_PATH}")
+list(PREPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/qtads")
 # FetchContent unpacks to <binary_dir>/_deps/<name_lower>-src — unless the
 # source is supplied with FETCHCONTENT_SOURCE_DIR_QTADS, which is how every
 # offline build provides it (the Flatpak manifest, distro packaging). Only the
@@ -819,6 +823,8 @@ if(FETCHCONTENT_SOURCE_DIR_QTADS)
 endif()
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_BINARY_DIR}/_deps/qtads-src/cmake/modules")
 FetchContent_MakeAvailable(QtADS)
+set(CMAKE_MODULE_PATH "${_fincept_module_path_before_qtads}")
+unset(_fincept_module_path_before_qtads)
 # ADS target name is version-stamped: qtadvanceddocking-qt6
 # Disable unity build — ADS uses anonymous namespaces internally
 set_target_properties(qtadvanceddocking-qt6 PROPERTIES UNITY_BUILD OFF)

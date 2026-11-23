@@ -178,6 +178,24 @@ class CommunityPolicyTest : public QObject {
                  "Linking md4c directly as well as through md4c-html duplicates the static archive");
     }
 
+    void qtads_versioning_never_probes_the_parent_repository_tags() {
+        QFile module(QStringLiteral(FINCEPT_SOURCE_DIR "/cmake/qtads/Versioning.cmake"));
+        QVERIFY2(module.open(QIODevice::ReadOnly), qPrintable(module.errorString()));
+        const QByteArray versioning = module.readAll();
+        QVERIFY2(versioning.contains("ADS_VERSION"),
+                 "The QtADS shim must derive resource versions from the pinned dependency version");
+        QVERIFY2(!versioning.contains("COMMAND git describe"),
+                 "A fetched dependency must not inspect the parent application's tag history");
+
+        QFile source(QStringLiteral(FINCEPT_SOURCE_DIR "/CMakeLists.txt"));
+        QVERIFY2(source.open(QIODevice::ReadOnly), qPrintable(source.errorString()));
+        const QByteArray cmake = source.readAll();
+        const qsizetype shim = cmake.indexOf("list(PREPEND CMAKE_MODULE_PATH \"${CMAKE_CURRENT_SOURCE_DIR}/cmake/qtads\")");
+        const qsizetype fetch = cmake.indexOf("FetchContent_MakeAvailable(QtADS)");
+        QVERIFY2(shim >= 0 && fetch > shim,
+                 "The in-tree Versioning module must precede QtADS' upstream module during configure");
+    }
+
     void ai_quant_agents_obey_the_global_turn_output_ceiling() {
         QFile source(QStringLiteral(FINCEPT_SOURCE_DIR "/src/services/ai_quant_lab/AIQuantLabService.cpp"));
         QVERIFY2(source.open(QIODevice::ReadOnly), qPrintable(source.errorString()));
