@@ -128,19 +128,6 @@ static std::vector<ConversationMessage> llm_svc_trim_history(const std::vector<C
     return std::move(result.messages);
 }
 
-static QString llm_svc_request_budget_error(const QJsonObject& request) {
-    const int budget = detail::tool_loop_prompt_token_budget();
-    const qint64 bytes = QJsonDocument(request).toJson(QJsonDocument::Compact).size();
-    if (llm_request_fits_prompt_budget(bytes, budget))
-        return {};
-    const int estimated_tokens = budgeted_llm_tokens(0, bytes);
-    return QStringLiteral("This complete AI request is conservatively estimated at %1 input tokens, above the "
-                          "configured %2-token Turn Input limit. No provider request was sent. Shorten the system "
-                          "prompt/message, disable tools, or raise Turn Input Tokens in Settings → LLM Configuration.")
-        .arg(estimated_tokens)
-        .arg(budget);
-}
-
 static int llm_svc_turn_output_budget_tokens() {
     LlmBudgetSettings settings;
     settings.completion_tokens = AppConfig::instance()
@@ -894,18 +881,13 @@ LlmResponse LlmService::do_request(const QString& user_message, const std::vecto
         req_body = build_openai_request(user_message, history, false, true);
     }
 
-    if (const QString error = llm_svc_request_budget_error(req_body); !error.isEmpty()) {
-        resp.error = error;
-        LOG_WARN(kLlmSvcTag, error);
-        return resp;
-    }
-
     LOG_DEBUG(kLlmSvcTag, QString("POST %1 provider=%2 model=%3").arg(log_url(url), provider_, model_));
 
-    auto http = blocking_post(url, req_body, hdr);
+    auto http = post_with_request_budget(url, req_body, hdr);
 
     if (!http.success) {
-        note_provider_request(resp);
+        if (http.request_sent)
+            note_provider_request(resp);
         resp.error = http.error;
         if (http.cancelled)
             LOG_DEBUG(kLlmSvcTag, logf("Chat request cancelled", {{"provider", provider_}, {"model", model_}}));
@@ -1015,9 +997,10 @@ LlmResponse LlmService::do_request(const QString& user_message, const std::vecto
                 if (!ant_tools.isEmpty())
                     fu["tools"] = ant_tools;
 
-                auto fu_http = blocking_post(url, fu, hdr);
+                auto fu_http = post_with_request_budget(url, fu, hdr);
                 if (!fu_http.success) {
-                    note_provider_request(ant_usage);
+                    if (fu_http.request_sent)
+                        note_provider_request(ant_usage);
                     resp.error = "Anthropic tool follow-up failed: " + fu_http.error;
                     return resp;
                 }
@@ -1100,9 +1083,10 @@ LlmResponse LlmService::do_request(const QString& user_message, const std::vecto
                                          {QStringLiteral("max_tokens"),
                                           std::min(resolved_max_tokens(),
                                                    detail::tool_loop_summary_max_tokens())}};
-                auto summary_http = blocking_post(url, summary_body, hdr);
+                auto summary_http = post_with_request_budget(url, summary_body, hdr);
                 LlmResponse summary_usage;
-                note_provider_request(summary_usage);
+                if (summary_http.request_sent)
+                    note_provider_request(summary_usage);
                 if (summary_http.success) {
                     const QJsonDocument summary_doc = QJsonDocument::fromJson(summary_http.body);
                     if (!summary_doc.isNull()) {
@@ -1249,9 +1233,10 @@ LlmResponse LlmService::do_request(const QString& user_message, const std::vecto
                     if (!gem_tools.isEmpty())
                         fu_body["tools"] = gem_tools;
 
-                    auto fu = blocking_post(url, fu_body, hdr);
+                    auto fu = post_with_request_budget(url, fu_body, hdr);
                     if (!fu.success) {
-                        note_provider_request(gem_usage);
+                        if (fu.request_sent)
+                            note_provider_request(gem_usage);
                         resp.error = "Gemini tool follow-up failed: " + fu.error;
                         return resp;
                     }
@@ -1305,9 +1290,10 @@ LlmResponse LlmService::do_request(const QString& user_message, const std::vecto
                          QJsonObject{{QStringLiteral("maxOutputTokens"),
                                       std::min(resolved_max_tokens(),
                                                detail::tool_loop_summary_max_tokens())}}}};
-                    auto summary_http = blocking_post(url, summary_body, hdr);
+                    auto summary_http = post_with_request_budget(url, summary_body, hdr);
                     LlmResponse summary_usage;
-                    note_provider_request(summary_usage);
+                    if (summary_http.request_sent)
+                        note_provider_request(summary_usage);
                     if (summary_http.success) {
                         const QJsonDocument summary_doc = QJsonDocument::fromJson(summary_http.body);
                         if (!summary_doc.isNull()) {
@@ -1551,13 +1537,6 @@ LlmResponse LlmService::do_streaming_request(const QString& user_message,
     // Anthropic streaming handles tools out-of-band so it goes through a different request shape.
     QJsonObject req_body = (provider_ == "anthropic") ? build_anthropic_request(user_message, history, true)
                                                       : build_openai_request(user_message, history, true, true);
-    if (const QString error = llm_svc_request_budget_error(req_body); !error.isEmpty()) {
-        resp.error = error;
-        LOG_WARN(kLlmSvcTag, error);
-        on_chunk("", true);
-        return resp;
-    }
-
     // The thread's long-lived QNAM (keep-alive TLS reuse across turns and tool
     // rounds); the reply is deleteLater'd and DeferredDelete is drained before
     // this function returns — a stack QNAM here used to leak socket-notifier
@@ -1577,6 +1556,17 @@ LlmResponse LlmService::do_streaming_request(const QString& user_message,
         req.setRawHeader(it.key().toUtf8(), it.value().toUtf8());
 
     QByteArray json_data = QJsonDocument(req_body).toJson(QJsonDocument::Compact);
+    // Streaming uses QNetworkAccessManager directly, so perform the same
+    // complete-payload preflight immediately before the network boundary.
+    const int request_budget = detail::tool_loop_prompt_token_budget();
+    if (!llm_request_fits_prompt_budget(json_data.size(), request_budget)) {
+        resp.error = QStringLiteral("This complete AI request is above the configured Turn Input limit. No provider "
+                                    "request was sent. Shorten the prompt or raise Turn Input Tokens in Settings → "
+                                    "LLM Configuration.");
+        LOG_WARN(kLlmSvcTag, resp.error);
+        on_chunk("", true);
+        return resp;
+    }
     QNetworkReply* reply = nam->post(req, json_data);
 
     QByteArray partial_line;

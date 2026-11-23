@@ -1418,7 +1418,7 @@ class CreditFirewallWiringTest(unittest.TestCase):
         self.assertIn("llm_svc_provider_allowed(provider_)", request)
         self.assertLess(
             request.index("llm_svc_provider_allowed(provider_)"),
-            request.index("blocking_post("),
+            request.index("post_with_request_budget("),
         )
 
 

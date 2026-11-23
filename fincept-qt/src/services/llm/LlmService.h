@@ -411,6 +411,7 @@ class LlmService : public QObject {
     /// Blocks the calling thread via QEventLoop.
     struct HttpResult {
         bool success = false;
+        bool request_sent = false; // false when a local budget guard blocks before network I/O
         int status = 0;
         QByteArray body;
         QString error;
@@ -444,6 +445,8 @@ class LlmService : public QObject {
 
     static HttpResult blocking_post(const QString& url, const QJsonObject& body, const QMap<QString, QString>& headers,
                                     int timeout_ms = 120000);
+    HttpResult post_with_request_budget(const QString& url, const QJsonObject& body,
+                                        const QMap<QString, QString>& headers, int timeout_ms = 120000) const;
     static HttpResult blocking_get(const QString& url, const QMap<QString, QString>& headers, int timeout_ms = 30000);
 
     /// QEventLoop-based path used for Cloudflare-protected Fincept endpoints.

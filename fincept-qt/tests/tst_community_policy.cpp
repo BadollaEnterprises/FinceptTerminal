@@ -149,6 +149,21 @@ class CommunityPolicyTest : public QObject {
         QVERIFY(code.count("detail::encode_tool_results_for_llm(") >= 2);
     }
 
+    void every_native_provider_post_rechecks_the_complete_input_budget() {
+        const QStringList paths = {
+            QStringLiteral(FINCEPT_SOURCE_DIR "/src/services/llm/LlmService.cpp"),
+            QStringLiteral(FINCEPT_SOURCE_DIR "/src/services/llm/LlmToolLoop.cpp"),
+        };
+        for (const QString& path : paths) {
+            QFile source(path);
+            QVERIFY2(source.open(QIODevice::ReadOnly), qPrintable(source.errorString()));
+            const QByteArray code = source.readAll();
+            QVERIFY2(!code.contains("blocking_post("), qPrintable(
+                         path + QStringLiteral(": a direct provider POST can bypass the complete Turn Input budget")));
+            QVERIFY2(code.contains("post_with_request_budget("), qPrintable(path));
+        }
+    }
+
     void ai_quant_agents_obey_the_global_turn_output_ceiling() {
         QFile source(QStringLiteral(FINCEPT_SOURCE_DIR "/src/services/ai_quant_lab/AIQuantLabService.cpp"));
         QVERIFY2(source.open(QIODevice::ReadOnly), qPrintable(source.errorString()));

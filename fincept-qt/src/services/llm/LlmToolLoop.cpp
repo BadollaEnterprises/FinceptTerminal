@@ -119,9 +119,10 @@ LlmResponse LlmService::do_tool_loop(QJsonArray loop_messages, const QString& ur
         if (provider_ == QLatin1String("deepseek"))
             apply_deepseek_thinking(fu, detail::t_reasoning_effort);
 
-        auto http = blocking_post(url, fu, headers);
+        auto http = post_with_request_budget(url, fu, headers);
         if (!http.success) {
-            note_provider_request(usage);
+            if (http.request_sent)
+                note_provider_request(usage);
             resp.error = "Tool follow-up failed: " + http.error;
             return resp;
         }
@@ -306,9 +307,10 @@ LlmResponse LlmService::do_tool_loop(QJsonArray loop_messages, const QString& ur
         if (provider_ == QLatin1String("deepseek"))
             apply_deepseek_thinking(fu, detail::t_reasoning_effort);
 
-        auto http = blocking_post(url, fu, headers);
+        auto http = post_with_request_budget(url, fu, headers);
         LlmResponse round_usage;
-        note_provider_request(round_usage);
+        if (http.request_sent)
+            note_provider_request(round_usage);
         if (http.success) {
             auto doc = QJsonDocument::fromJson(http.body);
             if (!doc.isNull()) {
@@ -503,8 +505,9 @@ std::optional<LlmResponse> LlmService::try_extract_and_execute_text_tool_calls(c
     };
 
     // No tools in follow-up to prevent infinite loop
-    auto fu = blocking_post(url, follow_body, headers);
-    note_provider_request(resp);
+    auto fu = post_with_request_budget(url, follow_body, headers);
+    if (fu.request_sent)
+        note_provider_request(resp);
     if (!fu.success)
         return raw_fallback(fu.error.isEmpty() ? QStringLiteral("follow-up request failed") : fu.error);
 

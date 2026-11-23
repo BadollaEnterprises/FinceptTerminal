@@ -3,9 +3,11 @@
 // in this TU so the main file stays smaller.
 
 #include "auth/AuthManager.h"
+#include "core/config/AppConfig.h"
 #include "core/privacy/LogRedact.h"
 #include "network/http/HttpClient.h"
 #include "services/llm/LlmContentExtractors.h"
+#include "services/llm/LlmBudgetSettings.h"
 #include "services/llm/LlmUsage.h"
 #include "services/llm/LlmErrors.h"
 #include "services/llm/LlmRequestPolicy.h"
@@ -125,6 +127,7 @@ LlmService::HttpResult LlmService::blocking_post(const QString& url, const QJson
                                                  const QMap<QString, QString>& headers, int timeout_ms) {
     QByteArray json_data = QJsonDocument(body).toJson(QJsonDocument::Compact);
     HttpResult r = eventloop_request("POST", url, json_data, headers, timeout_ms);
+    r.request_sent = true;
     if (!r.success && !r.cancelled && should_automatically_retry_paid_post(r.status)) {
         // Honour Retry-After when the provider sends one, within sane bounds.
         const int backoff_ms = std::clamp(r.retry_after_s * 1000, 2000, 15000);
@@ -135,6 +138,29 @@ LlmService::HttpResult LlmService::blocking_post(const QString& url, const QJson
             r.cancelled = true;
     }
     return r;
+}
+
+LlmService::HttpResult LlmService::post_with_request_budget(const QString& url, const QJsonObject& body,
+                                                            const QMap<QString, QString>& headers,
+                                                            int timeout_ms) const {
+    const int budget = validate_llm_budget_settings(
+                           {.prompt_tokens = AppConfig::instance()
+                                                 .get(kLlmPromptTokensKey, QVariant(kDefaultLlmPromptTokens))
+                                                 .toInt()})
+                           .prompt_tokens;
+    const qint64 bytes = QJsonDocument(body).toJson(QJsonDocument::Compact).size();
+    if (!llm_request_fits_prompt_budget(bytes, budget)) {
+        HttpResult blocked;
+        blocked.error =
+            QStringLiteral("This complete AI request is conservatively estimated at %1 input tokens, above the "
+                           "configured %2-token Turn Input limit. No provider request was sent. Shorten the system "
+                           "prompt/message, disable tools, or raise Turn Input Tokens in Settings → LLM Configuration.")
+                .arg(budgeted_llm_tokens(0, bytes))
+                .arg(budget);
+        LOG_WARN("LlmService", blocked.error);
+        return blocked;
+    }
+    return blocking_post(url, body, headers, timeout_ms);
 }
 
 // ── Blocking GET ───────────────────────────────────────────────────────────
