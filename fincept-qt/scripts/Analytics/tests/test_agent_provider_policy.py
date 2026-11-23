@@ -166,6 +166,24 @@ class AgentProviderPolicyTest(unittest.TestCase):
         self.assertEqual(guard.max_wall_s, 900)
         self.assertEqual(guard.max_steps, 20)
 
+    def test_agentic_budget_uses_conservative_deepseek_peak_prices(self):
+        budget = load_path("finagent_budget_deepseek_prices", AGENT_BUDGET)
+
+        class MillionTokens:
+            metrics = {"input_tokens": 1_000_000, "output_tokens": 1_000_000}
+
+        flash = budget.BudgetGuard.from_config({
+            "model": {"model_id": "deepseek-flash"},
+        })
+        flash.record_llm_call("", MillionTokens())
+        self.assertAlmostEqual(flash.cost_used, 1.50)
+
+        pro = budget.BudgetGuard.from_config({
+            "model": {"model_id": "deepseek-v4-pro"},
+        })
+        pro.record_llm_call("", MillionTokens())
+        self.assertAlmostEqual(pro.cost_used, 5.28)
+
     def test_agentic_task_budgets_reject_non_finite_and_bound_extremes(self):
         budget = load_path("finagent_budget_bounds", AGENT_BUDGET)
         invalid = budget.BudgetGuard.from_config({"budget": {

@@ -37,6 +37,11 @@ _PRICING_PER_1K: Dict[str, Tuple[float, float]] = {
     # Gemini
     "gemini-2.0-flash": (0.00010, 0.00040),
     "gemini-1.5-pro": (0.00125, 0.005),
+    # DeepSeek peak, cache-miss rates (the off-peak/cache-hit bill is lower).
+    # Prices are per 1K here; the provider publishes them per 1M tokens.
+    "deepseek-v4-pro": (0.00132, 0.00396),
+    "deepseek-flash": (0.00030, 0.00120),
+    "deepseek-v4-flash": (0.00030, 0.00120),
     # Fallback
     "default": (0.001, 0.003),
 }
