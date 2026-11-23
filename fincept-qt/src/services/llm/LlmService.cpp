@@ -128,6 +128,19 @@ static std::vector<ConversationMessage> llm_svc_trim_history(const std::vector<C
     return std::move(result.messages);
 }
 
+static QString llm_svc_request_budget_error(const QJsonObject& request) {
+    const int budget = detail::tool_loop_prompt_token_budget();
+    const qint64 bytes = QJsonDocument(request).toJson(QJsonDocument::Compact).size();
+    if (llm_request_fits_prompt_budget(bytes, budget))
+        return {};
+    const int estimated_tokens = budgeted_llm_tokens(0, bytes);
+    return QStringLiteral("This complete AI request is conservatively estimated at %1 input tokens, above the "
+                          "configured %2-token Turn Input limit. No provider request was sent. Shorten the system "
+                          "prompt/message, disable tools, or raise Turn Input Tokens in Settings → LLM Configuration.")
+        .arg(estimated_tokens)
+        .arg(budget);
+}
+
 // Executor for chat_streaming() requests. A turn can hold its thread for minutes
 // (reasoning model + multi-round tool loop); on QThreadPool::globalInstance() that
 // starved every other QtConcurrent user. Threads never expire, so each keeps its
@@ -871,6 +884,12 @@ LlmResponse LlmService::do_request(const QString& user_message, const std::vecto
         req_body = build_openai_request(user_message, history, false, true);
     }
 
+    if (const QString error = llm_svc_request_budget_error(req_body); !error.isEmpty()) {
+        resp.error = error;
+        LOG_WARN(kLlmSvcTag, error);
+        return resp;
+    }
+
     LOG_DEBUG(kLlmSvcTag, QString("POST %1 provider=%2 model=%3").arg(log_url(url), provider_, model_));
 
     auto http = blocking_post(url, req_body, hdr);
@@ -1522,6 +1541,12 @@ LlmResponse LlmService::do_streaming_request(const QString& user_message,
     // Anthropic streaming handles tools out-of-band so it goes through a different request shape.
     QJsonObject req_body = (provider_ == "anthropic") ? build_anthropic_request(user_message, history, true)
                                                       : build_openai_request(user_message, history, true, true);
+    if (const QString error = llm_svc_request_budget_error(req_body); !error.isEmpty()) {
+        resp.error = error;
+        LOG_WARN(kLlmSvcTag, error);
+        on_chunk("", true);
+        return resp;
+    }
 
     // The thread's long-lived QNAM (keep-alive TLS reuse across turns and tool
     // rounds); the reply is deleteLater'd and DeferredDelete is drained before

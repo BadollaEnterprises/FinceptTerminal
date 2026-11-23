@@ -77,6 +77,13 @@ inline int budgeted_llm_tokens(int reported_tokens, qint64 payload_bytes) {
     return static_cast<int>(std::min<qint64>(estimate, kMaxLlmTurnTokens));
 }
 
+/// Preflight a complete serialized request against the turn input ceiling.
+/// This uses the same conservative fallback estimate as multi-round guards;
+/// provider-measured usage remains untouched. A non-positive limit disables.
+inline bool llm_request_fits_prompt_budget(qint64 payload_bytes, int prompt_token_budget) {
+    return prompt_token_budget <= 0 || budgeted_llm_tokens(0, payload_bytes) <= prompt_token_budget;
+}
+
 inline QVariantMap llm_budget_settings_to_config_map(LlmBudgetSettings settings) {
     settings = validate_llm_budget_settings(settings);
     return {{QString::fromLatin1(kLlmHistoryCharsKey), settings.history_chars},
