@@ -27,6 +27,16 @@ static constexpr int kKillMarksTimeoutMs = 2000; // bounded wait; a kill must ne
 static constexpr int kArenaRepairRetries = 0;
 static constexpr const char* kArenaKillBusy = "a kill is in progress — wait for it to finish (about 2 seconds)";
 
+static Result<void> validate_request_limits(int cadence_seconds, int agent_count) {
+    if (cadence_seconds < kMinArenaCadenceSeconds || cadence_seconds > kMaxArenaCadenceSeconds)
+        return Result<void>::err("cadence must be 60–3600s");
+    if (agent_count < 1)
+        return Result<void>::err("select at least one model");
+    if (agent_count > kMaxArenaAgents)
+        return Result<void>::err("select no more than 8 models; each model makes one billed request per round");
+    return Result<void>::ok();
+}
+
 static int add_usage(int prior, int current) {
     return static_cast<int>(qBound<qint64>(qint64(0), qint64(qMax(0, prior)) + qMax(0, current),
                                           qint64(std::numeric_limits<int>::max())));
@@ -96,8 +106,8 @@ void ArenaEngine::set_llm_for_test(IArenaLlmClient* c) {
 }
 
 Result<QString> ArenaEngine::create_competition(const ArenaConfig& cfg) {
-    if (cfg.agents.isEmpty())
-        return Result<QString>::err("select at least one model");
+    if (auto limits = validate_request_limits(cfg.cadence_seconds, cfg.agents.size()); limits.is_err())
+        return Result<QString>::err(limits.error());
     if (cfg.instruments.isEmpty())
         return Result<QString>::err("select at least one instrument");
     return ArenaStore::instance().insert_competition(cfg);
@@ -106,19 +116,28 @@ Result<QString> ArenaEngine::create_competition(const ArenaConfig& cfg) {
 Result<void> ArenaEngine::start(const QString& competition_id) {
     if (kill_in_progress_)
         return Result<void>::err(kArenaKillBusy);
-    ++epoch_;                    // invalidate in-flight async callbacks from any previous run
-    if (!active_id_.isEmpty()) { // never two running: end the old one cleanly first
-        auto r = stop();
-        if (r.is_err())
-            return r;
-    }
+
+    // Resolve and validate the replacement before touching the current run.
+    // Otherwise a malformed/imported competition can terminate a valid active
+    // competition and only then fail to start.
     auto comp_r = ArenaStore::instance().competition(competition_id);
     if (comp_r.is_err())
         return Result<void>::err(comp_r.error());
-    comp_ = comp_r.value();
     auto agents_r = ArenaStore::instance().agents_for(competition_id);
     if (agents_r.is_err())
         return Result<void>::err(agents_r.error());
+    if (auto limits = validate_request_limits(comp_r.value().cadence_seconds, agents_r.value().size());
+        limits.is_err())
+        return limits;
+
+    if (!active_id_.isEmpty()) { // never two running: end the old one cleanly first
+        auto r = stop();         // stop() invalidates the old async epoch
+        if (r.is_err())
+            return r;
+    } else {
+        ++epoch_; // invalidate callbacks from an earlier ended run
+    }
+    comp_ = comp_r.value();
     agents_ = agents_r.value();
     active_id_ = competition_id;
     crash_pending_.removeAll(competition_id); // resuming clears the pending-recovery flag
@@ -400,7 +419,7 @@ Result<void> ArenaEngine::set_cadence(int seconds) {
         return Result<void>::err("no active competition");
     if (kill_in_progress_)
         return Result<void>::err(kArenaKillBusy);
-    if (seconds < 60 || seconds > 3600)
+    if (seconds < kMinArenaCadenceSeconds || seconds > kMaxArenaCadenceSeconds)
         return Result<void>::err("cadence must be 60–3600s");
     comp_.cadence_seconds = seconds;
     ArenaStore::instance().set_cadence(active_id_, seconds);

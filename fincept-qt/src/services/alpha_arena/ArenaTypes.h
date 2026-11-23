@@ -9,6 +9,12 @@
 
 namespace fincept::arena {
 
+// One active agent produces one user-funded model request every round. Keep
+// these limits shared by the UI and the engine's authoritative boundary.
+inline constexpr int kMinArenaCadenceSeconds = 60;
+inline constexpr int kMaxArenaCadenceSeconds = 3600;
+inline constexpr int kMaxArenaAgents = 8;
+
 struct ArenaAgentSpec {
     QString provider, model_id, display_name, color_hex;
     QString source_kind; // "provider" | "model" | "profile"

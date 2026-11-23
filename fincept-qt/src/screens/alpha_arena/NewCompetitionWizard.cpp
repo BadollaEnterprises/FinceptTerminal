@@ -27,6 +27,7 @@
 #include <QPushButton>
 #include <QRadioButton>
 #include <QSet>
+#include <QSignalBlocker>
 #include <QSpinBox>
 #include <QStackedWidget>
 #include <QVBoxLayout>
@@ -276,6 +277,14 @@ void NewCompetitionWizard::on_model_item_changed(QListWidgetItem* it) {
         return;
     const QString key = it->data(Qt::UserRole).toString();
     if (it->checkState() == Qt::Checked) {
+        if (!selected_models_.contains(key) && selected_models_.size() >= fincept::arena::kMaxArenaAgents) {
+            const QSignalBlocker block(model_list_);
+            it->setCheckState(Qt::Unchecked);
+            it->setToolTip(tr("A competition supports at most %1 agents; each agent makes one billed request per round.")
+                               .arg(fincept::arena::kMaxArenaAgents));
+            update_selection_summary();
+            return;
+        }
         const auto f = it->data(Qt::UserRole + 1).value<QStringList>();
         if (f.size() < 6)
             return;
@@ -335,7 +344,13 @@ void NewCompetitionWizard::update_selection_summary() {
     QStringList parts;
     for (const auto& o : selected_models_)
         parts << QStringLiteral("%1 (%2)").arg(o.model_id, ProviderCatalog::display_name(o.provider));
-    selection_summary_->setText(parts.isEmpty() ? tr("Selected: none") : tr("Selected: ") + parts.join(", "));
+    selection_summary_->setText(
+        parts.isEmpty()
+            ? tr("Selected: none (up to %1)").arg(fincept::arena::kMaxArenaAgents)
+            : tr("Selected: %1 / %2 — %3")
+                  .arg(selected_models_.size())
+                  .arg(fincept::arena::kMaxArenaAgents)
+                  .arg(parts.join(", ")));
 }
 
 void NewCompetitionWizard::build_step2() {
@@ -367,7 +382,7 @@ void NewCompetitionWizard::build_step2() {
     grid->addWidget(capital_, row++, 1);
     grid->addWidget(new QLabel(tr("Round cadence (s)")), row, 0);
     cadence_ = new QSpinBox;
-    cadence_->setRange(60, 3600);
+    cadence_->setRange(fincept::arena::kMinArenaCadenceSeconds, fincept::arena::kMaxArenaCadenceSeconds);
     cadence_->setValue(180);
     grid->addWidget(cadence_, row++, 1);
     grid->addWidget(new QLabel(tr("Max leverage")), row, 0);

@@ -192,7 +192,7 @@ QWidget* AlphaArenaScreen::build_ticker_strip() {
                            .arg(TEXT_TERTIARY()));
     h->addWidget(cad);
     cadence_spin_ = new QSpinBox;
-    cadence_spin_->setRange(60, 3600);
+    cadence_spin_->setRange(fincept::arena::kMinArenaCadenceSeconds, fincept::arena::kMaxArenaCadenceSeconds);
     cadence_spin_->setValue(180);
     cadence_spin_->setSuffix(QStringLiteral("s"));
     cadence_spin_->setMinimumHeight(18);

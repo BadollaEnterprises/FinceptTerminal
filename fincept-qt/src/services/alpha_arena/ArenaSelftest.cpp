@@ -112,6 +112,35 @@ int run_arena_selftest() {
     a2.source_kind = "provider";
     cfg.agents = {a1, a2};
 
+    // Creation is the authoritative cost boundary. UI spin boxes and model
+    // pickers are not sufficient because callers can construct ArenaConfig
+    // directly, and each active agent produces one user-funded request per
+    // round.
+    {
+        ArenaConfig invalid = cfg;
+        invalid.name = QStringLiteral("__selftest__bad_cadence");
+        invalid.cadence_seconds = 59;
+        const auto too_fast = ArenaEngine::instance().create_competition(invalid);
+        check("engine: rejects cadence below 60s", too_fast.is_err());
+        if (too_fast.is_ok())
+            (void)store.delete_competition_cascade(too_fast.value());
+
+        invalid.cadence_seconds = 3601;
+        const auto too_slow = ArenaEngine::instance().create_competition(invalid);
+        check("engine: rejects cadence above 3600s", too_slow.is_err());
+        if (too_slow.is_ok())
+            (void)store.delete_competition_cascade(too_slow.value());
+
+        invalid = cfg;
+        invalid.name = QStringLiteral("__selftest__too_many_agents");
+        while (invalid.agents.size() <= 8)
+            invalid.agents.append(a1);
+        const auto too_many = ArenaEngine::instance().create_competition(invalid);
+        check("engine: rejects more than 8 billed agents", too_many.is_err());
+        if (too_many.is_ok())
+            (void)store.delete_competition_cascade(too_many.value());
+    }
+
     auto cid_r = store.insert_competition(cfg);
     check("store: insert_competition", cid_r.is_ok());
     const QString cid = cid_r.is_ok() ? cid_r.value() : QString();
@@ -663,6 +692,27 @@ int run_arena_selftest() {
         eng.set_market_for_test(fake_md);
         eng.set_llm_for_test(fake_llm);
 
+        // Old/imported rows bypass create_competition(), so start() must apply
+        // the same billed-agent ceiling before dispatching any requests.
+        ArenaConfig oversized;
+        oversized.name = QStringLiteral("__selftest__oversized_persisted");
+        oversized.instruments = {QStringLiteral("BTC")};
+        oversized.cadence_seconds = 180;
+        ArenaAgentSpec oversized_agent;
+        oversized_agent.provider = QStringLiteral("harness:selftest");
+        oversized_agent.model_id = QStringLiteral("gpt-test");
+        oversized_agent.display_name = QStringLiteral("GPT");
+        oversized_agent.source_kind = QStringLiteral("harness");
+        oversized_agent.source_ref = QStringLiteral("selftest");
+        while (oversized.agents.size() <= 8)
+            oversized.agents.append(oversized_agent);
+        const QString oversized_id = store.insert_competition(oversized).value();
+        const auto oversized_start = eng.start(oversized_id);
+        check("engine: refuses persisted competition above 8 billed agents", oversized_start.is_err());
+        if (oversized_start.is_ok())
+            (void)eng.stop();
+        (void)store.delete_competition_cascade(oversized_id);
+
         ArenaConfig ecfg;
         ecfg.name = "__selftest__engine";
         ecfg.instruments = {"BTC"};
@@ -767,6 +817,16 @@ int run_arena_selftest() {
         auto c3 = store.competition(ecid3);
         check("engine: second auto-ended on restart", c2.is_ok() && c2.value().status == "ended");
         check("engine: third running", c3.is_ok() && c3.value().status == "running");
+
+        oversized.name = QStringLiteral("__selftest__oversized_replacement");
+        const QString oversized_replacement_id = store.insert_competition(oversized).value();
+        check("engine: invalid replacement rejected", eng.start(oversized_replacement_id).is_err());
+        check("engine: invalid replacement leaves active competition running",
+              eng.active_competition_id() == ecid3 && store.competition(ecid3).value().status == "running");
+        if (eng.active_competition_id() != ecid3)
+            (void)eng.start(ecid3); // recover so later checks remain independent on a red build
+        (void)store.delete_competition_cascade(oversized_replacement_id);
+
         (void)arena_kill_all_sync(eng); // only the active (third) competition
         (void)store.delete_competition_cascade(ecid2);
         (void)store.delete_competition_cascade(ecid3);
