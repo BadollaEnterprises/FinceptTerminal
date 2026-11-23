@@ -56,6 +56,15 @@ int aiq_input_max_chars() {
             .toInt();
     return ai_chat::validate_llm_budget_settings(settings).history_chars;
 }
+
+int aiq_output_max_tokens() {
+    ai_chat::LlmBudgetSettings settings;
+    settings.completion_tokens =
+        AppConfig::instance()
+            .get(ai_chat::kLlmCompletionTokensKey, QVariant(ai_chat::kDefaultLlmCompletionTokens))
+            .toInt();
+    return ai_chat::validate_llm_budget_settings(settings).completion_tokens;
+}
 } // namespace
 
 // ── Singleton ────────────────────────────────────────────────────────────────
@@ -260,8 +269,8 @@ QJsonObject AIQuantLabService::agent_llm_config(const QJsonObject& params) const
         config[QStringLiteral("llm_model")] = model;
 
         const int model_cap = ai_chat::ModelCatalog::output_cap(provider, model);
-        const int max_tokens = ai_chat::resolve_llm_output_tokens(
-            config.value(QStringLiteral("llm_max_tokens")).toInt(), model_cap);
+        const int max_tokens = ai_chat::resolve_llm_turn_output_tokens(
+            config.value(QStringLiteral("llm_max_tokens")).toInt(), model_cap, aiq_output_max_tokens());
         config[QStringLiteral("llm_max_tokens")] = max_tokens;
         return config;
     };

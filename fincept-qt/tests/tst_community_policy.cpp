@@ -103,6 +103,16 @@ class CommunityPolicyTest : public QObject {
         QVERIFY(code.count("detail::encode_tool_results_for_llm(") >= 2);
     }
 
+    void ai_quant_agents_obey_the_global_turn_output_ceiling() {
+        QFile source(QStringLiteral(FINCEPT_SOURCE_DIR "/src/services/ai_quant_lab/AIQuantLabService.cpp"));
+        QVERIFY2(source.open(QIODevice::ReadOnly), qPrintable(source.errorString()));
+        const QByteArray code = source.readAll();
+        QVERIFY2(code.contains("kLlmCompletionTokensKey"),
+                 "AI Quant Lab launches recurring paid model calls and must read the global turn-output budget");
+        QVERIFY2(code.contains("resolve_llm_turn_output_tokens("),
+                 "Deep Agent and RD-Agent must not bypass the same per-turn output ceiling as AI Chat");
+    }
+
     void fincept_cloud_sync_is_disabled() {
         QCOMPARE(fincept::policy::fincept_cloud_sync_enabled(), false);
     }
